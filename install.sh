@@ -164,7 +164,7 @@ _drule()  { printf "  ${C_BORDER}%s${CR}\n" "$(_repeat "━" "$UI_W")"; }
 banner()  {
     echo
     _drule
-    printf "  ${C_OK}▌${CR} ${C_TITLE}MIRZA${CR}  ${C_DIM}— VPN Subscription Management${CR}\n"
+    printf "  ${C_OK}▌${CR} ${C_TITLE}CANDY${CR}  ${C_DIM}— VPN Subscription Management${CR}\n"
     _drule
 }
 # Menu item row: [n] label  (left-aligned, no right border)
