@@ -1,0 +1,39 @@
+[19-Jun-2026 11:27:58 Asia/Tehran] Database connection failed: SQLSTATE[HY000] [2002] php_network_getaddresses: getaddrinfo for {database_url} failed: Name or service not known
+[19-Jun-2026 11:28:01 Asia/Tehran] Database connection failed: SQLSTATE[HY000] [2002] php_network_getaddresses: getaddrinfo for {database_url} failed: Name or service not known
+[19-Jun-2026 11:29:35 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:29:35 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:29:35 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:29:35 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:30:22 Asia/Tehran] PHP Warning:  Undefined array key "is_forum" in /var/www/html/candyprobotconfig/admin.php on line 2383
+[19-Jun-2026 11:34:20 Asia/Tehran] {"ok":false,"error_code":400,"description":"Bad Request: not enough rights to create a topic"}
+[19-Jun-2026 11:34:53 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:34:54 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:34:55 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:34:56 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:35:00 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:35:01 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:35:02 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:35:03 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:35:03 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:35:07 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:35:08 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:35:25 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:37:17 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:37:17 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:37:17 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:37:17 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:38:21 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:38:23 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:38:28 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:38:35 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:39:05 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:39:09 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:39:25 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:39:25 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:39:25 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:39:25 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:39:54 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:39:54 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:43:33 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:44:42 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
+[19-Jun-2026 11:45:52 Asia/Tehran] PHP Warning:  file_put_contents(log.txt): Failed to open stream: Permission denied in /var/www/html/candyprobotconfig/function.php on line 391
