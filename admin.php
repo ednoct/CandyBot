@@ -1,8 +1,6 @@
 <?php
 #----------------[  admin section  ]------------------#
 $textadmin = ["panel", "/panel", $textbotlang['Admin']['panelAdmin']];
-$text_panel_admin_login_template = sprintf($textbotlang['Admin']['adminphp']['msg_panel_admin_bot_report'], $version);
-
 if (!in_array($from_id, $admin_ids))
     return;
 
