@@ -1607,7 +1607,14 @@ function createInvoiceTetra($amount, $id_invoice)
     $callbackHost = trim((string) $domainhosts);
     $callbackHost = preg_replace('/^https?:\/\//i', '', $callbackHost);
     $callbackHost = rtrim($callbackHost, '/');
-    $PaySetting = select("PaySetting", "ValuePay", "NamePay", "apitetra", "select")['ValuePay'];
+    $PaySetting = trim((string) getPaySettingValue("apitetra", ""));
+    if ($PaySetting === "" || $PaySetting === "0") {
+        return [
+            'status' => -1,
+            'message' => 'Tetra98 ApiKey is not configured'
+        ];
+    }
+
     $curl = curl_init();
     $amount = intval($amount) * 10;
     $data = [
@@ -1624,10 +1631,10 @@ function createInvoiceTetra($amount, $id_invoice)
         CURLOPT_TIMEOUT => 20,
         CURLOPT_FOLLOWLOCATION => true,
         CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-        CURLOPT_CUSTOMREQUEST => 'POST',
+        CURLOPT_POST => true,
         CURLOPT_POSTFIELDS => json_encode($data),
         CURLOPT_HTTPHEADER => array(
-            'accept: application/json',
+            'Accept: application/json',
             'Content-Type: application/json'
         ),
     ));

@@ -25,14 +25,20 @@ $hashid = $data['hash_id'] ?? $data['hashid'] ?? '';
 $authority = $data['authority'] ?? '';
 $StatusPayment = $data['status'] ?? null;
 $setting = select("setting", "*");
-$PaySetting = select("PaySetting", "*", "NamePay", "apitetra", "select")['ValuePay'];
-$Payment_reports = $hashid !== '' ? select("Payment_report", "*", "id_order", $hashid, "select") : null;
+$PaySetting = trim((string) getPaySettingValue("apitetra", ""));
+$Payment_reports = null;
+if ($hashid !== '') {
+    $Payment_reports = select("Payment_report", "*", "id_order", $hashid, "select");
+}
+if (!$Payment_reports && $authority !== '') {
+    $Payment_reports = select("Payment_report", "*", "dec_not_confirmed", $authority, "select");
+}
 $invoice_id = $Payment_reports['id_order'] ?? $hashid;
 $price = $Payment_reports['price'] ?? 0;
 // verify Transaction
 $dec_payment_status = "";
-$payment_status = "";
-if ($StatusPayment == 100) {
+$payment_status = $textbotlang['paymentGateway']['statusFailed'];
+if ($PaySetting !== "" && $PaySetting !== "0" && $Payment_reports && $StatusPayment == 100 && $authority !== '') {
     $curl = curl_init();
     $data = [
         "ApiKey" => $PaySetting,
@@ -43,11 +49,11 @@ if ($StatusPayment == 100) {
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_ENCODING => '',
         CURLOPT_MAXREDIRS => 10,
-        CURLOPT_TIMEOUT => 0,
+        CURLOPT_TIMEOUT => 20,
         CURLOPT_FOLLOWLOCATION => true,
         CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
         CURLOPT_POSTFIELDS => json_encode($data),
-        CURLOPT_CUSTOMREQUEST => 'POST',
+        CURLOPT_POST => true,
         CURLOPT_HTTPHEADER => array(
             'Content-Type: application/json',
             'Accept: application/json'
@@ -56,10 +62,12 @@ if ($StatusPayment == 100) {
     $response = curl_exec($curl);
     curl_close($curl);
     $response = json_decode($response, true);
-    if (!empty($response['status']) && $response['status'] == 100) {
+    $verifiedHash = $response['hash_id'] ?? $response['hashid'] ?? null;
+    $verifiedAuthority = $response['authority'] ?? null;
+    if (!empty($response['status']) && $response['status'] == 100 && $verifiedAuthority === $authority && (!$verifiedHash || $verifiedHash === $invoice_id)) {
         $payment_status = $textbotlang['paymentGateway']['statusSuccess'];
         $dec_payment_status = $textbotlang['paymentGateway']['descThanks'];
-        $Payment_report = select("Payment_report", "*", "id_order", $invoice_id, "select");
+        $Payment_report = $Payment_reports;
         if ($Payment_report['payment_Status'] != "paid") {
             $textbotlang = languagechange();
             DirectPayment($invoice_id, "../images.jpg");

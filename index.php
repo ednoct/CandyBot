@@ -4975,7 +4975,7 @@ if ($user['step'] == "createusertest" || preg_match('/locationtest_(.*)/', $data
             }
             return;
         }
-        $authority = $pay['Authority'];
+        $authority = $pay['Authority'] ?? $pay['authority'];
         $telegramPaymentUrl = $pay['payment_url_bot'] ?? "https://t.me/Tetra98_bot?start=pay_{$authority}";
         update("Payment_report", "dec_not_confirmed", $authority, "id_order", $randomString);
         $paymentkeyboard = json_encode([

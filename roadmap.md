@@ -2,6 +2,7 @@
 
 ## Payment & Finance Reliability
 - Add a unified `PaymentGatewayInterface` so Tetra98, ZarinPal, AqayePardakht, NowPayments, Plisio, card-to-card, and Telegram Stars share the same create, verify, expire, and reporting lifecycle.
+- Add Tetra98-specific regression tests for toman-to-rial conversion, Telegram payment URL generation, callback domain generation from `$domainhosts`, authority/hash verification, and duplicate callback idempotency.
 - Store gateway callbacks in an append-only payment event log before mutating wallet balances, making duplicate callbacks idempotent and auditable.
 - Add a finance health dashboard that shows gateway uptime, failed invoice reasons, callback latency, daily totals, and suspicious duplicate-payment attempts.
 - Introduce admin-configurable payment routing rules, such as minimum/maximum amount, user trust level, gateway daily cap, and fallback gateway order.
