@@ -1601,14 +1601,11 @@ function createInvoiceTetra($amount, $id_invoice)
     $callbackHost = rtrim($callbackHost, '/');
     $PaySetting = select("PaySetting", "ValuePay", "NamePay", "apitetra", "select")['ValuePay'];
     $curl = curl_init();
-    $amount = intval($amount);
+    $amount = intval($amount) * 10;
     $data = [
         "ApiKey" => $PaySetting,
         "Hash_id" => $id_invoice,
         "Amount" => $amount,
-        "Description" => "CandyBot order " . $id_invoice,
-        "Email" => "customer@" . $callbackHost,
-        "Mobile" => "09120000000",
         "CallbackURL" => "https://{$callbackHost}/payment/tetra.php"
     ];
     curl_setopt_array($curl, array(
@@ -1628,8 +1625,23 @@ function createInvoiceTetra($amount, $id_invoice)
     ));
 
     $response = curl_exec($curl);
+    if ($response === false) {
+        $error = curl_error($curl);
+        curl_close($curl);
+        return [
+            'status' => -1,
+            'message' => $error ?: 'Tetra98 create_order request failed'
+        ];
+    }
     curl_close($curl);
-    return json_decode($response, true);
+    $decodedResponse = json_decode($response, true);
+    if (!is_array($decodedResponse)) {
+        return [
+            'status' => -1,
+            'message' => 'Invalid Tetra98 create_order response'
+        ];
+    }
+    return $decodedResponse;
 }
 function createInvoiceiranpay1($amount, $id_invoice)
 {

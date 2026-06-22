@@ -4941,16 +4941,6 @@ if ($user['step'] == "createusertest" || preg_match('/locationtest_(.*)/', $data
         $message_id = sendmessage($from_id, $textnowpayments, $paymentkeyboard, 'HTML');
         updatePaymentMessageId($message_id, $randomString);
     } elseif ($datain == "tetra") {
-        $rates = rate_arze();
-        if ($rates === null) {
-            sendmessage($from_id, $textbotlang['users']['Balance']['errorLinkPayment'], $keyboard, 'HTML');
-            step('home', $from_id);
-            return;
-        }
-        $trx = $rates['TRX'];
-        $usd = $rates['USD'];
-        $trxprice = round($user['Processing_value'] / $trx, 2);
-        $usdprice = $user['Processing_value'] / $usd;
         $mainbalance = select("PaySetting", "ValuePay", "NamePay", "minbalancetetra", "select")['ValuePay'];
         $maxbalance = select("PaySetting", "ValuePay", "NamePay", "maxbalancetetra", "select")['ValuePay'];
         if ($user['Processing_value'] < $mainbalance || $user['Processing_value'] > $maxbalance) {
@@ -4969,8 +4959,9 @@ if ($user['step'] == "createusertest" || preg_match('/locationtest_(.*)/', $data
         $Payment_Method = "Tetra98";
         $stmt->execute([$from_id, $randomString, $dateacc, $user['Processing_value'], $payment_Status, $Payment_Method, $invoice]);
         $pay = createInvoiceTetra($user['Processing_value'], $randomString);
-        if ($pay['status'] != "100") {
-            $text_error = $pay['message'];
+        $authority = is_array($pay) ? ($pay['Authority'] ?? $pay['authority'] ?? null) : null;
+        if (!is_array($pay) || (string) ($pay['status'] ?? '') !== "100" || empty($authority)) {
+            $text_error = $pay['message'] ?? 'Tetra98 did not return a successful create_order response or Authority';
             sendmessage($from_id, $textbotlang['users']['Balance']['errorLinkPayment'], $keyboard, 'HTML');
             step('home', $from_id);
             $ErrorsLinkPayment = sprintf($textbotlang['hardcoded']['paymentLinkErrorAdmin'], $text_error, $from_id, $Payment_Method, $username);
@@ -4984,11 +4975,12 @@ if ($user['step'] == "createusertest" || preg_match('/locationtest_(.*)/', $data
             }
             return;
         }
-        update("Payment_report", "dec_not_confirmed", $pay['Authority'], "id_order", $randomString);
+        $telegramPaymentUrl = $pay['payment_url_bot'] ?? "https://t.me/Tetra98_bot?start=pay_{$authority}";
+        update("Payment_report", "dec_not_confirmed", $authority, "id_order", $randomString);
         $paymentkeyboard = json_encode([
             'inline_keyboard' => [
                 [
-                    ['text' => $textbotlang['keyboard']['payment'], 'url' => $pay['payment_url_bot']]
+                    ['text' => $textbotlang['keyboard']['payment'], 'url' => $telegramPaymentUrl]
                 ]
             ]
         ]);
