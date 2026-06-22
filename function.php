@@ -1601,7 +1601,7 @@ function createInvoiceTetra($amount, $id_invoice)
     $callbackHost = rtrim($callbackHost, '/');
     $PaySetting = select("PaySetting", "ValuePay", "NamePay", "apitetra", "select")['ValuePay'];
     $curl = curl_init();
-    $amount = intval($amount);
+    $amount = intval($amount) * 10;
     $data = [
         "ApiKey" => $PaySetting,
         "Hash_id" => $id_invoice,
