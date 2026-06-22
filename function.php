@@ -1640,17 +1640,26 @@ function createInvoiceTetra($amount, $id_invoice)
     ));
 
     $response = curl_exec($curl);
+    $curlError = curl_error($curl);
+    $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
     if ($response === false) {
-        $error = curl_error($curl);
         curl_close($curl);
+        error_log('[Tetra98] create_order curl failed: ' . $curlError);
         return [
             'status' => -1,
-            'message' => $error ?: 'Tetra98 create_order request failed'
+            'message' => $curlError ?: 'Tetra98 create_order request failed'
         ];
     }
     curl_close($curl);
+    error_log('[Tetra98] create_order response: ' . json_encode([
+        'http_code' => $httpCode,
+        'hash_id' => $id_invoice,
+        'amount' => $amount,
+        'body' => $response,
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     $decodedResponse = json_decode($response, true);
     if (!is_array($decodedResponse)) {
+        error_log('[Tetra98] create_order invalid JSON: ' . $response);
         return [
             'status' => -1,
             'message' => 'Invalid Tetra98 create_order response'

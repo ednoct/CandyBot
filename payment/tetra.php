@@ -21,9 +21,15 @@ $data = json_decode(file_get_contents("php://input"), true);
 if (!is_array($data)) {
     $data = $_REQUEST;
 }
-$hashid = $data['hash_id'] ?? $data['hashid'] ?? '';
-$authority = $data['authority'] ?? '';
-$StatusPayment = $data['status'] ?? null;
+$hashid = trim((string) ($data['hashid'] ?? $data['hash_id'] ?? $data['Hash_id'] ?? ''));
+$authority = trim((string) ($data['authority'] ?? $data['Authority'] ?? ''));
+$StatusPayment = isset($data['status']) ? (int) $data['status'] : null;
+error_log('[Tetra98] callback received: ' . json_encode([
+    'status' => $StatusPayment,
+    'hashid' => $hashid,
+    'authority' => $authority,
+    'method' => $_SERVER['REQUEST_METHOD'] ?? '',
+], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 $setting = select("setting", "*");
 $PaySetting = trim((string) getPaySettingValue("apitetra", ""));
 $Payment_reports = null;
@@ -32,6 +38,12 @@ if ($hashid !== '') {
 }
 if (!$Payment_reports && $authority !== '') {
     $Payment_reports = select("Payment_report", "*", "dec_not_confirmed", $authority, "select");
+}
+if (!$Payment_reports) {
+    error_log('[Tetra98] payment report not found: ' . json_encode([
+        'hashid' => $hashid,
+        'authority' => $authority,
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 }
 $invoice_id = $Payment_reports['id_order'] ?? $hashid;
 $price = $Payment_reports['price'] ?? 0;
@@ -43,6 +55,7 @@ if ($PaySetting !== "" && $PaySetting !== "0" && $Payment_reports && $StatusPaym
     $data = [
         "ApiKey" => $PaySetting,
         "authority" => $authority,
+        "Hash_id" => $invoice_id,
     ];
     curl_setopt_array($curl, array(
         CURLOPT_URL => "https://tetra98.com/api/verify",
@@ -59,12 +72,23 @@ if ($PaySetting !== "" && $PaySetting !== "0" && $Payment_reports && $StatusPaym
             'Accept: application/json'
         ),
     ));
-    $response = curl_exec($curl);
+    $responseBody = curl_exec($curl);
+    $curlError = curl_error($curl);
+    $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
     curl_close($curl);
-    $response = json_decode($response, true);
-    $verifiedHash = $response['hash_id'] ?? $response['hashid'] ?? null;
-    $verifiedAuthority = $response['authority'] ?? null;
-    if (!empty($response['status']) && $response['status'] == 100 && $verifiedAuthority === $authority && (!$verifiedHash || $verifiedHash === $invoice_id)) {
+    if ($responseBody === false) {
+        error_log('[Tetra98] verify curl failed: ' . $curlError);
+        $response = null;
+    } else {
+        error_log('[Tetra98] verify response: ' . json_encode([
+            'http_code' => $httpCode,
+            'body' => $responseBody,
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        $response = json_decode($responseBody, true);
+    }
+    $verifiedHash = is_array($response) ? ($response['hash_id'] ?? $response['hashid'] ?? null) : null;
+    $verifiedAuthority = is_array($response) ? ($response['authority'] ?? null) : null;
+    if (is_array($response) && !empty($response['status']) && (int) $response['status'] === 100 && $verifiedAuthority === $authority && (!$verifiedHash || $verifiedHash === $invoice_id)) {
         $payment_status = $textbotlang['paymentGateway']['statusSuccess'];
         $dec_payment_status = $textbotlang['paymentGateway']['descThanks'];
         $Payment_report = $Payment_reports;
@@ -97,6 +121,24 @@ if ($PaySetting !== "" && $PaySetting !== "0" && $Payment_reports && $StatusPaym
     } else {
         $payment_status = $textbotlang['paymentGateway']['statusFailed'];
         $dec_payment_status = "";
+        error_log('[Tetra98] verify rejected: ' . json_encode([
+            'invoice_id' => $invoice_id,
+            'authority' => $authority,
+            'response' => $response,
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        if ($Payment_reports && $Payment_reports['payment_Status'] !== 'paid') {
+            update("Payment_report", "payment_Status", "failed", "id_order", $Payment_reports['id_order']);
+        }
+    }
+} elseif ($Payment_reports && $Payment_reports['payment_Status'] !== 'paid') {
+    error_log('[Tetra98] callback ignored before verify: ' . json_encode([
+        'invoice_id' => $invoice_id,
+        'status' => $StatusPayment,
+        'has_api_key' => ($PaySetting !== "" && $PaySetting !== "0"),
+        'has_authority' => ($authority !== ''),
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    if ($StatusPayment !== 100) {
+        update("Payment_report", "payment_Status", "failed", "id_order", $Payment_reports['id_order']);
     }
 }
 ?>
