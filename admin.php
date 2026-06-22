@@ -3455,11 +3455,11 @@ elseif ($datain == "systemsms") {
     step('set_apitetra', $from_id);
 } elseif ($user['step'] == "set_apitetra" && $adminrulecheck['rule'] == "administrator") {
     $apiKey = trim($text);
-    if ($apiKey === '' || mb_strlen($apiKey) < 8) {
+    if ($apiKey === '') {
         sendmessage($from_id, $textbotlang['Admin']['adminphp']['err_invalid_api_key'] ?? '❌ کلید API معتبر نیست.', $backadmin, 'HTML');
         return;
     }
-    update("PaySetting", "ValuePay", $apiKey, "NamePay", "apitetra");
+    savePaySettingValue("apitetra", $apiKey);
     sendmessage($from_id, $textbotlang['Admin']['SettingnowPayment']['saveApi'], $tetrakeyboard, 'HTML');
     step('home', $from_id);
 } elseif ($datain == "plisiosetting" && $adminrulecheck['rule'] == "administrator") {
@@ -7935,7 +7935,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     }
     sendmessage($from_id, $textbotlang['users']['extraVolume']['changedPrice'], $tetrakeyboard, 'HTML');
     step("home", $from_id);
-    update("PaySetting", "ValuePay", $text, "NamePay", "chashbacktetra");
+    savePaySettingValue("chashbacktetra", $text);
 } elseif ($text == $textbotlang['keyboard']['minAmounttetra']) {
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_send_amount_3'], $backadmin, 'HTML');
     step("minbalancetetra", $from_id);
@@ -7946,7 +7946,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     }
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_amount_set_1'], $tetrakeyboard, 'HTML');
     step("home", $from_id);
-    update("PaySetting", "ValuePay", $text, "NamePay", "minbalancetetra");
+    savePaySettingValue("minbalancetetra", $text);
 } elseif ($text == $textbotlang['keyboard']['maxAmounttetra']) {
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_send_amount_4'], $backadmin, 'HTML');
     step("maxbalancetetra", $from_id);
@@ -7957,7 +7957,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     }
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_amount_set_2'], $tetrakeyboard, 'HTML');
     step("home", $from_id);
-    update("PaySetting", "ValuePay", $text, "NamePay", "maxbalancetetra");
+    savePaySettingValue("maxbalancetetra", $text);
 } elseif ($text == $textbotlang['keyboard']['minCustomVolume'] && $adminrulecheck['rule'] == "administrator") {
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_send_panel_user_volume_1'], $backadmin, 'HTML');
     step('GetmaineExtra', $from_id);
@@ -8159,13 +8159,13 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     
     if ($text) {
         $data = json_encode(['type' => "text", 'text' => $text]);
-        update("PaySetting", "ValuePay", $data, "NamePay", "helptetra");
+        savePaySettingValue("helptetra", $data);
     } elseif ($photo) {
         $data = json_encode(['type' => "photo", 'text' => $caption, 'photoid' => $photoid]);
-        update("PaySetting", "ValuePay", $data, "NamePay", "helptetra");
+        savePaySettingValue("helptetra", $data);
     } elseif ($video) {
         $data = json_encode(['type' => "video", 'text' => $caption, 'videoid' => $videoid]);
-        update("PaySetting", "ValuePay", $data, "NamePay", "helptetra");
+        savePaySettingValue("helptetra", $data);
     } else {
         // اگر کاربر محتوای نامعتبر فرستاد، استپ را تغییر نده و خطا بده
         sendmessage($from_id, "⚠️ لطفا فقط متن، عکس یا ویدیو ارسال کنید.", $backadmin, 'HTML');

@@ -516,6 +516,14 @@ function getPaySettingValue($name, $default = null)
 
     return $result['ValuePay'];
 }
+function savePaySettingValue($name, $value)
+{
+    global $pdo;
+
+    $stmt = $pdo->prepare("INSERT INTO PaySetting (NamePay, ValuePay) VALUES (?, ?) ON DUPLICATE KEY UPDATE ValuePay = VALUES(ValuePay)");
+    $stmt->execute([$name, normaliseUpdateValue($value)]);
+    clearSelectCache('PaySetting');
+}
 function generateUUID()
 {
     $data = openssl_random_pseudo_bytes(16);
