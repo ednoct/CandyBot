@@ -56,7 +56,7 @@ if (in_array($text, $textadmin) || $datain == "admin") {
     }
     step('home', $from_id);
     if (in_array($user['step'], ["updatetime", "val_usertest", "getlimitnew", "GetusernameNew", "GeturlNew", "protocolset", "updatemethodusername", "GetNameNew", "getprotocol", "getprotocolremove", "GetpaawordNew", "updateextendmethod", "setpricechangelocation"])) {
-        $typepanel = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
+        $typepanel = select("locations", "*", "name", $user['Processing_value'], "select");
         outtypepanel($typepanel['type'], $textbotlang['Admin']['backMenu']);
     } elseif (in_array($user['step'], ["selectloc", "get_limit", "selectlocedite", "GetPriceExtra", "GetPriceexstratime", "GetPricecustomtime", "GetPricecustomvolume", "get_code", "get_codesell", "minbalancebulk"])) {
         sendmessage($from_id, $textbotlang['Admin']['backMenu'], $shopkeyboard, 'HTML');
@@ -193,7 +193,7 @@ if (in_array($text, $textadmin) || $datain == "admin") {
 } elseif ($text == $textbotlang['Admin']['Status']['btn'] || $datain == "stat_all_bot") {
     $Balanceall = select("user", "SUM(Balance)", null, null, "select")['SUM(Balance)'];
     $statistics = select("user", "*", null, null, "count");
-    $sumpanel = select("marzban_panel", "*", null, null, "count");
+    $sumpanel = select("locations", "*", null, null, "count");
     $sql1 = "SELECT COUNT(id) AS count FROM user WHERE agent != 'f'";
     $stmt1 = $pdo->query($sql1);
     $agentsum = $stmt1->fetch(PDO::FETCH_ASSOC)['count'];
@@ -213,10 +213,7 @@ if (in_array($text, $textadmin) || $datain == "admin") {
     $invoiceSumRow = $sql33->fetch(PDO::FETCH_ASSOC);
     $invoiceTotal = isset($invoiceSumRow['total_price']) ? (float) $invoiceSumRow['total_price'] : 0;
     $invoicesumall = number_format($invoiceTotal, 0);
-    $sql3 = "SELECT SUM(price) AS total_extend FROM service_other WHERE type = 'extend_user'";
-    $stmt3 = $pdo->query($sql3);
-    $extendSumRow = $stmt3->fetch(PDO::FETCH_ASSOC);
-    $extendsum = isset($extendSumRow['total_extend']) ? (float) $extendSumRow['total_extend'] : 0;
+
     $count_usertest = select("invoice", "*", "name_product", $textbotlang['Admin']['adminphp']['db_test_service_name'], "count");
     $timeacc = jdate('H:i:s', time());
     $stmt2 = $pdo->prepare("SELECT COUNT(DISTINCT id_user) as count FROM `invoice` WHERE Status != 'Unpaid'");
@@ -239,7 +236,7 @@ if (in_array($text, $textadmin) || $datain == "admin") {
     $stmt->execute();
     $suminvoiceday = $stmt->fetch(PDO::FETCH_ASSOC)['SUM(price_product)'];
     $invoicesum = (float) ($invoicesum ?? 0);
-    $extendsum = (float) ($extendsum ?? 0);
+
     $suminvoiceday = (float) ($suminvoiceday ?? 0);
     $statistics = (int) ($statistics ?? 0);
     $statisticsorder = (int) ($statisticsorder ?? 0);
@@ -247,9 +244,6 @@ if (in_array($text, $textadmin) || $datain == "admin") {
     $ratecustomer = $statistics > 0 ? round(($statisticsorder / $statistics) * 100, 2) : 0;
     $avgbuy_customer = $statisticsorder > 0 ? number_format($invoicesum / $statisticsorder) : '0';
     $monthe_buy = number_format($suminvoiceday * 30);
-    $percent_of_extend = $invoicesum > 0 ? round(($extendsum / $invoicesum) * 100, 2) : 0;
-    $percent_of_extend = $percent_of_extend > 100 ? 100 : $percent_of_extend;
-    $extendsum = number_format($extendsum, 0);
     if (count($statispay) != 0) {
         foreach ($statispay as $tracepay) {
             $status_var = [
@@ -270,7 +264,7 @@ if (in_array($text, $textadmin) || $datain == "admin") {
             $paycount .= sprintf($textbotlang['Admin']['adminphp']['ok_payment_gateway_name'], $status_var, $tracepay['countpay'], $tracepay['sumpay']);
         }
     }
-    $statisticsall = sprintf($textbotlang['Admin']['adminphp']['msg_panel_service_account_user'], $statistics, $statisticsorder, $count_usertest, $Balanceall, $invoice, $invoiceactive, $invoicesumall, $invoicesum, $extendsum, $ratecustomer, $avgbuy_customer, $monthe_buy, $percent_of_extend, $agentsum, $agentsumn, $agentsumn2, $sumpanel, $paycount);
+    $statisticsall = sprintf($textbotlang['Admin']['adminphp']['msg_panel_service_account_user'], $statistics, $statisticsorder, $count_usertest, $Balanceall, $invoice, $invoiceactive, $invoicesumall, $invoicesum, $ratecustomer, $avgbuy_customer, $monthe_buy, $agentsum, $agentsumn, $agentsumn2, $sumpanel, $paycount);
     if ($datain == "stat_all_bot") {
         Editmessagetext($from_id, $message_id, $statisticsall, $keyboard_stat, 'HTML');
     } else {
@@ -293,12 +287,7 @@ if (in_array($text, $textadmin) || $datain == "admin") {
     $stmt->bindParam(':requestedDateend', $time_current);
     $stmt->execute();
     $count_test = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
-    $sql = "SELECT COUNT(*) AS count,SUM(price) as sum FROM service_other WHERE  time  >= NOW() - INTERVAL 1 HOUR AND type = 'extend_user' AND status != 'unpaid'";
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute();
-    $extend_stat = $stmt->fetch(PDO::FETCH_ASSOC);
-    $count_extend = $extend_stat['count'];
-    $sum_extend = number_format($extend_stat['sum'], 0);
+
     $sql = "SELECT COUNT(*) AS count,SUM(price) as sum FROM service_other WHERE  time  >= NOW() - INTERVAL 1 HOUR AND type = 'extra_user'";
     $stmt = $pdo->prepare($sql);
     $stmt->execute();
@@ -322,7 +311,7 @@ if (in_array($text, $textadmin) || $datain == "admin") {
     $stmt->bindParam(':requestedDateend', $time_current);
     $stmt->execute();
     $countextendday = $stmt->rowCount();
-    $statisticsall = sprintf($textbotlang['Admin']['adminphp']['msg_account_user_amount_volume_1'], $count_order, $sum_order, $count_extend, $sum_extend, $count_extra_volume, $sum_extra_volume, $count_extra_time, $sum_extrat_time, $count_change_location, $sum_change_location, $count_test, $countextendday);
+    $statisticsall = sprintf($textbotlang['Admin']['adminphp']['msg_account_user_amount_volume_1'], $count_order, $sum_order, $count_extra_volume, $sum_extra_volume, $count_extra_time, $sum_extrat_time, $count_change_location, $sum_change_location, $count_test, $countextendday);
     Editmessagetext($from_id, $message_id, $statisticsall, $keyboard_stat, 'HTML');
 } elseif ($datain == "yesterday_stat") {
     $start_time = date('Y/m/d', strtotime("-1 days")) . " 00:00:00";
@@ -343,14 +332,7 @@ if (in_array($text, $textadmin) || $datain == "admin") {
     $stmt->bindParam(':requestedDateend', $end_time_timestamp);
     $stmt->execute();
     $count_test = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
-    $sql = "SELECT COUNT(*) AS count,SUM(price) as sum FROM service_other WHERE  (time BETWEEN :requestedDate AND :requestedDateend) AND type = 'extend_user' AND status != 'unpaid'";
-    $stmt = $pdo->prepare($sql);
-    $stmt->bindParam(':requestedDate', $start_time);
-    $stmt->bindParam(':requestedDateend', $end_time);
-    $stmt->execute();
-    $extend_stat = $stmt->fetch(PDO::FETCH_ASSOC);
-    $count_extend = $extend_stat['count'];
-    $sum_extend = number_format($extend_stat['sum'], 0);
+
     $sql = "SELECT COUNT(*) AS count,SUM(price) as sum FROM service_other WHERE  (time BETWEEN :requestedDate AND :requestedDateend) AND type = 'extra_user'";
     $stmt = $pdo->prepare($sql);
     $stmt->bindParam(':requestedDate', $start_time);
@@ -380,7 +362,7 @@ if (in_array($text, $textadmin) || $datain == "admin") {
     $stmt->bindParam(':requestedDateend', $end_time_timestamp);
     $stmt->execute();
     $countuser_new = $stmt->rowCount();
-    $statisticsall = sprintf($textbotlang['Admin']['adminphp']['msg_account_user_amount_volume_2'], $start_time, $end_time, $count_order, $sum_order, $count_extend, $sum_extend, $count_extra_volume, $sum_extra_volume, $count_extra_time, $sum_extrat_time, $count_change_location, $sum_change_location, $count_test, $countuser_new);
+    $statisticsall = sprintf($textbotlang['Admin']['adminphp']['msg_account_user_amount_volume_2'], $start_time, $end_time, $count_order, $sum_order, $count_extra_volume, $sum_extra_volume, $count_extra_time, $sum_extrat_time, $count_change_location, $sum_change_location, $count_test, $countuser_new);
     Editmessagetext($from_id, $message_id, $statisticsall, $keyboard_stat, 'HTML');
 } elseif ($datain == "today_stat") {
     $start_time = date('Y/m/d') . " 00:00:00";
@@ -401,14 +383,7 @@ if (in_array($text, $textadmin) || $datain == "admin") {
     $stmt->bindParam(':requestedDateend', $end_time_timestamp);
     $stmt->execute();
     $count_test = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
-    $sql = "SELECT COUNT(*) AS count,SUM(price) as sum FROM service_other WHERE  (time BETWEEN :requestedDate AND :requestedDateend) AND type = 'extend_user' AND status != 'unpaid'";
-    $stmt = $pdo->prepare($sql);
-    $stmt->bindParam(':requestedDate', $start_time);
-    $stmt->bindParam(':requestedDateend', $end_time);
-    $stmt->execute();
-    $extend_stat = $stmt->fetch(PDO::FETCH_ASSOC);
-    $count_extend = $extend_stat['count'];
-    $sum_extend = number_format($extend_stat['sum'], 0);
+
     $sql = "SELECT COUNT(*) AS count,SUM(price) as sum FROM service_other WHERE  (time BETWEEN :requestedDate AND :requestedDateend) AND type = 'extra_user'";
     $stmt = $pdo->prepare($sql);
     $stmt->bindParam(':requestedDate', $start_time);
@@ -438,7 +413,7 @@ if (in_array($text, $textadmin) || $datain == "admin") {
     $stmt->bindParam(':requestedDateend', $end_time_timestamp);
     $stmt->execute();
     $countuser_new = $stmt->rowCount();
-    $statisticsall = sprintf($textbotlang['Admin']['adminphp']['msg_account_user_amount_volume_3'], $start_time, $end_time, $count_order, $sum_order, $count_extend, $sum_extend, $count_extra_volume, $sum_extra_volume, $count_extra_time, $sum_extrat_time, $count_change_location, $sum_change_location, $count_test, $countuser_new);
+    $statisticsall = sprintf($textbotlang['Admin']['adminphp']['msg_account_user_amount_volume_3'], $start_time, $end_time, $count_order, $sum_order, $count_extra_volume, $sum_extra_volume, $count_extra_time, $sum_extrat_time, $count_change_location, $sum_change_location, $count_test, $countuser_new);
     Editmessagetext($from_id, $message_id, $statisticsall, $keyboard_stat, 'HTML');
 } elseif ($datain == "month_old_stat") {
     $firstDayLastMonth = new DateTime('first day of last month');
@@ -461,14 +436,7 @@ if (in_array($text, $textadmin) || $datain == "admin") {
     $stmt->bindParam(':requestedDateend', $end_time_timestamp);
     $stmt->execute();
     $count_test = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
-    $sql = "SELECT COUNT(*) AS count,SUM(price) as sum FROM service_other WHERE  (time BETWEEN :requestedDate AND :requestedDateend) AND type = 'extend_user' AND status != 'unpaid'";
-    $stmt = $pdo->prepare($sql);
-    $stmt->bindParam(':requestedDate', $start_time);
-    $stmt->bindParam(':requestedDateend', $end_time);
-    $stmt->execute();
-    $extend_stat = $stmt->fetch(PDO::FETCH_ASSOC);
-    $count_extend = $extend_stat['count'];
-    $sum_extend = number_format($extend_stat['sum'], 0);
+
     $sql = "SELECT COUNT(*) AS count,SUM(price) as sum FROM service_other WHERE  (time BETWEEN :requestedDate AND :requestedDateend) AND type = 'extra_user'";
     $stmt = $pdo->prepare($sql);
     $stmt->bindParam(':requestedDate', $start_time);
@@ -498,7 +466,7 @@ if (in_array($text, $textadmin) || $datain == "admin") {
     $stmt->bindParam(':requestedDateend', $end_time_timestamp);
     $stmt->execute();
     $countuser_new = $stmt->rowCount();
-    $statisticsall = sprintf($textbotlang['Admin']['adminphp']['msg_account_user_amount_volume_4'], $start_time, $end_time, $count_order, $sum_order, $count_extend, $sum_extend, $count_extra_volume, $sum_extra_volume, $count_extra_time, $sum_extrat_time, $count_change_location, $sum_change_location, $count_test, $countuser_new);
+    $statisticsall = sprintf($textbotlang['Admin']['adminphp']['msg_account_user_amount_volume_4'], $start_time, $end_time, $count_order, $sum_order, $count_extra_volume, $sum_extra_volume, $count_extra_time, $sum_extrat_time, $count_change_location, $sum_change_location, $count_test, $countuser_new);
     Editmessagetext($from_id, $message_id, $statisticsall, $keyboard_stat, 'HTML');
 } elseif ($datain == "month_current_stat") {
     $firstDayLastMonth = new DateTime('first day of this month');
@@ -521,14 +489,7 @@ if (in_array($text, $textadmin) || $datain == "admin") {
     $stmt->bindParam(':requestedDateend', $end_time_timestamp);
     $stmt->execute();
     $count_test = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
-    $sql = "SELECT COUNT(*) AS count,SUM(price) as sum FROM service_other WHERE  (time BETWEEN :requestedDate AND :requestedDateend) AND type = 'extend_user' AND status != 'unpaid'";
-    $stmt = $pdo->prepare($sql);
-    $stmt->bindParam(':requestedDate', $start_time);
-    $stmt->bindParam(':requestedDateend', $end_time);
-    $stmt->execute();
-    $extend_stat = $stmt->fetch(PDO::FETCH_ASSOC);
-    $count_extend = $extend_stat['count'];
-    $sum_extend = number_format($extend_stat['sum'], 0);
+
     $sql = "SELECT COUNT(*) AS count,SUM(price) as sum FROM service_other WHERE  (time BETWEEN :requestedDate AND :requestedDateend) AND type = 'extra_user'";
     $stmt = $pdo->prepare($sql);
     $stmt->bindParam(':requestedDate', $start_time);
@@ -558,7 +519,7 @@ if (in_array($text, $textadmin) || $datain == "admin") {
     $stmt->bindParam(':requestedDateend', $end_time_timestamp);
     $stmt->execute();
     $countuser_new = $stmt->rowCount();
-    $statisticsall = sprintf($textbotlang['Admin']['adminphp']['msg_account_user_amount_volume_5'], $start_time, $end_time, $count_order, $sum_order, $count_extend, $sum_extend, $count_extra_volume, $sum_extra_volume, $count_extra_time, $sum_extrat_time, $count_change_location, $sum_change_location, $count_test, $countuser_new);
+    $statisticsall = sprintf($textbotlang['Admin']['adminphp']['msg_account_user_amount_volume_5'], $start_time, $end_time, $count_order, $sum_order, $count_extra_volume, $sum_extra_volume, $count_extra_time, $sum_extrat_time, $count_change_location, $sum_change_location, $count_test, $countuser_new);
     Editmessagetext($from_id, $message_id, $statisticsall, $keyboard_stat, 'HTML');
 } elseif ($datain == "view_stat_time") {
     sendmessage($from_id, sprintf($textbotlang['Admin']['getStats'], date('Y/m/d')), $backadmin, 'HTML');
@@ -595,14 +556,7 @@ if (in_array($text, $textadmin) || $datain == "admin") {
     $stmt->bindParam(':requestedDateend', $end_time_timestamp);
     $stmt->execute();
     $count_test = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
-    $sql = "SELECT COUNT(*) AS count,SUM(price) as sum FROM service_other WHERE  (time BETWEEN :requestedDate AND :requestedDateend) AND type = 'extend_user' AND status != 'unpaid'";
-    $stmt = $pdo->prepare($sql);
-    $stmt->bindParam(':requestedDate', $start_time);
-    $stmt->bindParam(':requestedDateend', $end_time);
-    $stmt->execute();
-    $extend_stat = $stmt->fetch(PDO::FETCH_ASSOC);
-    $count_extend = $extend_stat['count'];
-    $sum_extend = number_format($extend_stat['sum'], 0);
+
     $sql = "SELECT COUNT(*) AS count,SUM(price) as sum FROM service_other WHERE  (time BETWEEN :requestedDate AND :requestedDateend) AND type = 'extra_user'";
     $stmt = $pdo->prepare($sql);
     $stmt->bindParam(':requestedDate', $start_time);
@@ -632,7 +586,7 @@ if (in_array($text, $textadmin) || $datain == "admin") {
     $stmt->bindParam(':requestedDateend', $end_time_timestamp);
     $stmt->execute();
     $countuser_new = $stmt->rowCount();
-    $statisticsall = sprintf($textbotlang['Admin']['adminphp']['msg_select_account_user_amount'], $start_time, $end_time, $count_order, $sum_order, $count_extend, $sum_extend, $count_extra_volume, $sum_extra_volume, $count_extra_time, $sum_extrat_time, $count_change_location, $sum_change_location, $count_test, $countuser_new);
+    $statisticsall = sprintf($textbotlang['Admin']['adminphp']['msg_select_account_user_amount'], $start_time, $end_time, $count_order, $sum_order, $count_extra_volume, $sum_extra_volume, $count_extra_time, $sum_extrat_time, $count_change_location, $sum_change_location, $count_test, $countuser_new);
     step('home', $from_id);
     sendmessage($from_id, $statisticsall, $keyboardadmin, 'HTML');
 } elseif ($datain == "settingaffiliatesf") {
@@ -642,10 +596,10 @@ if (in_array($text, $textadmin) || $datain == "admin") {
 } elseif (preg_match('/typepanel#(.*)/', $datain, $dataget)) {
     $typepanel = $dataget[1];
     sendmessage($from_id, $textbotlang['Admin']['managepanel']['addPanelName'], $backadmin, 'HTML');
-    step("add_name_panel", $from_id);
+    step("add_name", $from_id);
     deletemessage($from_id, $message_id);
     savedata("clear", "type", $typepanel);
-} elseif ($user['step'] == "add_name_panel") {
+} elseif ($user['step'] == "add_name") {
     if (in_array($text, $marzban_list)) {
         sendmessage($from_id, $textbotlang['Admin']['managepanel']['repeatPanel'], $backadmin, 'HTML');
         return;
@@ -682,8 +636,8 @@ if (in_array($text, $textadmin) || $datain == "admin") {
         return;
     }
     sendmessage($from_id, $textbotlang['Admin']['managepanel']['usernameSet'], $backadmin, 'HTML');
-    step('add_username_panel', $from_id);
-} elseif ($user['step'] == "add_username_panel") {
+    step('add_username', $from_id);
+} elseif ($user['step'] == "add_username") {
     sendmessage($from_id, $textbotlang['Admin']['managepanel']['getPassword'], $backadmin, 'HTML');
     step('add_password_panel', $from_id);
     savedata("save", "username", $text);
@@ -747,9 +701,9 @@ if (in_array($text, $textadmin) || $datain == "admin") {
     ));
     $version_panel = $userdata['type'] == "pasarguard" ? "1" : "0";
     $userdata['type'] = $userdata['type'] == "pasarguard" ? "marzban" : $userdata['type'];
-    $stmt = $pdo->prepare("INSERT INTO marzban_panel (code_panel,name_panel,sublink,config,MethodUsername,TestAccount,status,limit_panel,namecustom,Methodextend,type,conecton,inboundid,agent,inbound_deactive,inboundstatus,url_panel,username_panel,password_panel,time_usertest,val_usertest,linksubx,priceextravolume,priceextratime,pricecustomvolume,pricecustomtime,mainvolume,maxvolume,maintime,maxtime,status_extend,subvip,changeloc,customvolume,on_hold_test,version_panel) VALUES (:code_panel,:name_panel,:sublink,:config,:MethodUsername,:TestAccount,:status,:limit_panel,:namecustom,:Methodextend,:type,:conecton,:inboundid,:agent,:inbound_deactive,'offinbounddisable',:url_panel,:username_panel,:password_panel,:val_usertest,:time_usertest,:linksubx,:priceextravolume,:priceextratime,:pricecustomvolume,:pricecustomtime,:mainvolume,:maxvolume,:maintime,:maxtime,'on_extend','offsubvip',:changeloc,:customvolume,'1',:version_panel)");
-    $stmt->bindParam(':code_panel', $randomString);
-    $stmt->bindParam(':name_panel', $userdata['namepanel'], PDO::PARAM_STR);
+    $stmt = $pdo->prepare("INSERT INTO locations (code,name,sublink,config,MethodUsername,TestAccount,status,limit_panel,namecustom,Methodextend,type,conecton,inboundid,agent,inbound_deactive,inboundstatus,url_panel,username,password_panel,time_usertest,val_usertest,linksubx,priceextravolume,priceextratime,pricecustomvolume,pricecustomtime,mainvolume,maxvolume,maintime,maxtime,status_extend,subvip,changeloc,customvolume,on_hold_test,version_panel) VALUES (:code,:name,:sublink,:config,:MethodUsername,:TestAccount,:status,:limit_panel,:namecustom,:Methodextend,:type,:conecton,:inboundid,:agent,:inbound_deactive,'offinbounddisable',:url_panel,:username,:password_panel,:val_usertest,:time_usertest,:linksubx,:priceextravolume,:priceextratime,:pricecustomvolume,:pricecustomtime,:mainvolume,:maxvolume,:maintime,:maxtime,'on_extend','offsubvip',:changeloc,:customvolume,'1',:version_panel)");
+    $stmt->bindParam(':code', $randomString);
+    $stmt->bindParam(':name', $userdata['namepanel'], PDO::PARAM_STR);
     $stmt->bindParam(':sublink', $sublink);
     $stmt->bindParam(':config', $configstatus);
     $stmt->bindParam(':MethodUsername', $MethodUsername);
@@ -765,7 +719,7 @@ if (in_array($text, $textadmin) || $datain == "admin") {
     $stmt->bindParam(':inbound_deactive', $inboundid);
     $stmt->bindParam(':url_panel', $userdata['url_panel']);
     $stmt->bindParam(':linksubx', $userdata['url_panel']);
-    $stmt->bindParam(':username_panel', $userdata['username']);
+    $stmt->bindParam(':username', $userdata['username']);
     $stmt->bindParam(':password_panel', $userdata['password']);
     $stmt->bindParam(':val_usertest', $valume);
     $stmt->bindParam(':time_usertest', $time);
@@ -905,14 +859,14 @@ elseif ($datain == "systemsms") {
     }
     savedata("save", "agent", $type);
     if ($userdata['typeusermessage'] == "customer") {
-        $stmt = $pdo->prepare("SELECT * FROM marzban_panel WHERE agent = :agent OR agent = 'all'");
+        $stmt = $pdo->prepare("SELECT * FROM locations WHERE agent = :agent OR agent = 'all'");
         $stmt->bindParam(':agent', $type);
         $stmt->execute();
         $list_panel = ['inline_keyboard' => []];
         $list_panel['inline_keyboard'][] = [['text' => $textbotlang['keyboard']['allPanelsList'], 'callback_data' => 'locationmessage_all']];
         while ($result = $stmt->fetch(PDO::FETCH_ASSOC)) {
             $list_panel['inline_keyboard'][] = [
-                ['text' => $result['name_panel'], 'callback_data' => "locationmessage_{$result['code_panel']}"]
+                ['text' => $result['name'], 'callback_data' => "locationmessage_{$result['code']}"]
             ];
         }
         $list_panel['inline_keyboard'][] = [['text' => $textbotlang['keyboard']['backToPrev'], 'callback_data' => 'typeusermessage-' . $userdata['typeusermessage']],];
@@ -1127,10 +1081,10 @@ elseif ($datain == "systemsms") {
                 if ($userdata['selectpanel'] == "all") {
                     $stmt = $pdo->prepare("SELECT u.id FROM user u WHERE EXISTS ( SELECT 1 FROM invoice i WHERE i.id_user = u.id) AND u.User_Status = 'Active'");
                 } else {
-                    $panel = select("marzban_panel", "*", "code_panel", $userdata['selectpanel'], "select");
+                    $panel = select("locations", "*", "code", $userdata['selectpanel'], "select");
                     $stmt = $pdo->prepare("SELECT u.id FROM user u WHERE EXISTS ( SELECT 1 FROM invoice i WHERE i.id_user = u.id AND i.Service_location = :mp1) AND u.User_Status = 'Active'");
                 }
-                $stmt->execute([':mp1' => $panel['name_panel']]);
+                $stmt->execute([':mp1' => $panel['name']]);
                 $userslist = json_encode($stmt->fetchAll());
             } elseif ($typeusermessage == "nonecustomer") {
                 $stmt = $pdo->prepare("SELECT u.id FROM user u WHERE NOT EXISTS ( SELECT 1 FROM invoice i WHERE i.id_user = u.id) AND u.User_Status = 'Active'");
@@ -1144,11 +1098,11 @@ elseif ($datain == "systemsms") {
                 if ($userdata['selectpanel'] == "all") {
                     $stmt = $pdo->prepare("SELECT u.id FROM user u WHERE u.agent =  :agent AND EXISTS ( SELECT 1 FROM invoice i WHERE i.id_user = u.id) AND u.User_Status = 'Active'");
                 } else {
-                    $panel = select("marzban_panel", "*", "code_panel", $userdata['selectpanel'], "select");
+                    $panel = select("locations", "*", "code", $userdata['selectpanel'], "select");
                     $stmt = $pdo->prepare("SELECT u.id FROM user u WHERE  u.agent =  :agent AND EXISTS ( SELECT 1 FROM invoice i WHERE i.id_user = u.id AND i.Service_location = :location) AND u.User_Status = 'Active'");
                 }
                 $stmt->bindParam(':agent', $agent, PDO::PARAM_STR);
-                $stmt->bindParam(':location', $panel['name_panel'], PDO::PARAM_STR);
+                $stmt->bindParam(':location', $panel['name'], PDO::PARAM_STR);
                 $stmt->execute();
                 $userslist = json_encode($stmt->fetchAll());
             } elseif ($typeusermessage == "nonecustomer") {
@@ -1177,10 +1131,10 @@ elseif ($datain == "systemsms") {
                 if ($userdata['selectpanel'] == "all") {
                     $stmt = $pdo->prepare("SELECT u.id FROM user u WHERE EXISTS ( SELECT 1 FROM invoice i WHERE i.id_user = u.id) AND u.User_Status = 'Active'");
                 } else {
-                    $panel = select("marzban_panel", "*", "code_panel", $userdata['selectpanel'], "select");
+                    $panel = select("locations", "*", "code", $userdata['selectpanel'], "select");
                     $stmt = $pdo->prepare("SELECT u.id FROM user u WHERE EXISTS ( SELECT 1 FROM invoice i WHERE i.id_user = u.id AND i.Service_location = :mp3) AND u.User_Status = 'Active'");
                 }
-                $stmt->execute([':mp3' => $panel['name_panel']]);
+                $stmt->execute([':mp3' => $panel['name']]);
                 $userslist = json_encode($stmt->fetchAll());
             } elseif ($typeusermessage == "nonecustomer") {
                 $stmt = $pdo->prepare("SELECT u.id FROM user u WHERE NOT EXISTS ( SELECT 1 FROM invoice i WHERE i.id_user = u.id) AND u.User_Status = 'Active'");
@@ -1194,11 +1148,11 @@ elseif ($datain == "systemsms") {
                 if ($userdata['selectpanel'] == "all") {
                     $stmt = $pdo->prepare("SELECT u.id FROM user u WHERE u.agent =  :agent AND EXISTS ( SELECT 1 FROM invoice i WHERE i.id_user = u.id) AND u.User_Status = 'Active'");
                 } else {
-                    $panel = select("marzban_panel", "*", "code_panel", $userdata['selectpanel'], "select");
+                    $panel = select("locations", "*", "code", $userdata['selectpanel'], "select");
                     $stmt = $pdo->prepare("SELECT u.id FROM user u WHERE u.agent =  :agent AND EXISTS ( SELECT 1 FROM invoice i WHERE i.id_user = u.id AND i.Service_location = :location) AND u.User_Status = 'Active'");
                 }
                 $stmt->bindParam(':agent', $agent, PDO::PARAM_STR);
-                $stmt->bindParam(':location', $panel['name_panel'], PDO::PARAM_STR);
+                $stmt->bindParam(':location', $panel['name'], PDO::PARAM_STR);
                 $stmt->execute();
                 $userslist = json_encode($stmt->fetchAll());
             } elseif ($typeusermessage == "nonecustomer") {
@@ -1236,9 +1190,9 @@ elseif ($datain == "systemsms") {
                     if ($userdata['selectpanel'] == "all") {
                         $stmt = $pdo->prepare("SELECT u.id FROM user u WHERE u.last_message_time < :time AND EXISTS ( SELECT 1 FROM invoice i WHERE i.id_user = u.id);");
                     } else {
-                        $panel = select("marzban_panel", "*", "code_panel", $userdata['selectpanel'], "select");
+                        $panel = select("locations", "*", "code", $userdata['selectpanel'], "select");
                         $stmt = $pdo->prepare("SELECT u.id FROM user u WHERE u.last_message_time < :time AND EXISTS ( SELECT 1 FROM invoice i WHERE i.id_user = u.id AND i.Service_location = :location);");
-                        $stmt->bindParam(':location', $panel['name_panel'], PDO::PARAM_STR);
+                        $stmt->bindParam(':location', $panel['name'], PDO::PARAM_STR);
                     }
                     $stmt->bindParam(':time', $timenouser, PDO::PARAM_STR);
                     $stmt->execute();
@@ -1253,9 +1207,9 @@ elseif ($datain == "systemsms") {
                 if ($userdata['selectpanel'] == "all") {
                     $stmt = $pdo->prepare("SELECT u.id FROM user u WHERE u.agent =  :agent AND u.last_message_time < :time AND EXISTS ( SELECT 1 FROM invoice i WHERE i.id_user = u.id);");
                 } else {
-                    $panel = select("marzban_panel", "*", "code_panel", $userdata['selectpanel'], "select");
+                    $panel = select("locations", "*", "code", $userdata['selectpanel'], "select");
                     $stmt = $pdo->prepare("SELECT u.id FROM user u WHERE u.agent =  :agent AND u.last_message_time < :time AND EXISTS ( SELECT 1 FROM invoice i WHERE i.id_user = u.id AND i.Service_location = :location);");
-                    $stmt->bindParam(':location', $panel['name_panel'], PDO::PARAM_STR);
+                    $stmt->bindParam(':location', $panel['name'], PDO::PARAM_STR);
                 }
                 $stmt->bindParam(':agent', $agent, PDO::PARAM_STR);
                 $stmt->bindParam(':time', $timenouser, PDO::PARAM_STR);
@@ -2514,7 +2468,7 @@ elseif ($datain == "systemsms") {
 } elseif ($text == $textbotlang['keyboard']['shopSettings'] && $adminrulecheck['rule'] == "administrator") {
     sendmessage($from_id, $textbotlang['users']['selectoption'], $shopkeyboard, 'HTML');
 } elseif ($text == $textbotlang['keyboard']['addProduct'] && $adminrulecheck['rule'] == "administrator") {
-    $locationproduct = select("marzban_panel", "*", null, null, "count");
+    $locationproduct = select("locations", "*", null, null, "count");
     if ($locationproduct == 0) {
         sendmessage($from_id, $textbotlang['Admin']['managepanel']['nullPanelAdmin'], null, 'HTML');
         return;
@@ -2540,7 +2494,7 @@ elseif ($datain == "systemsms") {
         return;
     }
     savedata("save", "agent", $text);
-    sendmessage($from_id, $textbotlang['Admin']['Product']['serviceLocation'], $json_list_marzban_panel, 'HTML');
+    sendmessage($from_id, $textbotlang['Admin']['Product']['serviceLocation'], $json_list_locations, 'HTML');
     step('get_location', $from_id);
 } elseif ($user['step'] == "get_location") {
     $marzban_list[] = '/all';
@@ -2554,7 +2508,7 @@ elseif ($datain == "systemsms") {
         step("getcategory", $from_id);
         return;
     }
-    $panel = select("marzban_panel", "*", "name_panel", $text, "select");
+    $panel = select("locations", "*", "name", $text, "select");
     if ($panel['type'] == "Manualsale") {
         savedata("save", "Service_time", "0");
         savedata("save", "Volume_constraint", "0");
@@ -2572,7 +2526,7 @@ elseif ($datain == "systemsms") {
     }
     savedata("save", "category", $text);
     $userdata = json_decode($user['Processing_value'], true);
-    $panel = select("marzban_panel", "*", "name_panel", $userdata['Location'], "select");
+    $panel = select("locations", "*", "name", $userdata['Location'], "select");
     if ($panel['type'] == "Manualsale") {
         savedata("save", "Service_time", "0");
         savedata("save", "Volume_constraint", "0");
@@ -2605,7 +2559,7 @@ elseif ($datain == "systemsms") {
     }
     savedata("save", "price_product", $text);
     $userdata = json_decode($user['Processing_value'], true);
-    $panel = select("marzban_panel", "*", "name_panel", $userdata['Location'], "select");
+    $panel = select("locations", "*", "name", $userdata['Location'], "select");
     if ($panel['type'] == "marzban" || $panel['type'] == "marzneshin") {
         sendmessage($from_id, $textbotlang['Admin']['Product']['getTimeReset'], $keyboardtimereset, 'HTML');
         step('getnote', $from_id);
@@ -2775,7 +2729,7 @@ elseif ($datain == "systemsms") {
         ]);
     }
 } elseif ($text == $textbotlang['keyboard']['deleteProduct'] && $adminrulecheck['rule'] == "administrator") {
-    sendmessage($from_id, $textbotlang['Admin']['Product']['removeLocation'], $json_list_marzban_panel, 'HTML');
+    sendmessage($from_id, $textbotlang['Admin']['Product']['removeLocation'], $json_list_locations, 'HTML');
     step('selectloc', $from_id);
 } elseif ($user['step'] == "selectloc") {
     update("user", "Processing_value", $text, "id", $from_id);
@@ -2793,7 +2747,7 @@ elseif ($datain == "systemsms") {
     sendmessage($from_id, $textbotlang['Admin']['Product']['removedProduct'], $shopkeyboard, 'HTML');
     step('home', $from_id);
 } elseif ($text == $textbotlang['keyboard']['editProduct'] && $adminrulecheck['rule'] == "administrator") {
-    sendmessage($from_id, $textbotlang['Admin']['Product']['removeLocation'], $list_marzban_panel_edit_product, 'HTML');
+    sendmessage($from_id, $textbotlang['Admin']['Product']['removeLocation'], $list_locations_edit_product, 'HTML');
 } elseif (preg_match('/locationedit_(\w+)/', $datain, $dataget)) {
     $location = $dataget[1];
     $location = $location == "all" ? "/all" : $location;
@@ -2817,9 +2771,9 @@ elseif ($datain == "systemsms") {
     $typeagent = $dataget[1];
     update("user", "Processing_value_tow", $typeagent, "id", $from_id);
     $product = [];
-    $panel = select("marzban_panel", "*", "code_panel", $user['Processing_value_one'], "select");
+    $panel = select("locations", "*", "code", $user['Processing_value_one'], "select");
     $getdataproduct = $pdo->prepare("SELECT * FROM product WHERE (Location = ? or Location = '/all') AND agent = ?");
-    $getdataproduct->bindValue(1, $panel['name_panel'], PDO::PARAM_STR);
+    $getdataproduct->bindValue(1, $panel['name'], PDO::PARAM_STR);
     $getdataproduct->bindValue(2, $typeagent, PDO::PARAM_STR);
     $getdataproduct->execute();
     $list_product = [
@@ -2842,11 +2796,11 @@ elseif ($datain == "systemsms") {
     $id_product = $dataget[1];
     deletemessage($from_id, $message_id);
     update("user", "Processing_value", $id_product, "id", $from_id);
-    $panel = select("marzban_panel", "*", "code_panel", $user['Processing_value_one'], "select");
+    $panel = select("locations", "*", "code", $user['Processing_value_one'], "select");
     $__q36 = $pdo->prepare("SELECT * FROM product WHERE id = ?  AND agent = ? AND (Location = ? OR Location = '/all') LIMIT 1");
     $__q36->bindValue(1, $id_product, PDO::PARAM_STR);
     $__q36->bindValue(2, $user['Processing_value_tow'], PDO::PARAM_STR);
-    $__q36->bindValue(3, $panel['name_panel'], PDO::PARAM_STR);
+    $__q36->bindValue(3, $panel['name'], PDO::PARAM_STR);
     $__q36->execute();
     $info_product = $__q36->fetch(PDO::FETCH_ASSOC);
     $count_invoice = select("invoice", "*", "name_product", $info_product['name_product'], "count");
@@ -2861,11 +2815,11 @@ elseif ($datain == "systemsms") {
         sendmessage($from_id, $textbotlang['Admin']['Product']['invalidPrice'], $backadmin, 'HTML');
         return;
     }
-    $panel = select("marzban_panel", "*", "code_panel", $user['Processing_value_one'], "select");
+    $panel = select("locations", "*", "code", $user['Processing_value_one'], "select");
     $stmt = $pdo->prepare("UPDATE product SET price_product = :price_product WHERE id = :name_product AND (Location = :Location OR Location = '/all') AND agent = :agent");
     $stmt->bindParam(':price_product', $text);
     $stmt->bindParam(':name_product', $user['Processing_value']);
-    $stmt->bindParam(':Location', $panel['name_panel']);
+    $stmt->bindParam(':Location', $panel['name']);
     $stmt->bindParam(':agent', $user['Processing_value_tow']);
     $stmt->execute();
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_price_day'], $shopkeyboard, 'HTML');
@@ -2874,11 +2828,11 @@ elseif ($datain == "systemsms") {
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_send_2'], $backadmin, 'HTML');
     step('change_note', $from_id);
 } elseif ($user['step'] == "change_note") {
-    $panel = select("marzban_panel", "*", "code_panel", $user['Processing_value_one'], "select");
+    $panel = select("locations", "*", "code", $user['Processing_value_one'], "select");
     $stmt = $pdo->prepare("UPDATE product SET note = :notes WHERE id = :name_product AND (Location = :Location OR Location = '/all') AND agent = :agent");
     $stmt->bindParam(':notes', $text);
     $stmt->bindParam(':name_product', $user['Processing_value']);
-    $stmt->bindParam(':Location', $panel['name_panel']);
+    $stmt->bindParam(':Location', $panel['name']);
     $stmt->bindParam(':agent', $user['Processing_value_tow']);
     $stmt->execute();
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_day_1'], $shopkeyboard, 'HTML');
@@ -2892,11 +2846,11 @@ elseif ($datain == "systemsms") {
         sendmessage($from_id, $textbotlang['Admin']['adminphp']['err_notfound_select_add_2'], KeyboardCategoryadmin(), 'HTML');
         return;
     }
-    $panel = select("marzban_panel", "*", "code_panel", $user['Processing_value_one'], "select");
+    $panel = select("locations", "*", "code", $user['Processing_value_one'], "select");
     $stmt = $pdo->prepare("UPDATE product SET category = :categroy WHERE id = :name_product AND (Location = :Location OR Location = '/all') AND agent = :agent");
     $stmt->bindParam(':categroy', $text);
     $stmt->bindParam(':name_product', $user['Processing_value']);
-    $stmt->bindParam(':Location', $panel['name_panel']);
+    $stmt->bindParam(':Location', $panel['name']);
     $stmt->bindParam(':agent', $user['Processing_value_tow']);
     $stmt->execute();
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_day_2'], $shopkeyboard, 'HTML');
@@ -2913,11 +2867,11 @@ elseif ($datain == "systemsms") {
         sendmessage($from_id, sprintf($textbotlang['Admin']['adminphp']['err_name_2'], $text), $backadmin, 'HTML');
         return;
     }
-    $panel = select("marzban_panel", "*", "code_panel", $user['Processing_value_one'], "select");
+    $panel = select("locations", "*", "code", $user['Processing_value_one'], "select");
     $stmt = $pdo->prepare("UPDATE product SET name_product = :name_products WHERE id = :name_product AND (Location = :Location OR Location = '/all') AND agent = :agent");
     $stmt->bindParam(':name_products', $text);
     $stmt->bindParam(':name_product', $user['Processing_value']);
-    $stmt->bindParam(':Location', $panel['name_panel']);
+    $stmt->bindParam(':Location', $panel['name']);
     $stmt->bindParam(':agent', $user['Processing_value_tow']);
     $stmt->execute();
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_day_name'], $change_product, 'HTML');
@@ -2930,11 +2884,11 @@ elseif ($datain == "systemsms") {
         sendmessage($from_id, $textbotlang['Admin']['adminphp']['err_invalid_user_group_1'], null, 'HTML');
         return;
     }
-    $panel = select("marzban_panel", "*", "code_panel", $user['Processing_value_one'], "select");
+    $panel = select("locations", "*", "code", $user['Processing_value_one'], "select");
     $stmt = $pdo->prepare("UPDATE product SET agent = :agents WHERE id = :name_product AND (Location = :Location OR Location = '/all') AND agent = :agent");
     $stmt->bindParam(':agents', $text);
     $stmt->bindParam(':name_product', $user['Processing_value']);
-    $stmt->bindParam(':Location', $panel['name_panel']);
+    $stmt->bindParam(':Location', $panel['name']);
     $stmt->bindParam(':agent', $user['Processing_value_tow']);
     $stmt->execute();
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_day_name'], $shopkeyboard, 'HTML');
@@ -2943,17 +2897,17 @@ elseif ($datain == "systemsms") {
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_send_volume_1'], $keyboardtimereset, 'HTML');
     step('change_reset_data', $from_id);
 } elseif ($user['step'] == "change_reset_data") {
-    $panel = select("marzban_panel", "*", "code_panel", $user['Processing_value_one'], "select");
+    $panel = select("locations", "*", "code", $user['Processing_value_one'], "select");
     $stmt = $pdo->prepare("UPDATE product SET data_limit_reset = :data_limit_reset WHERE id = :name_product AND (Location = :Location OR Location = '/all') AND agent = :agent");
     $stmt->bindParam(':data_limit_reset', $text);
     $stmt->bindParam(':name_product', $user['Processing_value']);
-    $stmt->bindParam(':Location', $panel['name_panel']);
+    $stmt->bindParam(':Location', $panel['name']);
     $stmt->bindParam(':agent', $user['Processing_value_tow']);
     $stmt->execute();
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_day_name'], $shopkeyboard, 'HTML');
     step('home', $from_id);
 } elseif ($text == $textbotlang['keyboard']['productLocation'] && $adminrulecheck['rule'] == "administrator") {
-    sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_select_1'], $json_list_marzban_panel, 'HTML');
+    sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_select_1'], $json_list_locations, 'HTML');
     step('change_loc_data', $from_id);
 } elseif ($user['step'] == "change_loc_data") {
     if ($text == "/all") {
@@ -2961,17 +2915,17 @@ elseif ($datain == "systemsms") {
         return;
     }
     $product = select("product", "*", "name_product", $user['Processing_value']);
-    $panel = select("marzban_panel", "*", "code_panel", $user['Processing_value_one'], "select");
+    $panel = select("locations", "*", "code", $user['Processing_value_one'], "select");
     $stmt = $pdo->prepare("UPDATE product SET Location = :Location2 WHERE id = :name_product AND (Location = :Location OR Location = '/all') AND agent = :agent");
     $stmt->bindParam(':Location2', $text);
     $stmt->bindParam(':name_product', $user['Processing_value']);
-    $stmt->bindParam(':Location', $panel['name_panel']);
+    $stmt->bindParam(':Location', $panel['name']);
     $stmt->bindParam(':agent', $user['Processing_value_tow']);
     $stmt->execute();
     $stmt = $pdo->prepare("UPDATE invoice SET Service_location = :Service_location WHERE name_product = :name_product AND Service_location = :Location ");
     $stmt->bindParam(':Service_location', $text);
     $stmt->bindParam(':name_product', $product['name_product']);
-    $stmt->bindParam(':Location', $panel['name_panel']);
+    $stmt->bindParam(':Location', $panel['name']);
     $stmt->execute();
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_day_3'], $shopkeyboard, 'HTML');
     step('home', $from_id);
@@ -2984,11 +2938,11 @@ elseif ($datain == "systemsms") {
         return;
     }
     $product = select("product", "*", "id", $user['Processing_value']);
-    $panel = select("marzban_panel", "*", "code_panel", $user['Processing_value_one']);
+    $panel = select("locations", "*", "code", $user['Processing_value_one']);
     $stmt = $pdo->prepare("UPDATE product SET Volume_constraint = :Volume_constraint WHERE id = :name_product AND (Location = :Location OR Location = '/all') AND agent = :agent");
     $stmt->bindParam(':Volume_constraint', $text);
     $stmt->bindParam(':name_product', $product['id']);
-    $stmt->bindParam(':Location', $panel['name_panel']);
+    $stmt->bindParam(':Location', $panel['name']);
     $stmt->bindParam(':agent', $user['Processing_value_tow']);
     $stmt->execute();
     sendmessage($from_id, $textbotlang['Admin']['Product']['volumeUpdated'], $shopkeyboard, 'HTML');
@@ -3001,11 +2955,11 @@ elseif ($datain == "systemsms") {
         sendmessage($from_id, $textbotlang['Admin']['Product']['invalidTime'], $backadmin, 'HTML');
         return;
     }
-    $panel = select("marzban_panel", "*", "code_panel", $user['Processing_value_one'], "select");
+    $panel = select("locations", "*", "code", $user['Processing_value_one'], "select");
     $stmt = $pdo->prepare("UPDATE product SET Service_time = :Service_time WHERE id = :id_product AND (Location = :Location OR Location = '/all') AND agent = :agent");
     $stmt->bindParam(':Service_time', $text);
     $stmt->bindParam(':id_product', $user['Processing_value']);
-    $stmt->bindParam(':Location', $panel['name_panel']);
+    $stmt->bindParam(':Location', $panel['name']);
     $stmt->bindParam(':agent', $user['Processing_value_tow']);
     $stmt->execute();
     sendmessage($from_id, $textbotlang['Admin']['Product']['timeUpdated'], $shopkeyboard, 'HTML');
@@ -3377,8 +3331,8 @@ elseif ($datain == "systemsms") {
     sendmessage($from_id, $text_username, $MethodUsername, 'HTML');
     step('updatemethodusername', $from_id);
 } elseif ($user['step'] == "updatemethodusername") {
-    update("marzban_panel", "MethodUsername", $text, "name_panel", $user['Processing_value']);
-    $typepanel = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
+    update("locations", "MethodUsername", $text, "name", $user['Processing_value']);
+    $typepanel = select("locations", "*", "name", $user['Processing_value'], "select");
     if ($text == $textbotlang['keyboard']['customTextRandom'] || $text == $textbotlang['keyboard']['customTextSequential'] || $text == $textbotlang['keyboard']['agentCustomTextSequential']) {
         step('getnamecustom', $from_id);
         sendmessage($from_id, $textbotlang['Admin']['managepanel']['customNameSend'], $backadmin, 'HTML');
@@ -3396,9 +3350,9 @@ elseif ($datain == "systemsms") {
         sendmessage($from_id, $textbotlang['Admin']['managepanel']['invalidName'], $backadmin, 'html');
         return;
     }
-    update("marzban_panel", "namecustom", $text, "name_panel", $user['Processing_value']);
+    update("locations", "namecustom", $text, "name", $user['Processing_value']);
     step('home', $from_id);
-    $typepanel = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
+    $typepanel = select("locations", "*", "name", $user['Processing_value'], "select");
     outtypepanel($typepanel['type'], $textbotlang['Admin']['managepanel']['savedName']);
 } elseif (($datain == "cartsetting" && $adminrulecheck['rule'] == "administrator") || $text == $textbotlang['keyboard']['backToCardSettings']) {
     sendmessage($from_id, $textbotlang['users']['selectoption'], $CartManage, 'HTML');
@@ -3503,12 +3457,12 @@ elseif ($datain == "systemsms") {
     update("PaySetting", "ValuePay", $text, "NamePay", "merchant_zarinpal");
     step('home', $from_id);
 } elseif ($text == $textbotlang['Admin']['btnKeyboard']['managementPanel'] && $adminrulecheck['rule'] == "administrator") {
-    sendmessage($from_id, $textbotlang['Admin']['managepanel']['getLoc'], $json_list_marzban_panel, 'HTML');
+    sendmessage($from_id, $textbotlang['Admin']['managepanel']['getLoc'], $json_list_locations, 'HTML');
     step('GetLocationEdit', $from_id);
 } elseif ($user['step'] == "GetLocationEdit") {
-    $marzban_list_get = select("marzban_panel", "*", "name_panel", $text, "select");
+    $marzban_list_get = select("locations", "*", "name", $text, "select");
     if ($marzban_list_get['type'] == "marzban") {
-        $Check_token = token_panel($marzban_list_get['code_panel'], false);
+        $Check_token = token_panel($marzban_list_get['code'], false);
         if (isset($Check_token['access_token'])) {
             $System_Stats = Get_System_Stats($text);
             if ($marzban_list_get['version_panel'] == "1") {
@@ -3527,12 +3481,12 @@ elseif ($datain == "systemsms") {
             $mem_used = formatBytes($System_Stats['mem_used']);
             $bandwidth = formatBytes($System_Stats['outgoing_bandwidth'] + $System_Stats['incoming_bandwidth']);
             $__q41 = $pdo->prepare("SELECT COUNT(*) FROM invoice WHERE (status = 'active' OR status = 'end_of_time'  OR status = 'end_of_volume' OR status = 'sendedwarn' OR Status = 'send_on_hold') AND Service_location = ? AND name_product != ?");
-            $__q41->bindValue(1, $marzban_list_get['name_panel'], PDO::PARAM_STR);
+            $__q41->bindValue(1, $marzban_list_get['name'], PDO::PARAM_STR);
             $__q41->bindValue(2, $textbotlang['Admin']['adminphp']['db_test_service_name'], PDO::PARAM_STR);
             $__q41->execute();
             $ListSell = number_format($__q41->fetch(PDO::FETCH_ASSOC)['COUNT(*)'] ?? 0);
             $__q42 = $pdo->prepare("SELECT SUM(price_product) FROM invoice WHERE (status = 'active' OR status = 'end_of_time'  OR status = 'end_of_volume' OR status = 'sendedwarn' OR Status = 'send_on_hold') AND Service_location = ? AND name_product != ?");
-            $__q42->bindValue(1, $marzban_list_get['name_panel'], PDO::PARAM_STR);
+            $__q42->bindValue(1, $marzban_list_get['name'], PDO::PARAM_STR);
             $__q42->bindValue(2, $textbotlang['Admin']['adminphp']['db_test_service_name'], PDO::PARAM_STR);
             $__q42->execute();
             $ListSellSUM = number_format($__q42->fetch(PDO::FETCH_ASSOC)['SUM(price_product)'] ?? 0);
@@ -3600,7 +3554,7 @@ elseif ($datain == "systemsms") {
     } elseif ($marzban_list_get['type'] == "candy_agent") {
         sendmessage($from_id, $textbotlang['users']['selectoption'], $option_candy, 'HTML');
     } elseif ($marzban_list_get['type'] == "alireza_single") {
-        $x_ui_check_connect = login($marzban_list_get['code_panel'], false);
+        $x_ui_check_connect = login($marzban_list_get['code'], false);
         if ($x_ui_check_connect['success']) {
             sendmessage($from_id, $textbotlang['Admin']['managepanel']['connectXUi'], $optionalireza_single, 'HTML');
         } elseif ($x_ui_check_connect['msg'] == "The username or password is incorrect") {
@@ -3611,7 +3565,7 @@ elseif ($datain == "systemsms") {
             sendmessage($from_id, $text_marzban, $optionalireza_single, 'HTML');
         }
     } elseif ($marzban_list_get['type'] == "hiddify") {
-        $System_Stats = serverstatus($marzban_list_get['name_panel']);
+        $System_Stats = serverstatus($marzban_list_get['name']);
         if (!empty($System_Stats['status']) && $System_Stats['status'] != 200) {
             $text_marzban = $textbotlang['Admin']['adminphp']['err_error_1'] . $System_Stats['status'];
             sendmessage($from_id, $text_marzban, $optionhiddfy, 'HTML');
@@ -3636,7 +3590,7 @@ elseif ($datain == "systemsms") {
     } elseif ($marzban_list_get['type'] == "Manualsale") {
         sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_select_3'], $optionManualsale, 'HTML');
     } elseif ($marzban_list_get['type'] == "marzneshin") {
-        $Check_token = token_panelm($marzban_list_get['code_panel']);
+        $Check_token = token_panelm($marzban_list_get['code']);
         if (isset($Check_token['access_token'])) {
             $System_Stats = Get_System_Statsm($text);
             if (!empty($System_Stats['status']) && $System_Stats['status'] != 200) {
@@ -3652,12 +3606,12 @@ elseif ($datain == "systemsms") {
             $active_users = $System_Stats['active'];
             $total_user = $System_Stats['total'];
             $__q43 = $pdo->prepare("SELECT COUNT(*) FROM invoice WHERE (status = 'active' OR status = 'end_of_time'  OR status = 'end_of_volume' OR status = 'sendedwarn' OR Status = 'send_on_hold') AND Service_location = ? AND name_product != ?");
-            $__q43->bindValue(1, $marzban_list_get['name_panel'], PDO::PARAM_STR);
+            $__q43->bindValue(1, $marzban_list_get['name'], PDO::PARAM_STR);
             $__q43->bindValue(2, $textbotlang['Admin']['adminphp']['db_test_service_name'], PDO::PARAM_STR);
             $__q43->execute();
             $ListSell = number_format($__q43->fetch(PDO::FETCH_ASSOC)['COUNT(*)'] ?? 0);
             $__q44 = $pdo->prepare("SELECT SUM(price_product) FROM invoice WHERE (status = 'active' OR status = 'end_of_time'  OR status = 'end_of_volume' OR status = 'sendedwarn' OR Status = 'send_on_hold') AND Service_location = ? AND name_product != ?");
-            $__q44->bindValue(1, $marzban_list_get['name_panel'], PDO::PARAM_STR);
+            $__q44->bindValue(1, $marzban_list_get['name'], PDO::PARAM_STR);
             $__q44->bindValue(2, $textbotlang['Admin']['adminphp']['db_test_service_name'], PDO::PARAM_STR);
             $__q44->execute();
             $ListSellSUM = number_format($__q44->fetch(PDO::FETCH_ASSOC)['SUM(price_product)'] ?? 0);
@@ -3676,14 +3630,14 @@ elseif ($datain == "systemsms") {
     } elseif ($marzban_list_get['type'] == "s_ui") {
         sendmessage($from_id, $textbotlang['users']['selectoption'], $options_ui, 'HTML');
     } elseif ($marzban_list_get['type'] == "ibsng") {
-        $result = loginIBsng($marzban_list_get['url_panel'], $marzban_list_get['username_panel'], $marzban_list_get['password_panel']);
+        $result = loginIBsng($marzban_list_get['url_panel'], $marzban_list_get['username'], $marzban_list_get['password_panel']);
         if ($result) {
             sendmessage($from_id, $result['msg'], $optionibsng, 'HTML');
         } else {
             sendmessage($from_id, $result['msg'], $optionibsng, 'HTML');
         }
     } elseif ($marzban_list_get['type'] == "mikrotik") {
-        $result = login_mikrotik($marzban_list_get['url_panel'], $marzban_list_get['username_panel'], $marzban_list_get['password_panel']);
+        $result = login_mikrotik($marzban_list_get['url_panel'], $marzban_list_get['username'], $marzban_list_get['password_panel']);
         if (isset($result['error'])) {
             sendmessage($from_id, json_encode($result), $option_mikrotik, 'HTML');
         } else {
@@ -3694,14 +3648,14 @@ elseif ($datain == "systemsms") {
             sendmessage($from_id, sprintf($textbotlang['Admin']['adminphp']['msg_time_name'], $result['platform'], $result['version'], $result['uptime'], $result['architecture-name'], $result['board-name'], $result['build-time'], $result['cpu'], $result['cpu-count'], $result['cpu-frequency'], $result['cpu-load'], $total_hdd_space, $free_hdd_space, $total_memory, $free_memory, $result['write-sect-since-reboot'], $result['write-sect-total']), $option_mikrotik, 'HTML');
         }
     } elseif ($marzban_list_get['type'] == "rebecca") {
-        $Check_connection = Get_System_Stats_rebecca($marzban_list_get['name_panel']);
+        $Check_connection = Get_System_Stats_rebecca($marzban_list_get['name']);
         if (empty($Check_connection['error']) && (empty($Check_connection['status']) || $Check_connection['status'] < 400)) {
-            $ListSell = $pdo->prepare("SELECT COUNT(*) FROM invoice WHERE (status = 'active' OR status = 'end_of_time'  OR status = 'end_of_volume' OR status = 'sendedwarn' OR Status = 'send_on_hold') AND code_panel = :code_panel AND is_test = 0 AND bottype IS NULL");
-            $ListSell->bindParam(':code_panel', $marzban_list_get['code_panel']);
+            $ListSell = $pdo->prepare("SELECT COUNT(*) FROM invoice WHERE (status = 'active' OR status = 'end_of_time'  OR status = 'end_of_volume' OR status = 'sendedwarn' OR Status = 'send_on_hold') AND code = :code AND is_test = 0 AND bottype IS NULL");
+            $ListSell->bindParam(':code', $marzban_list_get['code']);
             $ListSell->execute();
             $ListSell = $ListSell->fetch(PDO::FETCH_ASSOC)['COUNT(*)'];
-            $ListSellSum = $pdo->prepare("SELECT SUM(price_product) FROM invoice WHERE (status = 'active' OR status = 'end_of_time'  OR status = 'end_of_volume' OR status = 'sendedwarn' OR Status = 'send_on_hold') AND code_panel = :code_panel AND is_test = 0 AND bottype IS NULL");
-            $ListSellSum->bindParam(':code_panel', $marzban_list_get['code_panel']);
+            $ListSellSum = $pdo->prepare("SELECT SUM(price_product) FROM invoice WHERE (status = 'active' OR status = 'end_of_time'  OR status = 'end_of_volume' OR status = 'sendedwarn' OR Status = 'send_on_hold') AND code = :code AND is_test = 0 AND bottype IS NULL");
+            $ListSellSum->bindParam(':code', $marzban_list_get['code']);
             $ListSellSum->execute();
             $ListSellSUM = number_format($ListSellSum->fetch(PDO::FETCH_ASSOC)['SUM(price_product)'], 0);
             $text_marzban = sprintf($textbotlang['Admin']['adminphp']['ok_select_panel_user_4'], $ListSell, $ListSellSUM, $marzban_list_get['agent']);
@@ -3726,10 +3680,10 @@ elseif ($datain == "systemsms") {
         sendmessage($from_id, $textbotlang['Admin']['managepanel']['repeatPanel'], $backadmin, 'HTML');
         return;
     }
-    $typepanel = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
+    $typepanel = select("locations", "*", "name", $user['Processing_value'], "select");
     outtypepanel($typepanel['type'], $textbotlang['Admin']['managepanel']['changedNamePanel']);
     update("user", "Processing_value", $text, "id", $from_id);
-    update("marzban_panel", "name_panel", $text, "name_panel", $user['Processing_value']);
+    update("locations", "name", $text, "name", $user['Processing_value']);
     update("invoice", "Service_location", $text, "Service_location", $user['Processing_value']);
     update("product", "Location", $text, "Location", $user['Processing_value']);
     update("user", "Processing_value", $text, "id", $from_id);
@@ -3742,18 +3696,18 @@ elseif ($datain == "systemsms") {
         sendmessage($from_id, $textbotlang['Admin']['managepanel']['invalidDomain'], $backadmin, 'HTML');
         return;
     }
-    $typepanel = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
+    $typepanel = select("locations", "*", "name", $user['Processing_value'], "select");
     outtypepanel($typepanel['type'], $textbotlang['Admin']['managepanel']['changedUrlPanel']);
-    update("marzban_panel", "url_panel", $text, "name_panel", $user['Processing_value']);
-    update("marzban_panel", "datelogin", null, "name_panel", $user['Processing_value']);
+    update("locations", "url_panel", $text, "name", $user['Processing_value']);
+    update("locations", "datelogin", null, "name", $user['Processing_value']);
     step('home', $from_id);
 } elseif ($text == $textbotlang['keyboard']['changeUserGroup'] && $adminrulecheck['rule'] == "administrator") {
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['err_send_panel_user_2'], $backadmin, 'HTML');
     step('getagentpanel', $from_id);
 } elseif ($user['step'] == "getagentpanel") {
-    $typepanel = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
+    $typepanel = select("locations", "*", "name", $user['Processing_value'], "select");
     outtypepanel($typepanel['type'], $textbotlang['Admin']['adminphp']['ok_success_user_1']);
-    update("marzban_panel", "agent", $text, "name_panel", $user['Processing_value']);
+    update("locations", "agent", $text, "name", $user['Processing_value']);
     step('home', $from_id);
 } elseif ($text == $textbotlang['Admin']['adminphp']['btn_link_domain_sub'] && $adminrulecheck['rule'] == "administrator") {
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_send_panel_user_1'], $backadmin, 'HTML');
@@ -3763,7 +3717,7 @@ elseif ($datain == "systemsms") {
         sendmessage($from_id, $textbotlang['Admin']['managepanel']['invalidDomain'], $backadmin, 'HTML');
         return;
     }
-    $typepanel = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
+    $typepanel = select("locations", "*", "name", $user['Processing_value'], "select");
     if ($typepanel['type'] == "x-ui_single") {
         $req = new CurlRequest($text);
         $response = $req->get();
@@ -3787,23 +3741,23 @@ elseif ($datain == "systemsms") {
         $text = dirname($text);
     }
     outtypepanel($typepanel['type'], $textbotlang['Admin']['managepanel']['changedUrlPanel']);
-    update("marzban_panel", "linksubx", $text, "name_panel", $user['Processing_value']);
+    update("locations", "linksubx", $text, "name", $user['Processing_value']);
     step('home', $from_id);
 } elseif ($text == "🔗 uuid admin" && $adminrulecheck['rule'] == "administrator") {
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_send_admin'], $backadmin, 'HTML');
     step('getuuidadmin', $from_id);
 } elseif ($user['step'] == "getuuidadmin") {
-    $typepanel = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
+    $typepanel = select("locations", "*", "name", $user['Processing_value'], "select");
     outtypepanel($typepanel['type'], $textbotlang['Admin']['adminphp']['ok_admin_save']);
-    update("marzban_panel", "secret_code", $text, "name_panel", $user['Processing_value']);
+    update("locations", "secret_code", $text, "name", $user['Processing_value']);
     step('home', $from_id);
 } elseif ($text == $textbotlang['keyboard']['accountCreateLimit'] && $adminrulecheck['rule'] == "administrator") {
     sendmessage($from_id, $textbotlang['Admin']['managepanel']['setLimit'], $backadmin, 'HTML');
     step('getlimitnew', $from_id);
 } elseif ($user['step'] == "getlimitnew") {
-    $typepanel = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
+    $typepanel = select("locations", "*", "name", $user['Processing_value'], "select");
     outtypepanel($typepanel['type'], $textbotlang['Admin']['managepanel']['changedLimit']);
-    update("marzban_panel", "limit_panel", $text, "name_panel", $user['Processing_value']);
+    update("locations", "limit_panel", $text, "name", $user['Processing_value']);
     step('home', $from_id);
 } elseif ($text == $textbotlang['keyboard']['testServiceTime'] && $adminrulecheck['rule'] == "administrator") {
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_send_testservice_service_time'], $backadmin, 'HTML');
@@ -3813,9 +3767,9 @@ elseif ($datain == "systemsms") {
         sendmessage($from_id, $textbotlang['Admin']['Product']['invalidTime'], $backadmin, 'HTML');
         return;
     }
-    $typepanel = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
+    $typepanel = select("locations", "*", "name", $user['Processing_value'], "select");
     outtypepanel($typepanel['type'], $textbotlang['Admin']['managepanel']['savedData']);
-    update("marzban_panel", "time_usertest", $text, "name_panel", $user['Processing_value']);
+    update("locations", "time_usertest", $text, "name", $user['Processing_value']);
     step('home', $from_id);
 } elseif ($text == $textbotlang['keyboard']['testAccountVolume'] && $adminrulecheck['rule'] == "administrator") {
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_send_testservice_service_volume'], $backadmin, 'HTML');
@@ -3825,43 +3779,43 @@ elseif ($datain == "systemsms") {
         sendmessage($from_id, $textbotlang['Admin']['Product']['invalidVolume'], $backadmin, 'HTML');
         return;
     }
-    $typepanel = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
+    $typepanel = select("locations", "*", "name", $user['Processing_value'], "select");
     outtypepanel($typepanel['type'], $textbotlang['Admin']['managepanel']['savedData']);
-    update("marzban_panel", "val_usertest", $text, "name_panel", $user['Processing_value']);
+    update("locations", "val_usertest", $text, "name", $user['Processing_value']);
     step('home', $from_id);
 } elseif ($text == $textbotlang['keyboard']['setInboundId'] && $adminrulecheck['rule'] == "administrator") {
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_send_panel_name_id'], $backadmin, 'HTML');
     step('getinboundiid', $from_id);
 } elseif ($user['step'] == "getinboundiid") {
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_success_save_1'], $optionX_ui_single, 'HTML');
-    update("marzban_panel", "inboundid", $text, "name_panel", $user['Processing_value']);
+    update("locations", "inboundid", $text, "name", $user['Processing_value']);
     step('home', $from_id);
 } elseif ($text == $textbotlang['keyboard']['editUsername'] && $adminrulecheck['rule'] == "administrator") {
     sendmessage($from_id, $textbotlang['Admin']['managepanel']['getUsernameNew'], $backadmin, 'HTML');
     step('GetusernameNew', $from_id);
 } elseif ($user['step'] == "GetusernameNew") {
-    $typepanel = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
+    $typepanel = select("locations", "*", "name", $user['Processing_value'], "select");
     outtypepanel($typepanel['type'], $textbotlang['Admin']['managepanel']['changedUsernamePanel']);
-    update("marzban_panel", "username_panel", $text, "name_panel", $user['Processing_value']);
-    update("marzban_panel", "datelogin", null, "name_panel", $user['Processing_value']);
+    update("locations", "username", $text, "name", $user['Processing_value']);
+    update("locations", "datelogin", null, "name", $user['Processing_value']);
     step('home', $from_id);
 } elseif ($text == $textbotlang['Admin']['adminphp']['btn_set_1'] && $adminrulecheck['rule'] == "administrator") {
     sendmessage($from_id, $textbotlang['Admin']['managepanel']['Inbound']['getProtocol'], $keyboardprotocol, 'HTML');
     step('getprotocolx_ui', $from_id);
 } elseif ($user['step'] == "getprotocolx_ui") {
-    $typepanel = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
+    $typepanel = select("locations", "*", "name", $user['Processing_value'], "select");
     outtypepanel($typepanel['type'], $textbotlang['Admin']['managepanel']['setProtocol']);
-    $marzbanprotocol = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
-    update("x_ui", "protocol", $text, "codepanel", $marzbanprotocol['code_panel']);
+    $marzbanprotocol = select("locations", "*", "name", $user['Processing_value'], "select");
+    update("x_ui", "protocol", $text, "codepanel", $marzbanprotocol['code']);
     step('home', $from_id);
 } elseif ($text == $textbotlang['keyboard']['editPassword'] && $adminrulecheck['rule'] == "administrator") {
     sendmessage($from_id, $textbotlang['Admin']['managepanel']['getPasswordNew'], $backadmin, 'HTML');
     step('GetpaawordNew', $from_id);
 } elseif ($user['step'] == "GetpaawordNew") {
-    $typepanel = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
+    $typepanel = select("locations", "*", "name", $user['Processing_value'], "select");
     outtypepanel($typepanel['type'], $textbotlang['Admin']['managepanel']['changedPasswordPanel']);
-    update("marzban_panel", "password_panel", $text, "name_panel", $user['Processing_value']);
-    update("marzban_panel", "datelogin", null, "name_panel", $user['Processing_value']);
+    update("locations", "password_panel", $text, "name", $user['Processing_value']);
+    update("locations", "datelogin", null, "name", $user['Processing_value']);
     step('home', $from_id);
 } elseif ($text == $textbotlang['keyboard']['deletePanel'] && $adminrulecheck['rule'] == "administrator") {
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_send_confirm'], $backadmin, 'HTML');
@@ -3869,9 +3823,9 @@ elseif ($datain == "systemsms") {
 } elseif ($user['step'] == "confirmremovepanel") {
     if ($text == $textbotlang['keyboard']['confirm']) {
         sendmessage($from_id, $textbotlang['Admin']['managepanel']['removedPanel'], $keyboardadmin, 'HTML');
-        $marzban = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
-        $stmt = $pdo->prepare("DELETE FROM marzban_panel WHERE name_panel = :name_panel");
-        $stmt->bindParam(':name_panel', $user['Processing_value'], PDO::PARAM_STR);
+        $marzban = select("locations", "*", "name", $user['Processing_value'], "select");
+        $stmt = $pdo->prepare("DELETE FROM locations WHERE name = :name");
+        $stmt->bindParam(':name', $user['Processing_value'], PDO::PARAM_STR);
         $stmt->execute();
     }
     step('home', $from_id);
@@ -4921,18 +4875,18 @@ elseif ($datain == "systemsms") {
     }
     step('getlocdiscount', $from_id);
     savedata("save", "useuser", $text);
-    sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_send_select_panel_discount'], $json_list_marzban_panel, 'HTML');
+    sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_send_select_panel_discount'], $json_list_locations, 'HTML');
     step('getlocdiscount', $from_id);
 } elseif ($user['step'] == "getlocdiscount") {
     if ($text == "/all") {
-        $panel['code_panel'] = "/all";
+        $panel['code'] = "/all";
     } else {
-        $panel = select("marzban_panel", "*", "name_panel", $text, "select");
+        $panel = select("locations", "*", "name", $text, "select");
     }
     if ($panel == false)
         return;
-    savedata("save", "code_panel", $panel['code_panel']);
-    savedata("save", "name_panel", $text);
+    savedata("save", "code", $panel['code']);
+    savedata("save", "name", $text);
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_send_discount'], $json_list_product_list_admin, 'HTML');
     step('getproductdiscount', $from_id);
 } elseif ($user['step'] == "getproductdiscount") {
@@ -4946,7 +4900,7 @@ elseif ($datain == "systemsms") {
         return;
     }
     $userdata = json_decode($user['Processing_value'], true);
-    $stmt = $pdo->prepare("INSERT INTO DiscountSell (codeDiscount, usedDiscount, price, limitDiscount, agent, usefirst, useuser, code_panel, code_product, time,type) VALUES (:codeDiscount, :usedDiscount, :price, :limitDiscount, :agent, :usefirst, :useuser, :code_panel, :code_product, :time,:type)");
+    $stmt = $pdo->prepare("INSERT INTO DiscountSell (codeDiscount, usedDiscount, price, limitDiscount, agent, usefirst, useuser, code, code_product, time,type) VALUES (:codeDiscount, :usedDiscount, :price, :limitDiscount, :agent, :usefirst, :useuser, :code, :code_product, :time,:type)");
     $values = "0";
     $values1 = "1";
     $code_product = "0";
@@ -4957,12 +4911,12 @@ elseif ($datain == "systemsms") {
     $stmt->bindParam(':agent', $userdata['agent'], PDO::PARAM_STR);
     $stmt->bindParam(':usefirst', $userdata['usefirst'], PDO::PARAM_STR);
     $stmt->bindParam(':useuser', $userdata['useuser'], PDO::PARAM_STR);
-    $stmt->bindParam(':code_panel', $userdata['code_panel'], PDO::PARAM_STR);
+    $stmt->bindParam(':code', $userdata['code'], PDO::PARAM_STR);
     $stmt->bindParam(':code_product', $product['code_product'], PDO::PARAM_STR);
     $stmt->bindParam(':time', $userdata['time'], PDO::PARAM_STR);
     $stmt->bindParam(':type', $userdata['typediscount'], PDO::PARAM_STR);
     $stmt->execute();
-    $textdiscount = sprintf($textbotlang['Admin']['adminphp']['ok_success_panel_4'], $userdata['code'], $userdata['price'], $userdata['name_panel'], $text, $userdata['agent'], $userdata['limitDiscount']);
+    $textdiscount = sprintf($textbotlang['Admin']['adminphp']['ok_success_panel_4'], $userdata['code'], $userdata['price'], $userdata['name'], $text, $userdata['agent'], $userdata['limitDiscount']);
     sendmessage($from_id, $textdiscount, $keyboardadmin, 'HTML');
     step('home', $from_id);
 } elseif ($text == $textbotlang['keyboard']['deleteDiscountCode'] && $adminrulecheck['rule'] == "administrator") {
@@ -4983,9 +4937,9 @@ elseif ($datain == "systemsms") {
     step('home', $from_id);
 } elseif ($text == "/end") {
     $userdata = json_decode($user['Processing_value'], true);
-    $panel = select("marzban_panel", "*", "name_panel", $userdata['name_panel'], "select");
+    $panel = select("locations", "*", "name", $userdata['name'], "select");
     if ($panel['type'] == "marzneshin") {
-        update("user", "Processing_value", $userdata['name_panel'], "id", $from_id);
+        update("user", "Processing_value", $userdata['name'], "id", $from_id);
         sendmessage($from_id, $textbotlang['Admin']['managepanel']['Inbound']['endInbound'], $optionmarzneshin, 'HTML');
         return;
     }
@@ -5353,22 +5307,7 @@ elseif ($datain == "systemsms") {
         $OrderUser['Service_time'] = $OrderUser['Service_time'] . $textbotlang['Admin']['adminphp']['btn_day_1'];
         $OrderUser['Volume'] = $OrderUser['Volume'] . $textbotlang['Admin']['adminphp']['btn_9'];
     }
-    $stmt = $pdo->prepare("SELECT value FROM service_other WHERE username = :username AND type = 'extend_user' AND status = 'paid' ORDER BY time DESC LIMIT 20");
-    $stmt->execute([
-        ':username' => $OrderUser['username'],
-    ]);
-    if ($stmt->rowCount() != 0) {
-        $service_other = $stmt->fetch(PDO::FETCH_ASSOC);
-        if (!($service_other == false || !(is_string($service_other['value']) && is_array(json_decode($service_other['value'], true))))) {
-            $service_other = json_decode($service_other['value'], true);
-            $codeproduct = select("product", "name_product", "code_product", $service_other['code_product'], "select");
-            if ($codeproduct != false) {
-                $OrderUser['name_product'] = $codeproduct['name_product'];
-                $OrderUser['Volume'] = $codeproduct['Volume_constraint'];
-                $OrderUser['Service_time'] = $codeproduct['Service_time'];
-            }
-        }
-    }
+
     $text_order = sprintf($textbotlang['Admin']['adminphp']['msg_service_user_payment_1'], $OrderUser['id_invoice'], $OrderUser['Status'], $OrderUser['id_user'], $OrderUser['username'], $OrderUser['Service_location'], $OrderUser['name_product'], $OrderUser['price_product'], $OrderUser['Volume'], $OrderUser['Service_time'], $datatime);
     $DataUserOut = $ManagePanel->DataUser($OrderUser['Service_location'], $OrderUser['username']);
     if ($DataUserOut['status'] == "Unsuccessful") {
@@ -5454,8 +5393,7 @@ elseif ($datain == "systemsms") {
     if ($list_service) {
         foreach ($list_service as $extend) {
             $extend_type = [
-                'extend_user' => $textbotlang['keyboard']['renew'],
-                'extend_user_by_admin' => $textbotlang['Admin']['adminphp']['btn_admin_renew'],
+
                 'extra_user' => $textbotlang['Admin']['adminphp']['btn_volume_add'],
                 "extra_time_user" => $textbotlang['Admin']['adminphp']['btn_time_add'],
                 "transfertouser" => $textbotlang['Admin']['adminphp']['btn_sub'],
@@ -5884,9 +5822,9 @@ elseif ($datain == "systemsms") {
         return;
     }
     $nameloc = select("invoice", "*", "username", $requestcheck['username'], "select");
-    $marzban_list_get = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
+    $marzban_list_get = select("locations", "*", "name", $nameloc['Service_location'], "select");
     $DataUserOut = $ManagePanel->DataUser($nameloc['Service_location'], $requestcheck['username']);
-    $stmt = $pdo->prepare("SELECT  SUM(price) FROM service_other WHERE username = :username AND type != 'change_location' AND type != 'extend_user' LIMIT 1");
+    $stmt = $pdo->prepare("SELECT  SUM(price) FROM service_other WHERE username = :username AND type != 'change_location' LIMIT 1");
     $stmt->bindParam(':username', $nameloc['username']);
     $stmt->execute();
     $sumproduct = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -5968,7 +5906,7 @@ elseif ($datain == "systemsms") {
         ));
         return;
     }
-    $marzban_list_get = select("marzban_panel", "*", "name_panel", $invoice['Service_location'], "select");
+    $marzban_list_get = select("locations", "*", "name", $invoice['Service_location'], "select");
     $ManagePanel->RemoveUser($invoice['Service_location'], $requestcheck['username']);
     update("cancel_service", "status", "accept", "username", $requestcheck['username']);
     update("invoice", "status", "removedbyadmin", "username", $requestcheck['username']);
@@ -6126,8 +6064,8 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         sendmessage($from_id, $textbotlang['Admin']['adminphp']['err_invalid_select_name_renew'], null, 'HTML');
         return;
     }
-    update("marzban_panel", "Methodextend", $text, "name_panel", $user['Processing_value']);
-    $typepanel = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
+    update("locations", "Methodextend", $text, "name", $user['Processing_value']);
+    $typepanel = select("locations", "*", "name", $user['Processing_value'], "select");
     outtypepanel($typepanel['type'], $textbotlang['Admin']['algorithmExtend']['saveData']);
     step('home', $from_id);
 } elseif ($text == "/token") {
@@ -6161,7 +6099,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         return;
     }
     update("user", "Processing_value_one", $text, "id", $from_id);
-    sendmessage($from_id, $textbotlang['Admin']['addorder']['stepThree'], $json_list_marzban_panel, 'HTML');
+    sendmessage($from_id, $textbotlang['Admin']['addorder']['stepThree'], $json_list_locations, 'HTML');
     step('getnamepanelconfig', $from_id);
 } elseif ($user['step'] == "getnamepanelconfig") {
     update("user", "Processing_value_tow", $text, "id", $from_id);
@@ -6174,7 +6112,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     $stmt->bindParam(':location', $user['Processing_value_tow'], PDO::PARAM_STR);
     $stmt->execute();
     $info_product = $stmt->fetch(PDO::FETCH_ASSOC);
-    $marzban_list_get = select("marzban_panel", "*", "name_panel", $user['Processing_value_tow'], "select");
+    $marzban_list_get = select("locations", "*", "name", $user['Processing_value_tow'], "select");
     $DataUserOut = $ManagePanel->DataUser($user['Processing_value_tow'], $user['Processing_value_one']);
     if ($DataUserOut['status'] == "Unsuccessful") {
         $datetimestep = strtotime("+" . $info_product['Service_time'] . "days");
@@ -6194,7 +6132,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         if ($DataUserOut['username'] == null) {
             sendmessage($from_id, $textbotlang['Admin']['adminphp']['err_error_group_report'], null, 'HTML');
             $DataUserOut['msg'] = json_encode($DataUserOut['msg']);
-            $texterros = sprintf($textbotlang['Admin']['adminphp']['err_error_panel_admin_name'], $DataUserOut['msg'], $from_id, $marzban_list_get['name_panel']);
+            $texterros = sprintf($textbotlang['Admin']['adminphp']['err_error_panel_admin_name'], $DataUserOut['msg'], $from_id, $marzban_list_get['name']);
             if (strlen($setting['Channel_Report']) > 0) {
                 telegram('sendmessage', [
                     'chat_id' => $setting['Channel_Report'],
@@ -6252,7 +6190,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         $info_product['Volume_constraint'] = $textbotlang['users']['status']['unlimited'];
     $textcreatuser = str_replace('{username}', "<code>{$DataUserOut['username']}</code>", $textbotlang['textbot']['afterPay']);
     $textcreatuser = str_replace('{name_service}', $info_product['name_product'], $textcreatuser);
-    $textcreatuser = str_replace('{location}', $marzban_list_get['name_panel'], $textcreatuser);
+    $textcreatuser = str_replace('{location}', $marzban_list_get['name'], $textcreatuser);
     $textcreatuser = str_replace('{day}', $info_product['Service_time'], $textcreatuser);
     $textcreatuser = str_replace('{volume}', $info_product['Volume_constraint'], $textcreatuser);
     $textcreatuser = str_replace('{config}', "<code>{$output_config_link}</code>", $textcreatuser);
@@ -6479,33 +6417,33 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     sendmessage($from_id, $textbotlang['Admin']['managepanel']['Inbound']['getProtocol'], $keyboardprotocol, 'HTML');
     step('getprotocoldisable', $from_id);
 } elseif ($user['step'] == "getprotocoldisable") {
-    global $json_list_marzban_panel_inbounds;
+    global $json_list_locations_inbounds;
     $protocol = ["vless", "vmess", "trojan", "shadowsocks"];
     if (!in_array($text, $protocol)) {
         sendmessage($from_id, $textbotlang['Admin']['managepanel']['Inbound']['invalidProtocol'], null, 'HTML');
         return;
     }
     $getinbounds = getinbounds($user['Processing_value'])[$text];
-    $list_marzban_panel_inbounds = [
+    $list_locations_inbounds = [
         'keyboard' => [],
         'resize_keyboard' => true,
     ];
     foreach ($getinbounds as $button) {
-        $list_marzban_panel_inbounds['keyboard'][] = [
+        $list_locations_inbounds['keyboard'][] = [
             ['text' => $button['tag']]
         ];
     }
-    $list_marzban_panel_inbounds['keyboard'][] = [
+    $list_locations_inbounds['keyboard'][] = [
         ['text' => $textbotlang['keyboard']['backToAdminMenu']],
     ];
-    $json_list_marzban_panel_inbounds = json_encode($list_marzban_panel_inbounds);
+    $json_list_locations_inbounds = json_encode($list_locations_inbounds);
     update("user", "Processing_value_one", $text, "id", $from_id);
-    sendmessage($from_id, $textbotlang['Admin']['managepanel']['Inbound']['getInbound'], $json_list_marzban_panel_inbounds, 'HTML');
+    sendmessage($from_id, $textbotlang['Admin']['managepanel']['Inbound']['getInbound'], $json_list_locations_inbounds, 'HTML');
     step('getInbounddisable', $from_id);
 } elseif ($user['step'] == "getInbounddisable") {
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_success_save_2'], $optionMarzban, 'HTML');
     $textpro = "{$user['Processing_value_one']}*$text";
-    update("marzban_panel", "inbound_deactive", $textpro, "name_panel", $user['Processing_value']);
+    update("locations", "inbound_deactive", $textpro, "name", $user['Processing_value']);
     step("home", $from_id);
 } elseif ($text == $textbotlang['Admin']['adminphp']['btn_bot'] && $adminrulecheck['rule'] == "administrator") {
     $textoptimize = $textbotlang['Admin']['adminphp']['err_service_user_admin_payment'];
@@ -6614,14 +6552,14 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         'username' => "$username",
         'type' => "new by admin $from_id"
     );
-    $panel = select("marzban_panel", "*", "name_panel", $userdata['idpanel'], "select");
+    $panel = select("locations", "*", "name", $userdata['idpanel'], "select");
     for ($i = 0; $i < $userdata['count']; $i++) {
         $usernameconfig = $user['Processing_value_one'] . "_" . $i;
         $dataoutput = $ManagePanel->createUser($userdata['idpanel'], "usertest", $usernameconfig, $datac);
         if ($dataoutput['username'] == null) {
             $dataoutput['msg'] = json_encode($dataoutput['msg']);
             sendmessage($from_id, $textbotlang['users']['sell']['errorConfig'], null, 'HTML');
-            $texterros = sprintf($textbotlang['Admin']['adminphp']['err_error_panel_account_user'], $dataoutput['msg'], $from_id, $username, $panel['name_panel']);
+            $texterros = sprintf($textbotlang['Admin']['adminphp']['err_error_panel_account_user'], $dataoutput['msg'], $from_id, $username, $panel['name']);
             if (strlen($setting['Channel_Report']) > 0) {
                 telegram('sendmessage', [
                     'chat_id' => $setting['Channel_Report'],
@@ -6648,7 +6586,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
             $text = $textbotlang['users']['status']['unlimited'];
         $textcreatuser = str_replace('{username}', "<code>{$dataoutput['username']}</code>", $textbotlang['textbot']['afterPay']);
         $textcreatuser = str_replace('{name_service}', $textbotlang['Admin']['adminphp']['btn_17'], $textcreatuser);
-        $textcreatuser = str_replace('{location}', $panel['name_panel'], $textcreatuser);
+        $textcreatuser = str_replace('{location}', $panel['name'], $textcreatuser);
         $textcreatuser = str_replace('{day}', $text, $textcreatuser);
         $textcreatuser = str_replace('{volume}', $user['Processing_value_tow'], $textcreatuser);
         $textcreatuser = str_replace('{config}', $output_config_link, $textcreatuser);
@@ -6678,11 +6616,11 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     sendmessage($from_id, $textupdate, null, 'HTML');
     step('home', $from_id);
 } elseif ($text == $textbotlang['keyboard']['panelFeatures']) {
-    sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_select_panel'], $json_list_marzban_panel, 'HTML');
+    sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_select_panel'], $json_list_locations, 'HTML');
     step('getlocoption', $from_id);
 } elseif ($user['step'] == "getlocoption") {
     update("user", "Processing_value", $text, "id", $from_id);
-    $typepanel = select("marzban_panel", "*", "name_panel", $text, "select")['type'];
+    $typepanel = select("locations", "*", "name", $text, "select")['type'];
     if ($typepanel == "marzban") {
         sendmessage($from_id, $textbotlang['users']['selectoption'], $optionathmarzban, 'HTML');
     } elseif ($typepanel == "x-ui_single") {
@@ -6962,39 +6900,9 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
                 ['text' => $textbotlang['keyboard']['tetraGateway'], 'callback_data' => "tetra"],
             ],
             [
-                ['text' => $textbotlang['keyboard']['settings'], 'callback_data' => "plisiosetting"],
-                ['text' => $plisiostatus, 'callback_data' => "editpayment-plisio-$plisio"],
-                ['text' => "📌 plisio", 'callback_data' => "plisio"],
-            ],
-            [
                 ['text' => $textbotlang['keyboard']['settings'], 'callback_data' => "nowpaymentsetting"],
                 ['text' => $now_payment_status, 'callback_data' => "editpayment-nowpayment-$payment_status_nowpayment"],
                 ['text' => "📌 nowpayment", 'callback_data' => "nowpayment"],
-            ],
-            [
-                ['text' => $textbotlang['keyboard']['settings'], 'callback_data' => "iranpay1setting"],
-                ['text' => $arzireyali1status, 'callback_data' => "editpayment-arzireyali1-$arzireyali1"],
-                ['text' => $textbotlang['keyboard']['iranPay1Label'], 'callback_data' => "arzireyali1"],
-            ],
-            [
-                ['text' => $textbotlang['keyboard']['settings'], 'callback_data' => "iranpay2setting"],
-                ['text' => $arzireyali2status, 'callback_data' => "editpayment-arzireyali2-$arzireyali2"],
-                ['text' => $textbotlang['keyboard']['iranPay2Label'], 'callback_data' => "arzireyali2"],
-            ],
-            [
-                ['text' => $textbotlang['keyboard']['settings'], 'callback_data' => "iranpay3setting"],
-                ['text' => $arzireyali3text, 'callback_data' => "editpayment-oniranpay3-$arzireyali3"],
-                ['text' => $textbotlang['keyboard']['iranPay3Label'], 'callback_data' => "oniranpay3"],
-            ],
-            [
-                ['text' => $textbotlang['keyboard']['settings'], 'callback_data' => "aqayepardakhtsetting"],
-                ['text' => $aqayepardakhtstatus, 'callback_data' => "editpayment-aqayepardakht-$aqayepardakht"],
-                ['text' => $textbotlang['keyboard']['aqayePardakhtGateway'], 'callback_data' => "aqayepardakht"],
-            ],
-            [
-                ['text' => $textbotlang['keyboard']['settings'], 'callback_data' => "zarinpalsetting"],
-                ['text' => $zarinpalstatus, 'callback_data' => "editpayment-zarinpal-$zarinpal"],
-                ['text' => $textbotlang['keyboard']['zarinPalGateway'], 'callback_data' => "zarinpal"],
             ],
             [
                 ['text' => $textbotlang['keyboard']['settings'], 'callback_data' => "affilnecurrencysetting"],
@@ -7013,35 +6921,27 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
             [
                 ['text' => $textbotlang['keyboard']['walletAddress'], 'callback_data' => "walletaddress"],
             ],
+            [
+                ['text' => 'Wallet USDT', 'callback_data' => "walletaddressusdt"],
+                ['text' => 'Wallet GRAM', 'callback_data' => "walletaddressgram"],
+                ['text' => 'USDT Name', 'callback_data' => "nameusdt"],
+            ],
+            [
+                ['text' => 'GRAM Name', 'callback_data' => "namegram"],
+                ['text' => 'Tetra Name', 'callback_data' => "nametetra"],
+                ['text' => 'Cart Name', 'callback_data' => "namecart"],
+            ],
+            [
+                ['text' => 'NowPayment Name', 'callback_data' => "namenowpayment"],
+                ['text' => 'GRAM Memo', 'callback_data' => "gram_static_memo"],
+            ],
+            [
+                ['text' => $textbotlang['keyboard']['usdtPwaUrl'] ?? 'PWA URL USDT', 'callback_data' => "usdtpwaurl"],
+                ['text' => $textbotlang['keyboard']['setEducationUSDT'] ?? 'USDT Guide', 'callback_data' => "helpofflineusdt_btn"],
         ]
     ]);
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['msg_manage_gateway'], $Bot_Status, 'HTML');
-} elseif ($text == $textbotlang['keyboard']['renewalCashback'] && $adminrulecheck['rule'] == "administrator") {
-    sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_send_user_sub_enable'], $backadmin, 'HTML');
-    step('getpricecashback', $from_id);
-} elseif ($user['step'] == "getpricecashback") {
-    if (!ctype_digit($text)) {
-        sendmessage($from_id, $textbotlang['Admin']['Product']['invalidTime'], $backadmin, 'HTML');
-        return;
-    }
-    savedata("clear", "price_cashback", $text);
-    sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_select_user_2'], $backadmin, 'HTML');
-    step('getagent', $from_id);
-} elseif ($user['step'] == "getagent") {
-    if (!in_array($text, ['f', 'n', 'n2'])) {
-        sendmessage($from_id, $textbotlang['Admin']['adminphp']['err_invalid_user_group_2'], $backadmin, 'HTML');
-        return;
-    }
-    $userdata = json_decode($user['Processing_value'], true);
-    if ($text == "f") {
-        update("shopSetting", "value", $userdata['price_cashback'], "Namevalue", "chashbackextend");
-    } else {
-        $shop_cashbackagent = json_decode(select("shopSetting", "*", "Namevalue", "chashbackextend_agent")['value'], true);
-        $shop_cashbackagent[$text] = $userdata['price_cashback'];
-        update("shopSetting", "value", json_encode($shop_cashbackagent), "Namevalue", "chashbackextend_agent");
-    }
-    sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_success_amount_1'], $shopkeyboard, 'HTML');
-    step('home', $from_id);
+
 } elseif (preg_match('/^editpayment-(.*)-(.*)/', $datain, $dataget)) {
     $type = $dataget[1];
     $value = $dataget[2];
@@ -7248,6 +7148,23 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
             [
                 ['text' => $textbotlang['keyboard']['walletAddress'], 'callback_data' => "walletaddress"],
             ],
+            [
+                ['text' => 'Wallet USDT', 'callback_data' => "walletaddressusdt"],
+                ['text' => 'Wallet GRAM', 'callback_data' => "walletaddressgram"],
+                ['text' => 'USDT Name', 'callback_data' => "nameusdt"],
+            ],
+            [
+                ['text' => 'GRAM Name', 'callback_data' => "namegram"],
+                ['text' => 'Tetra Name', 'callback_data' => "nametetra"],
+                ['text' => 'Cart Name', 'callback_data' => "namecart"],
+            ],
+            [
+                ['text' => 'NowPayment Name', 'callback_data' => "namenowpayment"],
+                ['text' => 'GRAM Memo', 'callback_data' => "gram_static_memo"],
+            ],
+            [
+                ['text' => $textbotlang['keyboard']['usdtPwaUrl'] ?? 'PWA URL USDT', 'callback_data' => "usdtpwaurl"],
+                ['text' => $textbotlang['keyboard']['setEducationUSDT'] ?? 'USDT Guide', 'callback_data' => "helpofflineusdt_btn"],
         ]
     ]);
     Editmessagetext($from_id, $message_id, $textbotlang['Admin']['adminphp']['msg_manage_gateway'], $Bot_Status);
@@ -7381,7 +7298,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     step('home', $from_id);
     $config = parseConfigs($text);
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_save_config'] . count($config), $optionManualsale, 'HTML');
-    $panel = select("marzban_panel", "*", "name_panel", $userdata['namepanel'], "select");
+    $panel = select("locations", "*", "name", $userdata['namepanel'], "select");
     if ($panel == false) {
         sendmessage($from_id, $textbotlang['Admin']['adminphp']['err_error_save_config_please'], $backadmin, 'HTML');
         return;
@@ -7390,19 +7307,19 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     foreach ($config as $content_config) {
 
         $stmt = $pdo->prepare("INSERT IGNORE INTO manualsell (codepanel,namerecord,contentrecord,status,codeproduct) VALUES (:codepanel,:namerecord,:contentrecord,:status,:codeproduct)");
-        $stmt->bindParam(':codepanel', $panel['code_panel']);
+        $stmt->bindParam(':codepanel', $panel['code']);
         $stmt->bindParam(':namerecord', $content_config['name']);
         $stmt->bindParam(':contentrecord', $content_config['config']);
         $stmt->bindParam(':status', $status);
         $stmt->bindParam(':codeproduct', $userdata['name_product']);
         $stmt->execute();
     }
-    update("user", "Processing_value", $panel['name_panel'], "id", $from_id);
+    update("user", "Processing_value", $panel['name'], "id", $from_id);
 } elseif ($text == $textbotlang['Admin']['adminphp']['err_delete_config']) {
-    $panel = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
+    $panel = select("locations", "*", "name", $user['Processing_value'], "select");
     $listconfig = [];
     $stmt = $pdo->prepare("SELECT * FROM manualsell WHERE codepanel = :mp14");
-    $stmt->execute([':mp14' => $panel['code_panel']]);
+    $stmt->execute([':mp14' => $panel['code']]);
     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
         $listconfig[] = [$row['namerecord']];
     }
@@ -7431,9 +7348,9 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_send_panel_price_change'], $backadmin, 'HTML');
     step('setpricechangelocation', $from_id);
 } elseif ($user['step'] == "setpricechangelocation") {
-    $typepanel = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
+    $typepanel = select("locations", "*", "name", $user['Processing_value'], "select");
     outtypepanel($typepanel['type'], $textbotlang['Admin']['adminphp']['ok_success_price_1']);
-    update("marzban_panel", "priceChangeloc", $text, "name_panel", $user['Processing_value']);
+    update("locations", "priceChangeloc", $text, "name", $user['Processing_value']);
     step('home', $from_id);
 } elseif ($text == $textbotlang['keyboard']['extraVolumePrice'] && $adminrulecheck['rule'] == "administrator") {
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_send_panel_price_volume_1'], $backadmin, 'HTML');
@@ -7454,7 +7371,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         return;
     }
     $userdata = json_decode($user['Processing_value'], true);
-    $typepanel = select("marzban_panel", "*", "name_panel", $userdata['namepanel'], "select");
+    $typepanel = select("locations", "*", "name", $userdata['namepanel'], "select");
     outtypepanel($typepanel['type'], $textbotlang['users']['extraVolume']['changedPrice']);
     $eextraprice = json_decode($typepanel['priceextravolume'], true);
     if ($text == 'all') {
@@ -7465,7 +7382,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         $eextraprice[$text] = $userdata['price'];
     }
     $eextraprice = json_encode($eextraprice);
-    update("marzban_panel", "priceextravolume", $eextraprice, "name_panel", $userdata['namepanel']);
+    update("locations", "priceextravolume", $eextraprice, "name", $userdata['namepanel']);
     update("user", "Processing_value", $userdata['namepanel'], "id", $from_id);
     step('home', $from_id);
 } elseif ($text == $textbotlang['keyboard']['customVolumePrice'] && $adminrulecheck['rule'] == "administrator") {
@@ -7487,7 +7404,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         return;
     }
     $userdata = json_decode($user['Processing_value'], true);
-    $typepanel = select("marzban_panel", "*", "name_panel", $userdata['namepanel'], "select");
+    $typepanel = select("locations", "*", "name", $userdata['namepanel'], "select");
     outtypepanel($typepanel['type'], $textbotlang['users']['extraVolume']['changedPrice']);
     $eextraprice = json_decode($typepanel['pricecustomvolume'], true);
     if ($text == 'all') {
@@ -7498,7 +7415,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         $eextraprice[$text] = $userdata['price'];
     }
     $eextraprice = json_encode($eextraprice);
-    update("marzban_panel", "pricecustomvolume", $eextraprice, "name_panel", $userdata['namepanel']);
+    update("locations", "pricecustomvolume", $eextraprice, "name", $userdata['namepanel']);
     update("user", "Processing_value", $userdata['namepanel'], "id", $from_id);
     step('home', $from_id);
 } elseif ($text == $textbotlang['keyboard']['extraTimePrice'] && $adminrulecheck['rule'] == "administrator") {
@@ -7520,7 +7437,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         return;
     }
     $userdata = json_decode($user['Processing_value'], true);
-    $typepanel = select("marzban_panel", "*", "name_panel", $userdata['namepanel'], "select");
+    $typepanel = select("locations", "*", "name", $userdata['namepanel'], "select");
     outtypepanel($typepanel['type'], $textbotlang['users']['extraVolume']['changedPrice']);
     $eextraprice = json_decode($typepanel['priceextratime'], true);
     if ($text == 'all') {
@@ -7531,7 +7448,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         $eextraprice[$text] = $userdata['price'];
     }
     $eextraprice = json_encode($eextraprice);
-    update("marzban_panel", "priceextratime", $eextraprice, "name_panel", $userdata['namepanel']);
+    update("locations", "priceextratime", $eextraprice, "name", $userdata['namepanel']);
     update("user", "Processing_value", $userdata['namepanel'], "id", $from_id);
     step('home', $from_id);
 } elseif ($text == $textbotlang['keyboard']['customTimePrice'] && $adminrulecheck['rule'] == "administrator") {
@@ -7553,7 +7470,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         return;
     }
     $userdata = json_decode($user['Processing_value'], true);
-    $typepanel = select("marzban_panel", "*", "name_panel", $userdata['namepanel'], "select");
+    $typepanel = select("locations", "*", "name", $userdata['namepanel'], "select");
     outtypepanel($typepanel['type'], $textbotlang['users']['extraVolume']['changedPrice']);
     $eextraprice = json_decode($typepanel['pricecustomtime'], true);
     if ($text == 'all') {
@@ -7564,7 +7481,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         $eextraprice[$text] = $userdata['price'];
     }
     $eextraprice = json_encode($eextraprice);
-    update("marzban_panel", "pricecustomtime", $eextraprice, "name_panel", $userdata['namepanel']);
+    update("locations", "pricecustomtime", $eextraprice, "name", $userdata['namepanel']);
     update("user", "Processing_value", $userdata['namepanel'], "id", $from_id);
     step('home', $from_id);
 } elseif ($text == $textbotlang['keyboard']['showCartAfterFirstPay'] && $adminrulecheck['rule'] == "administrator") {
@@ -7600,10 +7517,10 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     ]);
     Editmessagetext($from_id, $message_id, $textbotlang['Admin']['adminphp']['btn_21'], $keyboardverify);
 } elseif ($text == $textbotlang['keyboard']['editConfig']) {
-    $panel = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
+    $panel = select("locations", "*", "name", $user['Processing_value'], "select");
     $listconfig = [];
     $stmt = $pdo->prepare("SELECT * FROM manualsell WHERE codepanel = :mp15");
-    $stmt->execute([':mp15' => $panel['code_panel']]);
+    $stmt->execute([':mp15' => $panel['code']]);
     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
         $listconfig[] = [$row['namerecord']];
     }
@@ -7633,7 +7550,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_save'], $optionManualsale, 'HTML');
     update("manualsell", "contentrecord", $text, "namerecord", $user['Processing_value_one']);
 } elseif ($text == $textbotlang['keyboard']['increaseGroupPrice']) {
-    sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_panel_price_change_must_1'], $json_list_marzban_panel, 'HTML');
+    sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_panel_price_change_must_1'], $json_list_locations, 'HTML');
     step("getaddpricepeoductloc", $from_id);
 } elseif ($user['step'] == "getaddpricepeoductloc") {
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['msg_user_price_group'], $backadmin, 'HTML');
@@ -7688,7 +7605,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_success_amount_2'], $shopkeyboard, 'HTML');
     step("home", $from_id);
 } elseif ($text == $textbotlang['keyboard']['decreaseGroupPrice']) {
-    sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_panel_price_change_must_2'], $json_list_marzban_panel, 'HTML');
+    sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_panel_price_change_must_2'], $json_list_locations, 'HTML');
     step("getlowpricepeoductloc", $from_id);
 } elseif ($user['step'] == "getlowpricepeoductloc") {
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['msg_user_price_group'], $backadmin, 'HTML');
@@ -7876,6 +7793,110 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     sendmessage($from_id, $textbotlang['Admin']['SettingnowPayment']['saveApi'], $keyboardadmin, 'HTML');
     update("PaySetting", "ValuePay", $text, "NamePay", "walletaddress");
     step('home', $from_id);
+} elseif ($datain == "walletaddressusdt") {
+    $PaySetting = select("PaySetting", "ValuePay", "NamePay", "walletaddressusdt", "select");
+    $textmsg = sprintf($textbotlang['Admin']['adminphp']['ask_send_wallet_address'], $PaySetting['ValuePay']);
+    sendmessage($from_id, $textmsg, $backadmin, 'HTML');
+    step('getwalletaddressusdt', $from_id);
+} elseif ($user['step'] == "getwalletaddressusdt") {
+    sendmessage($from_id, $textbotlang['Admin']['SettingnowPayment']['saveApi'], $keyboardadmin, 'HTML');
+    update("PaySetting", "ValuePay", $text, "NamePay", "walletaddressusdt");
+    step('home', $from_id);
+} elseif ($datain == "walletaddressgram") {
+    $PaySetting = select("PaySetting", "ValuePay", "NamePay", "walletaddressgram", "select");
+    $textmsg = sprintf($textbotlang['Admin']['adminphp']['ask_send_wallet_address'], $PaySetting['ValuePay']);
+    sendmessage($from_id, $textmsg, $backadmin, 'HTML');
+    step('getwalletaddressgram', $from_id);
+} elseif ($user['step'] == "getwalletaddressgram") {
+    sendmessage($from_id, $textbotlang['Admin']['SettingnowPayment']['saveApi'], $keyboardadmin, 'HTML');
+    update("PaySetting", "ValuePay", $text, "NamePay", "walletaddressgram");
+    step('home', $from_id);
+} elseif ($datain == "nameusdt") {
+    $PaySetting = select("PaySetting", "ValuePay", "NamePay", "nameusdt", "select");
+    $textmsg = "Please send the new Gateway Name. Current value: " . $PaySetting['ValuePay'];
+    sendmessage($from_id, $textmsg, $backadmin, 'HTML');
+    step('getnameusdt', $from_id);
+} elseif ($user['step'] == "getnameusdt") {
+    sendmessage($from_id, $textbotlang['Admin']['SettingnowPayment']['saveApi'], $keyboardadmin, 'HTML');
+    update("PaySetting", "ValuePay", $text, "NamePay", "nameusdt");
+    step('home', $from_id);
+} elseif ($datain == "namegram") {
+    $PaySetting = select("PaySetting", "ValuePay", "NamePay", "namegram", "select");
+    $textmsg = "Please send the new Gateway Name. Current value: " . $PaySetting['ValuePay'];
+    sendmessage($from_id, $textmsg, $backadmin, 'HTML');
+    step('getnamegram', $from_id);
+} elseif ($user['step'] == "getnamegram") {
+    sendmessage($from_id, $textbotlang['Admin']['SettingnowPayment']['saveApi'], $keyboardadmin, 'HTML');
+    update("PaySetting", "ValuePay", $text, "NamePay", "namegram");
+    step('home', $from_id);
+} elseif ($datain == "namecart") {
+    $PaySetting = select("PaySetting", "ValuePay", "NamePay", "namecart", "select");
+    $textmsg = "Please send the new Gateway Name. Current value: " . $PaySetting['ValuePay'];
+    sendmessage($from_id, $textmsg, $backadmin, 'HTML');
+    step('getnamecart', $from_id);
+} elseif ($user['step'] == "getnamecart") {
+    sendmessage($from_id, $textbotlang['Admin']['SettingnowPayment']['saveApi'], $keyboardadmin, 'HTML');
+    update("PaySetting", "ValuePay", $text, "NamePay", "namecart");
+    step('home', $from_id);
+} elseif ($datain == "nametetra") {
+    $PaySetting = select("PaySetting", "ValuePay", "NamePay", "nametetra", "select");
+    $textmsg = "Please send the new Gateway Name. Current value: " . $PaySetting['ValuePay'];
+    sendmessage($from_id, $textmsg, $backadmin, 'HTML');
+    step('getnametetra', $from_id);
+} elseif ($user['step'] == "getnametetra") {
+    sendmessage($from_id, $textbotlang['Admin']['SettingnowPayment']['saveApi'], $keyboardadmin, 'HTML');
+    update("PaySetting", "ValuePay", $text, "NamePay", "nametetra");
+    step('home', $from_id);
+} elseif ($datain == "namenowpayment") {
+    $PaySetting = select("PaySetting", "ValuePay", "NamePay", "namenowpayment", "select");
+    $textmsg = "Please send the new Gateway Name. Current value: " . $PaySetting['ValuePay'];
+    sendmessage($from_id, $textmsg, $backadmin, 'HTML');
+    step('getnamenowpayment', $from_id);
+} elseif ($user['step'] == "getnamenowpayment") {
+    sendmessage($from_id, $textbotlang['Admin']['SettingnowPayment']['saveApi'], $keyboardadmin, 'HTML');
+    update("PaySetting", "ValuePay", $text, "NamePay", "namenowpayment");
+    step('home', $from_id);
+} elseif ($datain == "gram_static_memo") {
+    $PaySetting = select("PaySetting", "ValuePay", "NamePay", "gram_static_memo", "select");
+    $textmsg = "Please send the GRAM Memo/Comment. Current value: " . $PaySetting['ValuePay'];
+    sendmessage($from_id, $textmsg, $backadmin, 'HTML');
+    step('getgram_static_memo', $from_id);
+} elseif ($user['step'] == "getgram_static_memo") {
+    sendmessage($from_id, $textbotlang['Admin']['SettingnowPayment']['saveApi'], $keyboardadmin, 'HTML');
+    update("PaySetting", "ValuePay", $text, "NamePay", "gram_static_memo");
+    step('home', $from_id);
+} elseif ($datain == "usdtpwaurl") {
+    $PaySetting = select("PaySetting", "ValuePay", "NamePay", "usdt_pwa_url", "select");
+    $textmsg = "Please send the new USDT PWA URL (e.g., https://tetherland.com/). Send 0 to disable. Current value: " . $PaySetting['ValuePay'];
+    sendmessage($from_id, $textmsg, $backadmin, 'HTML');
+    step('getusdtpwaurl', $from_id);
+} elseif ($user['step'] == "getusdtpwaurl") {
+    sendmessage($from_id, $textbotlang['Admin']['SettingnowPayment']['saveApi'], $keyboardadmin, 'HTML');
+    update("PaySetting", "ValuePay", $text, "NamePay", "usdt_pwa_url");
+    step('home', $from_id);
+} elseif ($datain == "helpofflineusdt_btn") {
+    sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_send_tutorial'], $backadmin, 'HTML');
+    step("helpofflineusdt", $from_id);
+} elseif ($user['step'] == "helpofflineusdt") {
+    if ($text) {
+        if (intval($text) == 2) {
+            update("PaySetting", "ValuePay", "0", "NamePay", "helpofflineusdt");
+        } else {
+            $data = json_encode(['type' => "text", 'text' => $text]);
+            update("PaySetting", "ValuePay", $data, "NamePay", "helpofflineusdt");
+        }
+    } elseif ($photo) {
+        $data = json_encode(['type' => "photo", 'text' => $caption, 'photoid' => $photoid]);
+        update("PaySetting", "ValuePay", $data, "NamePay", "helpofflineusdt");
+    } elseif ($video) {
+        $data = json_encode(['type' => "video", 'text' => $caption, 'videoid' => $videoid]);
+        update("PaySetting", "ValuePay", $data, "NamePay", "helpofflineusdt");
+    } else {
+        sendmessage($from_id, $textbotlang['Admin']['adminphp']['err_invalid_name_3'], $backadmin, 'HTML');
+        return;
+    }
+    step('home', $from_id);
+    sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_success_tutorial'], $CartManage, 'HTML');
 } elseif ($text == $textbotlang['keyboard']['apiIranPay'] && $adminrulecheck['rule'] == "administrator") {
     $PaySetting = select("PaySetting", "ValuePay", "NamePay", "apiiranpay", "select")['ValuePay'];
     $texttronseller = sprintf($textbotlang['Admin']['adminphp']['ask_send_api_merchant_1'], $PaySetting);
@@ -7959,12 +7980,12 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         return;
     }
     $userdata = json_decode($user['Processing_value'], true);
-    $typepanel = select("marzban_panel", "*", "name_panel", $userdata['namepanel'], "select");
+    $typepanel = select("locations", "*", "name", $userdata['namepanel'], "select");
     outtypepanel($typepanel['type'], $textbotlang['Admin']['managepanel']['savedData']);
     $eextraprice = json_decode($typepanel['mainvolume'], true);
     $eextraprice[$text] = $userdata['mainvalume'];
     $eextraprice = json_encode($eextraprice);
-    update("marzban_panel", "mainvolume", $eextraprice, "name_panel", $userdata['namepanel']);
+    update("locations", "mainvolume", $eextraprice, "name", $userdata['namepanel']);
     update("user", "Processing_value", $userdata['namepanel'], "id", $from_id);
     step('home', $from_id);
 } elseif ($text == $textbotlang['keyboard']['maxCustomVolume'] && $adminrulecheck['rule'] == "administrator") {
@@ -7986,12 +8007,12 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         return;
     }
     $userdata = json_decode($user['Processing_value'], true);
-    $typepanel = select("marzban_panel", "*", "name_panel", $userdata['namepanel'], "select");
+    $typepanel = select("locations", "*", "name", $userdata['namepanel'], "select");
     outtypepanel($typepanel['type'], $textbotlang['Admin']['managepanel']['savedData']);
     $eextraprice = json_decode($typepanel['maxvolume'], true);
     $eextraprice[$text] = $userdata['maxvolume'];
     $eextraprice = json_encode($eextraprice);
-    update("marzban_panel", "maxvolume", $eextraprice, "name_panel", $userdata['namepanel']);
+    update("locations", "maxvolume", $eextraprice, "name", $userdata['namepanel']);
     update("user", "Processing_value", $userdata['namepanel'], "id", $from_id);
     step('home', $from_id);
 } elseif ($text == $textbotlang['keyboard']['minCustomTime'] && $adminrulecheck['rule'] == "administrator") {
@@ -8013,12 +8034,12 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         return;
     }
     $userdata = json_decode($user['Processing_value'], true);
-    $typepanel = select("marzban_panel", "*", "name_panel", $userdata['namepanel'], "select");
+    $typepanel = select("locations", "*", "name", $userdata['namepanel'], "select");
     outtypepanel($typepanel['type'], $textbotlang['Admin']['managepanel']['savedData']);
     $eextraprice = json_decode($typepanel['maintime'], true);
     $eextraprice[$text] = $userdata['maintime'];
     $eextraprice = json_encode($eextraprice);
-    update("marzban_panel", "maintime", $eextraprice, "name_panel", $userdata['namepanel']);
+    update("locations", "maintime", $eextraprice, "name", $userdata['namepanel']);
     update("user", "Processing_value", $userdata['namepanel'], "id", $from_id);
     step('home', $from_id);
 } elseif ($text == $textbotlang['keyboard']['maxCustomTime'] && $adminrulecheck['rule'] == "administrator") {
@@ -8040,12 +8061,12 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         return;
     }
     $userdata = json_decode($user['Processing_value'], true);
-    $typepanel = select("marzban_panel", "*", "name_panel", $userdata['namepanel'], "select");
+    $typepanel = select("locations", "*", "name", $userdata['namepanel'], "select");
     outtypepanel($typepanel['type'], $textbotlang['Admin']['managepanel']['savedData']);
     $eextraprice = json_decode($typepanel['maxtime'], true);
     $eextraprice[$text] = $userdata['maxtime'];
     $eextraprice = json_encode($eextraprice);
-    update("marzban_panel", "maxtime", $eextraprice, "name_panel", $userdata['namepanel']);
+    update("locations", "maxtime", $eextraprice, "name", $userdata['namepanel']);
     update("user", "Processing_value", $userdata['namepanel'], "id", $from_id);
     step('home', $from_id);
 } elseif ($text == $textbotlang['keyboard']['addDepartment']) {
@@ -8091,7 +8112,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         sendmessage($from_id, $textbotlang['Admin']['adminphp']['err_notfound_panel_user'], null, 'HTML');
         return;
     }
-    update("marzban_panel", "proxies", json_encode($userdata['service_ids']), "name_panel", $user['Processing_value']);
+    update("locations", "proxies", json_encode($userdata['service_ids']), "name", $user['Processing_value']);
     step("home", $from_id);
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_success_set_1'], $optionmarzneshin, 'HTML');
 } elseif ($text == $textbotlang['keyboard']['setSupportId'] && $adminrulecheck['rule'] == "administrator") {
@@ -8566,7 +8587,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     sendmessage($from_id, $textsetprotocol, $backadmin, 'HTML');
     step("setinboundandprotocol", $from_id);
 } elseif ($user['step'] == "setinboundandprotocol") {
-    $panel = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
+    $panel = select("locations", "*", "name", $user['Processing_value'], "select");
     if ($panel['type'] == "marzban") {
         if ($panel['version_panel'] == "1") {
             $DataUserOut = getuser($text, $user['Processing_value']);
@@ -8595,8 +8616,8 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
                     $DataUserOut['proxy_settings'][$key] = new stdClass();
                 }
             }
-            update("marzban_panel", "inbounds", json_encode($DataUserOut['group_ids']), "name_panel", $user['Processing_value']);
-            update("marzban_panel", "proxies", json_encode($DataUserOut['proxy_settings'], true), "name_panel", $user['Processing_value']);
+            update("locations", "inbounds", json_encode($DataUserOut['group_ids']), "name", $user['Processing_value']);
+            update("locations", "proxies", json_encode($DataUserOut['proxy_settings'], true), "name", $user['Processing_value']);
         } else {
             $DataUserOut = getuser($text, $user['Processing_value']);
             if (!empty($DataUserOut['error'])) {
@@ -8624,12 +8645,12 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
                     $DataUserOut['proxies'][$key] = new stdClass();
                 }
             }
-            update("marzban_panel", "inbounds", json_encode($DataUserOut['inbounds']), "name_panel", $user['Processing_value']);
-            update("marzban_panel", "proxies", json_encode($DataUserOut['proxies'], true), "name_panel", $user['Processing_value']);
+            update("locations", "inbounds", json_encode($DataUserOut['inbounds']), "name", $user['Processing_value']);
+            update("locations", "proxies", json_encode($DataUserOut['proxies'], true), "name", $user['Processing_value']);
         }
         sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_success_set_4'], $optionMarzban, 'HTML');
     } elseif ($panel['type'] == "s_ui") {
-        $data = GetClientsS_UI($text, $panel['name_panel']); {
+        $data = GetClientsS_UI($text, $panel['name']); {
             if (count($data) == 0) {
                 sendmessage($from_id, $textbotlang['Admin']['adminphp']['err_notfound_panel_1'], $options_ui, 'HTML');
                 return;
@@ -8638,10 +8659,10 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
             foreach ($data['inbounds'] as $service) {
                 $servies[] = $service;
             }
-            update("marzban_panel", "proxies", json_encode($servies, true), "name_panel", $user['Processing_value']);
+            update("locations", "proxies", json_encode($servies, true), "name", $user['Processing_value']);
         }
     } elseif ($panel['type'] == "ibsng" || $panel['type'] == "mikrotik") {
-        update("marzban_panel", "proxies", $text, "name_panel", $user['Processing_value']);
+        update("locations", "proxies", $text, "name", $user['Processing_value']);
     } elseif ($panel['type'] == "ibsng") {
         sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_success_set_3'], $optionibsng, 'HTML');
     } elseif ($panel['type'] == "mikrotik") {
@@ -8663,21 +8684,21 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
             return;
         }
         sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_success_set_4'], $optionX_ui_single, 'HTML');
-        update("marzban_panel", "inbounds", json_encode($data['obj']['inboundIds']), "name_panel", $user['Processing_value']);
+        update("locations", "inbounds", json_encode($data['obj']['inboundIds']), "name", $user['Processing_value']);
     } elseif ($panel['type'] == "rebecca") {
         $userdata = json_decode(getuser_rebecca($text, $user['Processing_value'])['body'], true);
         if (!is_array($userdata) || !isset($userdata['service_id'])) {
             sendmessage($from_id, $textbotlang['users']['stateus']['UserNotFound'], null, 'html');
             return;
         }
-        update("marzban_panel", "proxies", json_encode([$userdata['service_id']]), "name_panel", $user['Processing_value']);
+        update("locations", "proxies", json_encode([$userdata['service_id']]), "name", $user['Processing_value']);
         sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_success_set_4'], $optionrebecca, 'HTML');
     } else {
         sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_success_set_4'], $optionMarzban, 'HTML');
     }
     step("home", $from_id);
 } elseif ($text == $textbotlang['keyboard']['renewalStatus'] && $adminrulecheck['rule'] == "administrator") {
-    $marzbanstatus = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
+    $marzbanstatus = select("locations", "*", "name", $user['Processing_value'], "select");
     $keyboardstatus = json_encode([
         'inline_keyboard' => [
             [
@@ -8687,8 +8708,8 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     ]);
     sendmessage($from_id, $textbotlang['Admin']['Status']['activePanel'], $keyboardstatus, 'HTML');
 } elseif ($datain == "on_extend") {
-    update("marzban_panel", "status_extend", "off_extend", "name_panel", $user['Processing_value']);
-    $marzbanstatus = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
+    update("locations", "status_extend", "off_extend", "name", $user['Processing_value']);
+    $marzbanstatus = select("locations", "*", "name", $user['Processing_value'], "select");
     $keyboardstatus = json_encode([
         'inline_keyboard' => [
             [
@@ -8698,8 +8719,8 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     ]);
     Editmessagetext($from_id, $message_id, $textbotlang['Admin']['Status']['activePanelOff'], $keyboardstatus);
 } elseif ($datain == "off_extend") {
-    update("marzban_panel", "status_extend", "on_extend", "name_panel", $user['Processing_value']);
-    $marzbanstatus = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
+    update("locations", "status_extend", "on_extend", "name", $user['Processing_value']);
+    $marzbanstatus = select("locations", "*", "name", $user['Processing_value'], "select");
     $keyboardstatus = json_encode([
         'inline_keyboard' => [
             [
@@ -8765,7 +8786,7 @@ elseif ($text == $textbotlang['keyboard']['hidePanelForUser'] && $adminrulecheck
         sendmessage($from_id, $textbotlang['Admin']['agent']['invalidValue'], $backadmin, 'HTML');
         return;
     }
-    $typepanel = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
+    $typepanel = select("locations", "*", "name", $user['Processing_value'], "select");
     outtypepanel($typepanel['type'], $textbotlang['Admin']['adminphp']['ok_success_panel_1']);
     if ($typepanel['hide_user'] == null) {
         $hideuserid = [];
@@ -8774,7 +8795,7 @@ elseif ($text == $textbotlang['keyboard']['hidePanelForUser'] && $adminrulecheck
     }
     $hideuserid[] = $text;
     $hideuserid = json_encode($hideuserid);
-    update("marzban_panel", "hide_user", $hideuserid, "name_panel", $user['Processing_value']);
+    update("locations", "hide_user", $hideuserid, "name", $user['Processing_value']);
     step('home', $from_id);
 } elseif ($text == $textbotlang['keyboard']['removeFromHiddenList'] && $adminrulecheck['rule'] == "administrator") {
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_send_panel_user_number'], $backadmin, 'HTML');
@@ -8784,7 +8805,7 @@ elseif ($text == $textbotlang['keyboard']['hidePanelForUser'] && $adminrulecheck
         sendmessage($from_id, $textbotlang['Admin']['agent']['invalidValue'], $backadmin, 'HTML');
         return;
     }
-    $typepanel = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
+    $typepanel = select("locations", "*", "name", $user['Processing_value'], "select");
     step("home", $from_id);
     if ($typepanel['hide_user'] == null) {
         outtypepanel($typepanel['type'], $textbotlang['Admin']['adminphp']['err_notfound_user_1']);
@@ -8805,7 +8826,7 @@ elseif ($text == $textbotlang['keyboard']['hidePanelForUser'] && $adminrulecheck
         $hideuserid = array_values($hideuserid);
     }
     $hideuserid = json_encode($hideuserid);
-    update("marzban_panel", "hide_user", $hideuserid, "name_panel", $user['Processing_value']);
+    update("locations", "hide_user", $hideuserid, "name", $user['Processing_value']);
     outtypepanel($typepanel['type'], $textbotlang['Admin']['adminphp']['ok_success_user_7']);
 } elseif ($datain == "scoresetting") {
     sendmessage($from_id, $textbotlang['users']['selectoption'], $lottery, 'HTML');
@@ -8918,10 +8939,10 @@ elseif ($text == $textbotlang['keyboard']['hidePanelForUser'] && $adminrulecheck
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_send_panel_user_4'], $backadmin, 'HTML');
     step("getdatainboundproduct", $from_id);
 } elseif ($user['step'] == "getdatainboundproduct") {
-    $marzban_list_get = select("marzban_panel", "*", "code_panel", $user['Processing_value_one']);
+    $marzban_list_get = select("locations", "*", "code", $user['Processing_value_one']);
     $datainbound = "";
     if ($marzban_list_get['type'] == "marzban") {
-        $DataUserOut = getuser($text, $marzban_list_get['name_panel']);
+        $DataUserOut = getuser($text, $marzban_list_get['name']);
         if (!empty($DataUserOut['error'])) {
             sendmessage($from_id, $DataUserOut['error'], null, 'HTML');
             return;
@@ -8951,12 +8972,12 @@ elseif ($text == $textbotlang['keyboard']['hidePanelForUser'] && $adminrulecheck
         $proxies_json = json_encode($DataUserOut['proxies']);
         $stmt->bindParam(':proxies', $proxies_json);
         $stmt->bindParam(':name_product', $user['Processing_value']);
-        $stmt->bindParam(':Location', $marzban_list_get['name_panel']);
+        $stmt->bindParam(':Location', $marzban_list_get['name']);
         $stmt->bindParam(':agent', $user['Processing_value_tow']);
         $stmt->execute();
         $datainbound = json_encode($DataUserOut['inbounds']);
     } elseif ($marzban_list_get['type'] == "marzneshin") {
-        $userdata = json_decode(getuserm($text, $marzban_list_get['name_panel'])['body'], true);
+        $userdata = json_decode(getuserm($text, $marzban_list_get['name'])['body'], true);
         if (isset($userdata['detail']) and $userdata['detail'] == "User not found") {
             sendmessage($from_id, $textbotlang['Admin']['adminphp']['err_notfound_panel_user'], null, 'HTML');
             return;
@@ -8965,7 +8986,7 @@ elseif ($text == $textbotlang['keyboard']['hidePanelForUser'] && $adminrulecheck
     } elseif ($marzban_list_get['type'] == "x-ui_single" || $marzban_list_get['type'] == "alireza_single") {
         $datainbound = $text;
     } elseif ($marzban_list_get['type'] == "s_ui") {
-        $data = GetClientsS_UI($text, $marzban_list_get['name_panel']);
+        $data = GetClientsS_UI($text, $marzban_list_get['name']);
         if (count($data) == 0) {
             sendmessage($from_id, $textbotlang['Admin']['adminphp']['err_notfound_panel_1'], $options_ui, 'HTML');
             return;
@@ -8984,138 +9005,12 @@ elseif ($text == $textbotlang['keyboard']['hidePanelForUser'] && $adminrulecheck
     $stmt = $pdo->prepare("UPDATE product SET inbounds = :inbounds WHERE id = :name_product AND (Location = :Location OR Location = '/all') AND agent = :agent");
     $stmt->bindParam(':inbounds', $datainbound);
     $stmt->bindParam(':name_product', $user['Processing_value']);
-    $stmt->bindParam(':Location', $marzban_list_get['name_panel']);
+    $stmt->bindParam(':Location', $marzban_list_get['name']);
     $stmt->bindParam(':agent', $user['Processing_value_tow']);
     $stmt->execute();
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_day_4'], $shopkeyboard, 'HTML');
     step('home', $from_id);
-} elseif (preg_match('/extendadmin_(\w+)/', $datain, $dataget) || strpos($text, "/extend ") !== false) {
-    if ($text[0] == "/") {
-        $usernameconfig = explode(" ", $text)[1];
-        $id_invoice = select("invoice", "id_invoice", "username", $usernameconfig, 'select');
-        if ($id_invoice == false) {
-            sendmessage($from_id, $textbotlang['Admin']['adminphp']['err_user_4'], null, 'HTML');
-            return;
-        }
-        $id_invoice = $id_invoice['id_invoice'];
-    } else {
-        $id_invoice = $dataget[1];
-    }
-    $nameloc = select("invoice", "*", "id_invoice", $id_invoice, "select");
-    if ($nameloc == false) {
-        sendmessage($from_id, $textbotlang['Admin']['adminphp']['err_error_renew'], null, 'HTML');
-        return;
-    }
-    $DataUserOut = $ManagePanel->DataUser($nameloc['Service_location'], $nameloc['username']);
-    if ($DataUserOut['status'] == "Unsuccessful") {
-        sendmessage($from_id, $textbotlang['users']['status']['error'], null, 'html');
-        return;
-    }
-    update("user", "Processing_value_one", $nameloc['id_invoice'], "id", $from_id);
-    savedata("clear", "id_invoice", $nameloc['id_invoice']);
-    $textcustom = $textbotlang['Admin']['adminphp']['ask_send_volume_3'];
-    sendmessage($from_id, $textcustom, $backuser, 'html');
-    step('gettimecustomvolomforextendadmin', $from_id);
-} elseif ($user['step'] == "gettimecustomvolomforextendadmin") {
-    $userdate = json_decode($user['Processing_value'], true);
-    $nameloc = select("invoice", "*", "id_invoice", $userdate['id_invoice'], "select");
-    $marzban_list_get = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
-    if (!ctype_digit($text)) {
-        sendmessage($from_id, $textbotlang['Admin']['Product']['invalidVolume'], $backuser, 'HTML');
-        return;
-    }
-    savedata("save", "volume", $text);
-    $textcustom = $textbotlang['Admin']['adminphp']['ask_select_service_time'];
-    sendmessage($from_id, $textcustom, $backuser, 'html');
-    step('getvolumecustomuserforextendadmin', $from_id);
-} elseif ($user['step'] == "getvolumecustomuserforextendadmin") {
-    $userdate = json_decode($user['Processing_value'], true);
-    $nameloc = select("invoice", "*", "id_invoice", $userdate['id_invoice'], "select");
-    $marzban_list_get = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
-    if (!ctype_digit($text)) {
-        sendmessage($from_id, $textbotlang['Admin']['Product']['invalidTime'], $backuser, 'HTML');
-        return;
-    }
-    $prodcut['name_product'] = $nameloc['name_product'];
-    $prodcut['note'] = "";
-    $prodcut['price_product'] = 0;
-    $prodcut['Service_time'] = $text;
-    $prodcut['Volume_constraint'] = $userdate['volume'];
-    update("invoice", "name_product", $prodcut['name_product'], "id_invoice", $userdate['id_invoice']);
-    update("invoice", "price_product", $prodcut['price_product'], "id_invoice", $userdate['id_invoice']);
-    update("invoice", "Volume", $prodcut['Volume_constraint'], "id_invoice", $userdate['id_invoice']);
-    update("invoice", "Service_time", $prodcut['Service_time'], "id_invoice", $userdate['id_invoice']);
-    step("home", $from_id);
-    $keyboardextend = json_encode([
-        'inline_keyboard' => [
-            [
-                ['text' => $textbotlang['users']['extend']['confirm'], 'callback_data' => "confirmserivceadmin-" . $nameloc['id_invoice']],
-            ],
-            [
-                ['text' => $textbotlang['keyboard']['backToMainMenu2'], 'callback_data' => "backuser"]
-            ]
-        ]
-    ]);
-    $textextend = sprintf($textbotlang['Admin']['adminphp']['ok_service_user_volume'], $nameloc['username'], $prodcut['name_product'], $prodcut['Service_time'], $prodcut['Volume_constraint'], $prodcut['note']);
-    if ($user['step'] == "getvolumecustomuserforextendadmin") {
-        sendmessage($from_id, $textextend, $keyboardextend, 'HTML');
-    } else {
-        Editmessagetext($from_id, $message_id, $textextend, $keyboardextend);
-    }
-} elseif (preg_match('/^confirmserivceadmin-(.*)/', $datain, $dataget)) {
-    Editmessagetext($from_id, $message_id, $text_inline, json_encode(['inline_keyboard' => []]));
-    $id_invoice = $dataget[1];
-    $nameloc = select("invoice", "*", "id_invoice", $id_invoice, "select");
-    $marzban_list_get = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
-    $prodcut['code_product'] = "custom_volume";
-    $prodcut['name_product'] = $nameloc['name_product'];
-    $prodcut['price_product'] = 0;
-    $prodcut['Service_time'] = $nameloc['Service_time'];
-    $prodcut['Volume_constraint'] = $nameloc['Volume'];
-    if ($prodcut == false || !in_array($nameloc['Status'], ['active', 'end_of_time', 'end_of_volume', 'sendedwarn', 'send_on_hold'])) {
-        sendmessage($from_id, $textbotlang['Admin']['adminphp']['err_error_renew'], null, 'HTML');
-        return;
-    }
-    deletemessage($from_id, $message_id);
-    $extend = $ManagePanel->extend($marzban_list_get['Methodextend'], $prodcut['Volume_constraint'], $prodcut['Service_time'], $nameloc['username'], $prodcut['code_product'], $marzban_list_get['code_panel']);
-    if ($extend['status'] == false) {
-        $extend['msg'] = json_encode($extend['msg']);
-        $textreports = sprintf($textbotlang['Admin']['adminphp']['err_error_panel_service_user'], $marzban_list_get['name_panel'], $nameloc['username'], $extend['msg']);
-        sendmessage($from_id, $textbotlang['Admin']['adminphp']['err_error_service_renew'], null, 'HTML');
-        if (strlen($setting['Channel_Report']) > 0) {
-            telegram('sendmessage', [
-                'chat_id' => $setting['Channel_Report'],
-                'message_thread_id' => $errorreport,
-                'text' => $textreports,
-                'parse_mode' => "HTML"
-            ]);
-        }
-        return;
-    }
-    $stmt = $pdo->prepare("INSERT IGNORE INTO service_other (id_user, username, value, type, time, price, output) VALUES (:id_user, :username, :value, :type, :time, :price, :output)");
-    $dateacc = date('Y/m/d H:i:s');
-    $value = $prodcut['Volume_constraint'] . "_" . $prodcut['Service_time'];
-    $type = "extend_user_by_admin";
-    $stmt->bindParam(':id_user', $from_id, PDO::PARAM_STR);
-    $stmt->bindParam(':username', $nameloc['username'], PDO::PARAM_STR);
-    $stmt->bindParam(':value', $value, PDO::PARAM_STR);
-    $stmt->bindParam(':type', $type, PDO::PARAM_STR);
-    $stmt->bindParam(':time', $dateacc, PDO::PARAM_STR);
-    $stmt->bindParam(':price', $prodcut['price_product'], PDO::PARAM_STR);
-    $output_json = json_encode($extend);
-    $stmt->bindParam(':output', $output_json, PDO::PARAM_STR);
-    $stmt->execute();
-    update("invoice", "Status", "active", "id_invoice", $id_invoice);
-    sendmessage($from_id, $textbotlang['users']['extend']['thanks'], null, 'HTML');
-    $text_report = sprintf($textbotlang['Admin']['adminphp']['msg_panel_service_user'], $from_id, $nameloc['id_user'], $prodcut['name_product'], $nameloc['username'], $nameloc['Service_location']);
-    if (strlen($setting['Channel_Report']) > 0) {
-        telegram('sendmessage', [
-            'chat_id' => $setting['Channel_Report'],
-            'message_thread_id' => $otherservice,
-            'text' => $text_report,
-            'parse_mode' => "HTML"
-        ]);
-    }
+
 } elseif (preg_match('/removeresid_(\w+)/', $datain, $dataget)) {
     $idorder = $dataget[1];
     $stmt = $pdo->prepare("DELETE FROM Payment_report WHERE id_order = :id_order");
@@ -9640,10 +9535,10 @@ if ($datain == "settimecornday" && $adminrulecheck['rule'] == "administrator") {
     $stmt->bindParam(':name', $text, PDO::PARAM_STR);
     $stmt->execute();
 } elseif ($text == $textbotlang['keyboard']['panelFeatureStatus'] && $adminrulecheck['rule'] == "administrator") {
-    $panel = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
+    $panel = select("locations", "*", "name", $user['Processing_value'], "select");
     if (!in_array($panel['subvip'], ['offsubvip', 'onsubvip'])) {
-        update("marzban_panel", "subvip", "offsubvip", "code_panel", $panel['code_panel']);
-        $panel = select("marzban_panel", "*", "code_panel", $panel['code_panel'], "select");
+        update("locations", "subvip", "offsubvip", "code", $panel['code']);
+        $panel = select("locations", "*", "code", $panel['code'], "select");
     }
     if (!in_array($panel['version_panel'], ['0', '1'])) {
         $panel['version_panel'] = '0';
@@ -9704,66 +9599,66 @@ if ($datain == "settimecornday" && $adminrulecheck['rule'] == "administrator") {
     $Bot_Status = [
         'inline_keyboard' => [
             [
-                ['text' => $statusshowbuy, 'callback_data' => "editpanel-statusbuy-{$panel['status']}-{$panel['code_panel']}"],
+                ['text' => $statusshowbuy, 'callback_data' => "editpanel-statusbuy-{$panel['status']}-{$panel['code']}"],
                 ['text' => $textbotlang['keyboard']['showPanel'], 'callback_data' => "none"],
             ],
             [
-                ['text' => $statusshowtest, 'callback_data' => "editpanel-statustest-{$panel['TestAccount']}-{$panel['code_panel']}"],
+                ['text' => $statusshowtest, 'callback_data' => "editpanel-statustest-{$panel['TestAccount']}-{$panel['code']}"],
                 ['text' => $textbotlang['keyboard']['showTestAccount'], 'callback_data' => "none"],
             ],
             [
-                ['text' => $status_extend, 'callback_data' => "editpanel-stautsextend-{$panel['status_extend']}-{$panel['code_panel']}"],
+                ['text' => $status_extend, 'callback_data' => "editpanel-stautsextend-{$panel['status_extend']}-{$panel['code']}"],
                 ['text' => $textbotlang['keyboard']['renewalStatus'], 'callback_data' => "none"],
             ],
             [
-                ['text' => $customstatusf, 'callback_data' => "editpanel-customstatusf-{$customvlume['f']}-{$panel['code_panel']}"],
+                ['text' => $customstatusf, 'callback_data' => "editpanel-customstatusf-{$customvlume['f']}-{$panel['code']}"],
                 ['text' => $textbotlang['keyboard']['customServiceGroupF'], 'callback_data' => "none"],
             ],
             [
-                ['text' => $customstatusn, 'callback_data' => "editpanel-customstatusn-{$customvlume['n']}-{$panel['code_panel']}"],
+                ['text' => $customstatusn, 'callback_data' => "editpanel-customstatusn-{$customvlume['n']}-{$panel['code']}"],
                 ['text' => $textbotlang['keyboard']['customServiceGroupN'], 'callback_data' => "none"],
             ],
             [
-                ['text' => $customstatusn2, 'callback_data' => "editpanel-customstatusn2-{$customvlume['n2']}-{$panel['code_panel']}"],
+                ['text' => $customstatusn2, 'callback_data' => "editpanel-customstatusn2-{$customvlume['n2']}-{$panel['code']}"],
                 ['text' => $textbotlang['keyboard']['customServiceGroupN2'], 'callback_data' => "none"],
             ]
         ]
     ];
     if (!in_array($panel['type'], ['Manualsale', "WGDashboard", 'hiddify'])) {
         $Bot_Status['inline_keyboard'][] = [
-            ['text' => $statusconfig, 'callback_data' => "editpanel-stautsconfig-{$panel['config']}-{$panel['code_panel']}"],
+            ['text' => $statusconfig, 'callback_data' => "editpanel-stautsconfig-{$panel['config']}-{$panel['code']}"],
             ['text' => $textbotlang['keyboard']['sendConfig'], 'callback_data' => "none"],
         ];
     }
     if (!in_array($panel['type'], ['Manualsale', "WGDashboard", 'hiddify'])) {
         $Bot_Status['inline_keyboard'][] = [
-            ['text' => $statussublink, 'callback_data' => "editpanel-sublink-{$panel['sublink']}-{$panel['code_panel']}"],
+            ['text' => $statussublink, 'callback_data' => "editpanel-sublink-{$panel['sublink']}-{$panel['code']}"],
             ['text' => $textbotlang['keyboard']['sendSubLink'], 'callback_data' => "none"],
         ];
     }
     if (in_array($panel['type'], ['marzban', "x-ui_single", "marzneshin"])) {
         $Bot_Status['inline_keyboard'][] = [
-            ['text' => $statusconnecton, 'callback_data' => "editpanel-connecton-{$panel['conecton']}-{$panel['code_panel']}"],
+            ['text' => $statusconnecton, 'callback_data' => "editpanel-connecton-{$panel['conecton']}-{$panel['code']}"],
             ['text' => $textbotlang['keyboard']['firstConnection'], 'callback_data' => "none"],
         ];
         $Bot_Status['inline_keyboard'][] = [
-            ['text' => $on_hold_test, 'callback_data' => "editpanel-on_hold_Test-{$panel['on_hold_test']}-{$panel['code_panel']}"],
+            ['text' => $on_hold_test, 'callback_data' => "editpanel-on_hold_Test-{$panel['on_hold_test']}-{$panel['code']}"],
             ['text' => $textbotlang['keyboard']['firstConnectionTest'], 'callback_data' => "none"],
         ];
     }
     if (!in_array($panel['type'], ["Manualsale", "WGDashboard"])) {
         $Bot_Status['inline_keyboard'][] = [
-            ['text' => $changeloc, 'callback_data' => "editpanel-changeloc-{$panel['changeloc']}-{$panel['code_panel']}"],
+            ['text' => $changeloc, 'callback_data' => "editpanel-changeloc-{$panel['changeloc']}-{$panel['code']}"],
             ['text' => $textbotlang['keyboard']['changeLocation'], 'callback_data' => "none"],
         ];
         $Bot_Status['inline_keyboard'][] = [
-            ['text' => $subvip, 'callback_data' => "editpanel-subvip-{$panel['subvip']}-{$panel['code_panel']}"],
+            ['text' => $subvip, 'callback_data' => "editpanel-subvip-{$panel['subvip']}-{$panel['code']}"],
             ['text' => $textbotlang['keyboard']['exclusiveSubLink'], 'callback_data' => "none"],
         ];
     }
     if (in_array($panel['type'], ["marzban"])) {
         $Bot_Status['inline_keyboard'][] = [
-            ['text' => $inbocunddisable, 'callback_data' => "editpanel-inbocunddisable-{$panel['inboundstatus']}-{$panel['code_panel']}"],
+            ['text' => $inbocunddisable, 'callback_data' => "editpanel-inbocunddisable-{$panel['inboundstatus']}-{$panel['code']}"],
             ['text' => $textbotlang['keyboard']['inactiveAccount'], 'callback_data' => "none"],
         ];
     }
@@ -9783,72 +9678,72 @@ if ($datain == "settimecornday" && $adminrulecheck['rule'] == "administrator") {
 } elseif (preg_match('/^editpanel-(.*)-(.*)-(.*)/', $datain, $dataget)) {
     $type = $dataget[1];
     $value = $dataget[2];
-    $code_panel = $dataget[3];
+    $code = $dataget[3];
     if ($type == "stautsconfig") {
         if ($value == "onconfig") {
             $valuenew = "offconfig";
         } else {
             $valuenew = "onconfig";
         }
-        update("marzban_panel", "config", $valuenew, "code_panel", $code_panel);
+        update("locations", "config", $valuenew, "code", $code);
     } elseif ($type == "sublink") {
         if ($value == "onsublink") {
             $valuenew = "offsublink";
         } else {
             $valuenew = "onsublink";
         }
-        update("marzban_panel", "sublink", $valuenew, "code_panel", $code_panel);
+        update("locations", "sublink", $valuenew, "code", $code);
     } elseif ($type == "statusbuy") {
         if ($value == "active") {
             $valuenew = "disable";
         } else {
             $valuenew = "active";
         }
-        update("marzban_panel", "status", $valuenew, "code_panel", $code_panel);
+        update("locations", "status", $valuenew, "code", $code);
     } elseif ($type == "statustest") {
         if ($value == "ONTestAccount") {
             $valuenew = "OFFTestAccount";
         } else {
             $valuenew = "ONTestAccount";
         }
-        update("marzban_panel", "TestAccount", $valuenew, "code_panel", $code_panel);
+        update("locations", "TestAccount", $valuenew, "code", $code);
     } elseif ($type == "connecton") {
         if ($value == "onconecton") {
             $valuenew = "offconecton";
         } else {
             $valuenew = "onconecton";
         }
-        update("marzban_panel", "conecton", $valuenew, "code_panel", $code_panel);
+        update("locations", "conecton", $valuenew, "code", $code);
     } elseif ($type == "stautsextend") {
         if ($value == "on_extend") {
             $valuenew = "off_extend";
         } else {
             $valuenew = "on_extend";
         }
-        update("marzban_panel", "status_extend", $valuenew, "code_panel", $code_panel);
+        update("locations", "status_extend", $valuenew, "code", $code);
     } elseif ($type == "changeloc") {
         if ($value == "onchangeloc") {
             $valuenew = "offchangeloc";
         } else {
             $valuenew = "onchangeloc";
         }
-        update("marzban_panel", "changeloc", $valuenew, "code_panel", $code_panel);
+        update("locations", "changeloc", $valuenew, "code", $code);
     } elseif ($type == "inbocunddisable") {
         if ($value == "oninbounddisable") {
             $valuenew = "offinbounddisable";
         } else {
             $valuenew = "oninbounddisable";
         }
-        update("marzban_panel", "inboundstatus", $valuenew, "code_panel", $code_panel);
+        update("locations", "inboundstatus", $valuenew, "code", $code);
     } elseif ($type == "subvip") {
         if ($value == "onsubvip") {
             $valuenew = "offsubvip";
         } else {
             $valuenew = "onsubvip";
         }
-        update("marzban_panel", "subvip", $valuenew, "code_panel", $code_panel);
+        update("locations", "subvip", $valuenew, "code", $code);
     } elseif ($type == "customstatusf") {
-        $panel = select("marzban_panel", "*", "code_panel", $code_panel, "select");
+        $panel = select("locations", "*", "code", $code, "select");
         $customvlume = json_decode($panel['customvolume'], true);
         if ($value == "1") {
             $valuenew = "0";
@@ -9856,9 +9751,9 @@ if ($datain == "settimecornday" && $adminrulecheck['rule'] == "administrator") {
             $valuenew = "1";
         }
         $customvlume['f'] = $valuenew;
-        update("marzban_panel", "customvolume", json_encode($customvlume), "code_panel", $code_panel);
+        update("locations", "customvolume", json_encode($customvlume), "code", $code);
     } elseif ($type == "customstatusn") {
-        $panel = select("marzban_panel", "*", "code_panel", $code_panel, "select");
+        $panel = select("locations", "*", "code", $code, "select");
         $customvlume = json_decode($panel['customvolume'], true);
         if ($value == "1") {
             $valuenew = "0";
@@ -9866,9 +9761,9 @@ if ($datain == "settimecornday" && $adminrulecheck['rule'] == "administrator") {
             $valuenew = "1";
         }
         $customvlume['n'] = $valuenew;
-        update("marzban_panel", "customvolume", json_encode($customvlume), "code_panel", $code_panel);
+        update("locations", "customvolume", json_encode($customvlume), "code", $code);
     } elseif ($type == "customstatusn2") {
-        $panel = select("marzban_panel", "*", "code_panel", $code_panel, "select");
+        $panel = select("locations", "*", "code", $code, "select");
         $customvlume = json_decode($panel['customvolume'], true);
         if ($value == "1") {
             $valuenew = "0";
@@ -9876,16 +9771,16 @@ if ($datain == "settimecornday" && $adminrulecheck['rule'] == "administrator") {
             $valuenew = "1";
         }
         $customvlume['n2'] = $valuenew;
-        update("marzban_panel", "customvolume", json_encode($customvlume), "code_panel", $code_panel);
+        update("locations", "customvolume", json_encode($customvlume), "code", $code);
     } elseif ($type == "on_hold_Test") {
         if ($value == "0") {
             $valuenew = "1";
         } else {
             $valuenew = "0";
         }
-        update("marzban_panel", "on_hold_test", $valuenew, "code_panel", $code_panel);
+        update("locations", "on_hold_test", $valuenew, "code", $code);
     }
-    $panel = select("marzban_panel", "*", "code_panel", $code_panel, "select");
+    $panel = select("locations", "*", "code", $code, "select");
     $customvlume = json_decode($panel['customvolume'], true);
     $statusconfig = [
         'onconfig' => $textbotlang['Admin']['Status']['statuson'],
@@ -9942,66 +9837,66 @@ if ($datain == "settimecornday" && $adminrulecheck['rule'] == "administrator") {
     $Bot_Status = [
         'inline_keyboard' => [
             [
-                ['text' => $statusshowbuy, 'callback_data' => "editpanel-statusbuy-{$panel['status']}-{$panel['code_panel']}"],
+                ['text' => $statusshowbuy, 'callback_data' => "editpanel-statusbuy-{$panel['status']}-{$panel['code']}"],
                 ['text' => $textbotlang['keyboard']['showPanel'], 'callback_data' => "none"],
             ],
             [
-                ['text' => $statusshowtest, 'callback_data' => "editpanel-statustest-{$panel['TestAccount']}-{$panel['code_panel']}"],
+                ['text' => $statusshowtest, 'callback_data' => "editpanel-statustest-{$panel['TestAccount']}-{$panel['code']}"],
                 ['text' => $textbotlang['keyboard']['showTestAccount'], 'callback_data' => "none"],
             ],
             [
-                ['text' => $status_extend, 'callback_data' => "editpanel-stautsextend-{$panel['status_extend']}-{$panel['code_panel']}"],
+                ['text' => $status_extend, 'callback_data' => "editpanel-stautsextend-{$panel['status_extend']}-{$panel['code']}"],
                 ['text' => $textbotlang['keyboard']['renewalStatus'], 'callback_data' => "none"],
             ],
             [
-                ['text' => $customstatusf, 'callback_data' => "editpanel-customstatusf-{$customvlume['f']}-{$panel['code_panel']}"],
+                ['text' => $customstatusf, 'callback_data' => "editpanel-customstatusf-{$customvlume['f']}-{$panel['code']}"],
                 ['text' => $textbotlang['keyboard']['customServiceGroupF'], 'callback_data' => "none"],
             ],
             [
-                ['text' => $customstatusn, 'callback_data' => "editpanel-customstatusn-{$customvlume['n']}-{$panel['code_panel']}"],
+                ['text' => $customstatusn, 'callback_data' => "editpanel-customstatusn-{$customvlume['n']}-{$panel['code']}"],
                 ['text' => $textbotlang['keyboard']['customServiceGroupN'], 'callback_data' => "none"],
             ],
             [
-                ['text' => $customstatusn2, 'callback_data' => "editpanel-customstatusn2-{$customvlume['n2']}-{$panel['code_panel']}"],
+                ['text' => $customstatusn2, 'callback_data' => "editpanel-customstatusn2-{$customvlume['n2']}-{$panel['code']}"],
                 ['text' => $textbotlang['keyboard']['customServiceGroupN2'], 'callback_data' => "none"],
             ]
         ]
     ];
     if (!in_array($panel['type'], ['Manualsale', "WGDashboard", 'hiddify'])) {
         $Bot_Status['inline_keyboard'][] = [
-            ['text' => $statusconfig, 'callback_data' => "editpanel-stautsconfig-{$panel['config']}-{$panel['code_panel']}"],
+            ['text' => $statusconfig, 'callback_data' => "editpanel-stautsconfig-{$panel['config']}-{$panel['code']}"],
             ['text' => $textbotlang['keyboard']['sendConfig'], 'callback_data' => "none"],
         ];
     }
     if (!in_array($panel['type'], ['Manualsale', "WGDashboard", 'hiddify'])) {
         $Bot_Status['inline_keyboard'][] = [
-            ['text' => $statussublink, 'callback_data' => "editpanel-sublink-{$panel['sublink']}-{$panel['code_panel']}"],
+            ['text' => $statussublink, 'callback_data' => "editpanel-sublink-{$panel['sublink']}-{$panel['code']}"],
             ['text' => $textbotlang['keyboard']['sendSubLink'], 'callback_data' => "none"],
         ];
     }
     if (in_array($panel['type'], ['marzban', "x-ui_single", "marzneshin"])) {
         $Bot_Status['inline_keyboard'][] = [
-            ['text' => $statusconnecton, 'callback_data' => "editpanel-connecton-{$panel['conecton']}-{$panel['code_panel']}"],
+            ['text' => $statusconnecton, 'callback_data' => "editpanel-connecton-{$panel['conecton']}-{$panel['code']}"],
             ['text' => $textbotlang['keyboard']['firstConnection'], 'callback_data' => "none"],
         ];
         $Bot_Status['inline_keyboard'][] = [
-            ['text' => $on_hold_test, 'callback_data' => "editpanel-on_hold_Test-{$panel['on_hold_test']}-{$panel['code_panel']}"],
+            ['text' => $on_hold_test, 'callback_data' => "editpanel-on_hold_Test-{$panel['on_hold_test']}-{$panel['code']}"],
             ['text' => $textbotlang['keyboard']['firstConnectionTest'], 'callback_data' => "none"],
         ];
     }
     if (!in_array($panel['type'], ["Manualsale", "WGDashboard"])) {
         $Bot_Status['inline_keyboard'][] = [
-            ['text' => $changeloc, 'callback_data' => "editpanel-changeloc-{$panel['changeloc']}-{$panel['code_panel']}"],
+            ['text' => $changeloc, 'callback_data' => "editpanel-changeloc-{$panel['changeloc']}-{$panel['code']}"],
             ['text' => $textbotlang['keyboard']['changeLocation'], 'callback_data' => "none"],
         ];
         $Bot_Status['inline_keyboard'][] = [
-            ['text' => $subvip, 'callback_data' => "editpanel-subvip-{$panel['subvip']}-{$panel['code_panel']}"],
+            ['text' => $subvip, 'callback_data' => "editpanel-subvip-{$panel['subvip']}-{$panel['code']}"],
             ['text' => $textbotlang['keyboard']['exclusiveSubLink'], 'callback_data' => "none"],
         ];
     }
     if (in_array($panel['type'], ["marzban"])) {
         $Bot_Status['inline_keyboard'][] = [
-            ['text' => $inbocunddisable, 'callback_data' => "editpanel-inbocunddisable-{$panel['inboundstatus']}-{$panel['code_panel']}"],
+            ['text' => $inbocunddisable, 'callback_data' => "editpanel-inbocunddisable-{$panel['inboundstatus']}-{$panel['code']}"],
             ['text' => $textbotlang['keyboard']['inactiveAccount'], 'callback_data' => "none"],
         ];
     }
@@ -10128,7 +10023,7 @@ if ($datain == "settimecornday" && $adminrulecheck['rule'] == "administrator") {
         'n' => $userdata['pricen'],
         'n2' => $text
     ));
-    update("marzban_panel", "pricecustomvolume", $pricelist, null, null);
+    update("locations", "pricecustomvolume", $pricelist, null, null);
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_success_price_3'], $keyboardadmin, 'HTML');
     step("home", $from_id);
 } elseif ($text == $textbotlang['keyboard']['quickSetTimePrice']) {
@@ -10161,7 +10056,7 @@ if ($datain == "settimecornday" && $adminrulecheck['rule'] == "administrator") {
         'n' => $userdata['pricen'],
         'n2' => $text
     ));
-    update("marzban_panel", "pricecustomtime", $pricelist, null, null);
+    update("locations", "pricecustomtime", $pricelist, null, null);
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_success_price_3'], $keyboardadmin, 'HTML');
     step("home", $from_id);
 } elseif ($datain == "changeloclimit") {
@@ -10214,7 +10109,7 @@ if ($datain == "settimecornday" && $adminrulecheck['rule'] == "administrator") {
 } elseif (preg_match('/hidepanel_(\w+)/', $datain, $datagetr)) {
     $id_user = $datagetr[1];
     savedata("clear", "id_user", $id_user);
-    sendmessage($from_id, $textbotlang['Admin']['adminphp']['err_send_select_panel_agent_1'], $json_list_marzban_panel, 'HTML');
+    sendmessage($from_id, $textbotlang['Admin']['adminphp']['err_send_select_panel_agent_1'], $json_list_locations, 'HTML');
     step("getpanelhidebotsaz", $from_id);
 } elseif ($text == "/finish") {
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_success_panel_2'], $keyboardadmin, 'HTML');
@@ -10278,15 +10173,15 @@ if ($datain == "settimecornday" && $adminrulecheck['rule'] == "administrator") {
             return;
         }
     }
-    sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_panel_service_volume_time'], $json_list_marzban_panel, "html");
+    sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_panel_service_volume_time'], $json_list_locations, "html");
     step("getpanelgift", $from_id);
 } elseif ($user['step'] == "getpanelgift") {
-    $panel = select("marzban_panel", "*", "name_panel", $text, "count");
+    $panel = select("locations", "*", "name", $text, "count");
     if ($panel == 0) {
         sendmessage($from_id, $textbotlang['Admin']['adminphp']['err_notfound_panel_4'], null, "html");
         return;
     }
-    savedata("clear", "name_panel", $text);
+    savedata("clear", "name", $text);
     $keyboardstatistics = json_encode([
         'inline_keyboard' => [
             [
@@ -10343,7 +10238,7 @@ if ($datain == "settimecornday" && $adminrulecheck['rule'] == "administrator") {
     $message_id = Editmessagetext($from_id, $message_id, $textbotlang['Admin']['adminphp']['ok_success_add_2'], $keyboardstatistics);
     $userdata['id_message'] = $message_id['result']['message_id'];
     $stmt = $pdo->prepare("SELECT username FROM invoice WHERE  (status = 'active' OR status = 'end_of_time'  OR status = 'end_of_volume' OR status = 'sendedwarn' OR Status = 'send_on_hold') AND Service_location = :mp24 AND name_product != :mp25");
-    $stmt->execute([':mp24' => $userdata['name_panel'], ':mp25' => $textbotlang['Admin']['adminphp']['db_test_service_name']]);
+    $stmt->execute([':mp24' => $userdata['name'], ':mp25' => $textbotlang['Admin']['adminphp']['db_test_service_name']]);
     $userslist = json_encode($stmt->fetchAll());
     file_put_contents('cronbot/gift', json_encode($userdata));
     file_put_contents('cronbot/username.json', $userslist);
@@ -10465,7 +10360,7 @@ if ($datain == "settimecornday" && $adminrulecheck['rule'] == "administrator") {
 } elseif (preg_match('/confirmaccountdisableadmin_(\w+)/', $datain, $dataget)) {
     $id_invoice = $dataget[1];
     $nameloc = select("invoice", "*", "id_invoice", $id_invoice, "select");
-    $marzban_list_get = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
+    $marzban_list_get = select("locations", "*", "name", $nameloc['Service_location'], "select");
     $bakinfos = json_encode([
         'inline_keyboard' => [
             [
@@ -10537,7 +10432,7 @@ if ($datain == "settimecornday" && $adminrulecheck['rule'] == "administrator") {
         sendmessage($from_id, $textbotlang['Admin']['adminphp']['msg_user_time'], null, 'HTML');
         return;
     }
-    sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_send_select_panel'], $json_list_marzban_panel, 'HTML');
+    sendmessage($from_id, $textbotlang['Admin']['adminphp']['ask_send_select_panel'], $json_list_locations, 'HTML');
     step('getlistpanel', $from_id);
 } elseif ($text == "/end_hide") {
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_success_select'], $shopkeyboard, 'HTML');
@@ -10787,10 +10682,10 @@ if ($datain == "settimecornday" && $adminrulecheck['rule'] == "administrator") {
     sendmessage($from_id, $textbotlang['Admin']['adminphp']['ok_success_time'], $CartManage, 'HTML');
     step("home", $from_id);
 } elseif ($text == $textbotlang['keyboard']['showFirstPurchase']) {
-    $panel = select("marzban_panel", "*", "code_panel", $user['Processing_value_one'], "select");
+    $panel = select("locations", "*", "code", $user['Processing_value_one'], "select");
     $stmt = $pdo->prepare("SELECT * FROM product WHERE id = :name_product  AND agent = :agent AND (Location = :Location OR Location = '/all') LIMIT 1");
     $stmt->bindParam(':name_product', $user['Processing_value']);
-    $stmt->bindParam(':Location', $panel['name_panel']);
+    $stmt->bindParam(':Location', $panel['name']);
     $stmt->bindParam(':agent', $user['Processing_value_tow']);
     $stmt->execute();
     $product = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -10814,16 +10709,16 @@ if ($datain == "settimecornday" && $adminrulecheck['rule'] == "administrator") {
     } else {
         $status_now = '0';
     }
-    $panel = select("marzban_panel", "*", "code_panel", $user['Processing_value_one'], "select");
+    $panel = select("locations", "*", "code", $user['Processing_value_one'], "select");
     $stmt = $pdo->prepare("UPDATE product SET one_buy_status = :one_buy_status WHERE code_product = :code_product AND (Location = :Location OR Location = '/all') AND agent = :agent");
     $stmt->bindParam(':one_buy_status', $status_now);
     $stmt->bindParam(':code_product', $code_product);
-    $stmt->bindParam(':Location', $panel['name_panel']);
+    $stmt->bindParam(':Location', $panel['name']);
     $stmt->bindParam(':agent', $user['Processing_value_tow']);
     $stmt->execute();
     $stmt = $pdo->prepare("SELECT * FROM product WHERE code_product = :code_product  AND agent = :agent AND (Location = :Location OR Location = '/all') LIMIT 1");
     $stmt->bindParam(':code_product', $code_product);
-    $stmt->bindParam(':Location', $panel['name_panel']);
+    $stmt->bindParam(':Location', $panel['name']);
     $stmt->bindParam(':agent', $user['Processing_value_tow']);
     $stmt->execute();
     $product = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -10908,35 +10803,7 @@ if ($datain == "settimecornday" && $adminrulecheck['rule'] == "administrator") {
     sendmessage($from_id, $textbotlang['Admin']['SettingnowPayment']['saveApi'], $Swapinokey, 'HTML');
     update("PaySetting", "ValuePay", $text, "NamePay", "marchent_floypay");
     step('home', $from_id);
-} elseif ($text == $textbotlang['extracted']['keyboard_php']['panelSetting']) {
-    $panel = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
-    if (!$panel) {
-        sendmessage($from_id, $textbotlang['extracted']['admin_php']['panelNotFound'], null, 'HTML');
-        return;
-    }
-    $list_panel = get_panel_list($panel);
-    if (!empty($data['error'])) {
-        sendmessage($from_id, $data['error'], null, 'HTML');
-        return;
-    }
-    if (!empty($data['status']) && $data['status'] != 200) {
-        sendmessage($from_id, sprintf($textbotlang['extracted']['admin_php']['panelErrorCode'], $data['status']), null, 'HTML');
-        return;
-    }
-    $list_panel = json_decode($list_panel['body'], true)['obj'] ?? [];
-    $list_panel_keyboard = ['inline_keyboard' => []];
-    foreach ($list_panel as $result) {
-        $list_panel_keyboard['inline_keyboard'][] = [
-            ['text' => $result['name_panel'], 'callback_data' => "set_panel_id_candy:{$result['id']}:{$panel['id']}"],
-        ];
-    }
-    sendmessage($from_id, $textbotlang['extracted']['admin_php']['selectPanelForOrder'], json_encode($list_panel_keyboard), 'HTML');
-} elseif (preg_match('/set_panel_id_candy:(.*):(.*)/', $datain, $dataget)) {
-    $panel_id_candy = $dataget[1];
-    $panel_id = $dataget[2];
-    deletemessage($from_id, $message_id);
-    update("marzban_panel", "inbounds", $panel_id_candy, "id", $panel_id);
-    sendmessage($from_id, $textbotlang['extracted']['admin_php']['panelSelectedSuccess'], $option_candy, 'HTML');
+
 } elseif ($text == $textbotlang['bottext']['open_button']) {
     $bt_home = strtr($textbotlang['bottext']['home_text'], ['{lang}' => $textbotlang['bottext']['langs'][$user['lang']] ?? $bt_lang]);
     sendmessage($from_id, $bt_home, keyboard_list_text($user['lang']), 'HTML');
@@ -10999,3 +10866,5 @@ if ($datain == "settimecornday" && $adminrulecheck['rule'] == "administrator") {
     sendmessage($from_id, $textbotlang['bottext']['msg_saved'], $keyboardadmin, 'HTML');
     sendmessage($from_id, $bt_home, keyboard_list_text($bt_lang), 'HTML');
 }
+
+

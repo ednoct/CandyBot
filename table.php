@@ -321,134 +321,27 @@ $textbotlang = languagechange();
 //--------------------------------------------------------------
 try {
 
-    $result = $pdo->query("SHOW TABLES LIKE 'marzban_panel'");
+    $result = $pdo->query("SHOW TABLES LIKE 'locations'");
     $table_exists = ($result->rowCount() > 0);
 
+    // Migration from marzban_panel
+    $legacy_result = $pdo->query("SHOW TABLES LIKE 'marzban_panel'");
+    if ($legacy_result->rowCount() > 0 && !$table_exists) {
+        $pdo->query("RENAME TABLE marzban_panel TO locations");
+        $pdo->query("ALTER TABLE locations CHANGE name_panel name varchar(2000) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL");
+        $pdo->query("ALTER TABLE locations CHANGE code_panel code varchar(200) NULL");
+        $table_exists = true;
+    }
+
     if (!$table_exists) {
-        $result = $pdo->query("CREATE TABLE marzban_panel (
+        $result = $pdo->query("CREATE TABLE locations (
         id INT(6) UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-        code_panel varchar(200) NULL,
-        name_panel varchar(2000) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL,
-        status varchar(500) NULL,
-        url_panel varchar(2000) NULL,
-        username_panel varchar(200) NULL,
-        password_panel varchar(200) NULL,
-        agent varchar(200) NULL,
-        sublink varchar(500) NULL,
-        config varchar(500) NULL,
-        MethodUsername varchar(700) NULL,
-        TestAccount varchar(100) NULL,
-        limit_panel varchar(100) NULL,
-        namecustom varchar(100) NULL,
-        Methodextend varchar(100) NULL,
-        conecton varchar(100) NULL,
-        linksubx varchar(1000) NULL,
-        inboundid varchar(100) NULL,
-        type varchar(100) NULL,
-        inboundstatus varchar(100) NULL,
-        inbound_deactive varchar(100) NULL,
-        time_usertest varchar(100) NULL,
-        val_usertest varchar(100)  NULL,
-        secret_code varchar(200) NULL,
-        priceChangeloc varchar(200) NULL,
-        priceextravolume varchar(500) NULL,
-        pricecustomvolume varchar(500) NULL,
-        pricecustomtime varchar(500) NULL,
-        priceextratime varchar(500) NULL,
-        mainvolume varchar(500) NULL,
-        maxvolume varchar(500) NULL,
-        maintime varchar(500) NULL,
-        maxtime varchar(500) NULL,
-        status_extend varchar(100) NULL,
-        datelogin TEXT NULL,
-        proxies TEXT NULL,
-        inbounds TEXT NULL,
-        subvip varchar(60) NULL,
-        changeloc varchar(60) NULL,
-        on_hold_test varchar(60) NOT NULL,
-        version_panel varchar(60) NOT NULL,
-        customvolume TEXT NULL,
-        hide_user TEXT NULL)
+        code varchar(200) NULL,
+        name varchar(2000) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL,
+        status varchar(500) NULL)
         ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE utf8mb4_unicode_ci");
         if (!$result) {
-            echo "table marzban_panel" . implode(' ', $pdo->errorInfo());
-        }
-    } else {
-        $VALUE = json_encode(array(
-            'f' => '0',
-            'n' => '0',
-            'n2' => '0'
-        ));
-        $valueprice = json_encode(array(
-            'f' => "4000",
-            'n' => "4000",
-            'n2' => "4000"
-        ));
-        $valuemain = json_encode(array(
-            'f' => "1",
-            'n' => "1",
-            'n2' => "1"
-        ));
-        $valuemax = json_encode(array(
-            'f' => "1000",
-            'n' => "1000",
-            'n2' => "1000"
-        ));
-        $valuemax_time = json_encode(array(
-            'f' => "365",
-            'n' => "365",
-            'n2' => "365"
-        ));
-        addFieldToTable("marzban_panel", "version_panel", "0", "VARCHAR(60)");
-        addFieldToTable("marzban_panel", "on_hold_test", "1", "VARCHAR(60)");
-        addFieldToTable("marzban_panel", "proxies", null, "TEXT");
-        addFieldToTable("marzban_panel", "inbounds", null, "TEXT");
-        addFieldToTable("marzban_panel", "customvolume", $VALUE, "TEXT");
-        addFieldToTable("marzban_panel", "subvip", "offsubvip", "VARCHAR(60)");
-        addFieldToTable("marzban_panel", "changeloc", "offchangeloc", "VARCHAR(60)");
-        addFieldToTable("marzban_panel", "hide_user", null, "TEXT");
-        addFieldToTable("marzban_panel", "status_extend", "on_extend", "VARCHAR(50)");
-        addFieldToTable("marzban_panel", "code_panel", null, "VARCHAR(50)");
-        addFieldToTable("marzban_panel", "priceextravolume", $valueprice, "VARCHAR(500)");
-        addFieldToTable("marzban_panel", "pricecustomvolume", $valueprice, "VARCHAR(500)");
-        addFieldToTable("marzban_panel", "pricecustomtime", $valueprice, "VARCHAR(500)");
-        addFieldToTable("marzban_panel", "priceextratime", $valueprice, "VARCHAR(500)");
-        addFieldToTable("marzban_panel", "priceChangeloc", "0", "VARCHAR(100)");
-        addFieldToTable("marzban_panel", "mainvolume", $valuemain, "VARCHAR(500)");
-        addFieldToTable("marzban_panel", "maxvolume", $valuemax, "VARCHAR(500)");
-        addFieldToTable("marzban_panel", "maintime", $valuemain, "VARCHAR(500)");
-        addFieldToTable("marzban_panel", "maxtime", $valuemax_time, "VARCHAR(500)");
-        addFieldToTable("marzban_panel", "MethodUsername", $textbotlang['keyboard']['numericIdRandom'], "VARCHAR(100)");
-        addFieldToTable("marzban_panel", "datelogin", null, "TEXT");
-        addFieldToTable("marzban_panel", "val_usertest", "100", "VARCHAR(50)");
-        addFieldToTable("marzban_panel", "time_usertest", "1", "VARCHAR(50)");
-        addFieldToTable("marzban_panel", "secret_code", null, "VARCHAR(200)");
-        addFieldToTable("marzban_panel", "inboundstatus", "offinbounddisable", "VARCHAR(50)");
-        addFieldToTable("marzban_panel", "inbound_deactive", "0", "VARCHAR(100)");
-        addFieldToTable("marzban_panel", "agent", "all", "VARCHAR(50)");
-        addFieldToTable("marzban_panel", "inboundid", "1", "VARCHAR(50)");
-        addFieldToTable("marzban_panel", "linksubx", null, "VARCHAR(200)");
-        addFieldToTable("marzban_panel", "conecton", "offconecton", "VARCHAR(100)");
-        addFieldToTable("marzban_panel", "type", "marzban", "VARCHAR(50)");
-        addFieldToTable("marzban_panel", "Methodextend", $textbotlang['keyboard']['resetVolumeTime'], "VARCHAR(100)");
-        addFieldToTable("marzban_panel", "namecustom", "vpn", "VARCHAR(100)");
-        addFieldToTable("marzban_panel", "limit_panel", "unlimted", "VARCHAR(50)");
-        addFieldToTable("marzban_panel", "TestAccount", "ONTestAccount", "VARCHAR(50)");
-        addFieldToTable("marzban_panel", "status", "active", "VARCHAR(50)");
-        addFieldToTable("marzban_panel", "sublink", "onsublink", "VARCHAR(50)");
-        addFieldToTable("marzban_panel", "config", "offconfig", "VARCHAR(50)");
-        addFieldToTable("marzban_panel", "version_panel", "0", "VARCHAR(60)");
-        $max_stmt = $pdo->prepare("SELECT MAX(CAST(SUBSTRING(code_panel, 3) AS UNSIGNED)) as max_num FROM marzban_panel WHERE code_panel LIKE '7e%'");
-        $max_stmt->execute();
-        $max_row = $max_stmt->fetch(PDO::FETCH_ASSOC);
-        $next_num = $max_row['max_num'] ? (int) $max_row['max_num'] + 1 : 15;
-        $stmt = $pdo->prepare("SELECT id FROM marzban_panel WHERE code_panel IS NULL OR code_panel = ''");
-        $stmt->execute();
-        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-            $code = '7e' . $next_num;
-            $stmt = $pdo->prepare("UPDATE marzban_panel SET code_panel = ? WHERE id = ?");
-            $stmt->execute([$code, $row['id']]);
-            $next_num++;
+            echo "table locations" . implode(' ', $pdo->errorInfo());
         }
     }
 } catch (Exception $e) {
@@ -593,6 +486,7 @@ try {
         payment_Status varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL,
         bottype varchar(300) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL,
         message_id INT NULL,
+        expires_at INT NULL,
         id_invoice varchar(1000) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL)
         ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
         if (!$result) {
@@ -601,6 +495,7 @@ try {
     } else {
         ensureTableUtf8mb4('Payment_report');
         addFieldToTable("Payment_report", "message_id", null, "INT");
+        addFieldToTable("Payment_report", "expires_at", null, "INT");
         $Check_filde = $pdo->query("SHOW COLUMNS FROM Payment_report LIKE 'Payment_Method'");
         if (($Check_filde)->rowCount() != 1) {
             $pdo->query("ALTER TABLE Payment_report ADD Payment_Method VARCHAR(200)");
@@ -691,26 +586,15 @@ try {
         ['nowpaymentstatus', 'offnowpayment'],
         ['digistatus', 'offdigi'],
         ['statusSwapWallet', 'offnSolutions'],
-        ['statusaqayepardakht', 'offaqayepardakht'],
-        ['merchant_id_aqayepardakht', '0'],
         ['minbalance', '20000'],
         ['maxbalance', '1000000'],
         ['marchent_tronseller', '0'],
         ['walletaddress', '0'],
         ['urlpaymenttron', 'https://tronseller.storeddownloader.fun/api/GetOrderToken'],
-        ['statustarnado', 'offternado'],
-        ['apiternado', '0'],
         ['chashbackcart', '0'],
         ['chashbackstar', '0'],
         ['chashbackperfect', '0'],
-        ['chashbackaqaypardokht', '0'],
-        ['chashbackiranpay1', '0'],
-        ['chashbackiranpay2', '0'],
-        ['chashbackplisio', '0'],
-        ['chashbackzarinpal', '0'],
         ['checkpaycartfirst', 'offpayverify'],
-        ['zarinpalstatus', 'offzarinpal'],
-        ['merchant_zarinpal', '0'],
         ['tetrastatus', 'offtetra'],
         ['apitetra', '0'],
         ['chashbacktetra', '0'],
@@ -721,40 +605,34 @@ try {
         ['maxbalancecart', $max],
         ['minbalancestar', $main],
         ['maxbalancestar', $max],
-        ['minbalanceplisio', $main],
-        ['maxbalanceplisio', $max],
         ['minbalancedigitaltron', $main],
         ['maxbalancedigitaltron', $max],
-        ['minbalanceiranpay1', $main],
-        ['maxbalanceiranpay1', $max],
-        ['minbalanceiranpay2', $main],
-        ['maxbalanceiranpay2', $max],
-        ['minbalanceaqayepardakht', $main],
-        ['maxbalanceaqayepardakht', $max],
         ['minbalancepaynotverify', $main],
         ['maxbalancepaynotverify', $max],
         ['minbalanceperfect', $main],
         ['maxbalanceperfect', $max],
-        ['minbalancezarinpal', $main],
-        ['maxbalancezarinpal', $max],
-        ['minbalanceiranpay', $main],
-        ['maxbalanceiranpay', $max],
         ['minbalancenowpayment', $main],
         ['maxbalancenowpayment', $max],
-        ['statusiranpay3', 'oniranpay3'],
-        ['apiiranpay', '0'],
-        ['chashbackiranpay3', '0'],
         ['helpcart', '2'],
-        ['helpaqayepardakht', '2'],
         ['helpstar', '2'],
-        ['helpplisio', '2'],
-        ['helpiranpay1', '2'],
-        ['helpiranpay2', '2'],
-        ['helpiranpay3', '2'],
         ['helpperfectmony', '2'],
-        ['helpzarinpal', '2'],
         ['helpnowpayment', '2'],
         ['helpofflinearze', '2'],
+        ['walletaddressusdt', '0'],
+        ['usdtmemo', '0'],
+        ['nameusdt', '0'],
+        ['usdt_pwa_url', '0'],
+        ['helpofflineusdt', '2'],
+        ['minbalancedigitalusdt', $main],
+        ['maxbalancedigitalusdt', $max],
+        ['walletaddressgram', '0'],
+        ['namegram', '0'],
+        ['minbalancedigitalgram', $main],
+        ['maxbalancedigitalgram', $max],
+        ['gram_static_memo', '0'],
+        ['namecart', '0'],
+        ['nametetra', '0'],
+        ['namenowpayment', '0'],
         ['autoconfirmcart', 'offauto'],
         ['cashbacknowpayment', '0'],
         ['statusstar', '0'],
@@ -931,10 +809,7 @@ try {
         $pdo->query("INSERT INTO shopSetting (Namevalue,value) VALUES ('statusshowprice','offshowprice')");
         $pdo->query("INSERT INTO shopSetting (Namevalue,value) VALUES ('configshow','onconfig')");
         $pdo->query("INSERT INTO shopSetting (Namevalue,value) VALUES ('backserviecstatus','on')");
-        $pdo->query("INSERT INTO shopSetting (Namevalue,value) VALUES ('chashbackextend','0')");
-        $__q4 = $pdo->prepare("INSERT INTO shopSetting (Namevalue,value) VALUES ('chashbackextend_agent',?)");
-        $__q4->bindValue(1, $agent_cashback, PDO::PARAM_STR);
-        $__q4->execute();
+
     } else {
         $pdo->query("INSERT IGNORE INTO shopSetting (Namevalue,value) VALUES ('customvolmef','4000')");
         $pdo->query("INSERT IGNORE INTO shopSetting (Namevalue,value) VALUES ('customvolmen','4000')");
@@ -951,10 +826,7 @@ try {
         $pdo->query("INSERT IGNORE INTO shopSetting (Namevalue,value) VALUES ('statusshowprice','offshowprice')");
         $pdo->query("INSERT IGNORE INTO shopSetting (Namevalue,value) VALUES ('configshow','onconfig')");
         $pdo->query("INSERT IGNORE INTO shopSetting (Namevalue,value) VALUES ('backserviecstatus','on')");
-        $pdo->query("INSERT IGNORE INTO shopSetting (Namevalue,value) VALUES ('chashbackextend','0')");
-        $__q5 = $pdo->prepare("INSERT IGNORE INTO shopSetting (Namevalue,value) VALUES ('chashbackextend_agent',?)");
-        $__q5->bindValue(1, $agent_cashback, PDO::PARAM_STR);
-        $__q5->execute();
+
 
 
 
@@ -1318,7 +1190,7 @@ $pdo->query("ALTER TABLE `invoice` CHANGE `name_product` `name_product` VARCHAR(
 $pdo->query("ALTER TABLE `invoice` CHANGE `username` `username` VARCHAR(200)");
 $pdo->query("ALTER TABLE `invoice` CHANGE `Service_location` `Service_location` VARCHAR(200)");
 $pdo->query("ALTER TABLE `invoice` CHANGE `time_sell` `time_sell` VARCHAR(200)");
-$pdo->query("ALTER TABLE marzban_panel MODIFY name_panel VARCHAR(255) COLLATE utf8mb4_bin");
+$pdo->query("ALTER TABLE locations MODIFY name VARCHAR(255) COLLATE utf8mb4_bin");
 $pdo->query("ALTER TABLE product MODIFY name_product VARCHAR(1000) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin");
 $pdo->query("ALTER TABLE help MODIFY name_os VARCHAR(500) COLLATE utf8mb4_bin");
 try {

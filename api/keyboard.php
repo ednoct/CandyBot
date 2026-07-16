@@ -14,7 +14,6 @@ $keyboardmain = json_decode(select("setting", "keyboardmain", null, null, "selec
 
 $list_keyboard = array(
     'text_sell',
-    'text_extend',
     'text_usertest',
     'text_wheel_luck',
     'text_Purchased_services',
@@ -26,7 +25,6 @@ $list_keyboard = array(
 );
 $textbotlang['textbot'] = [
     'text_sell' => $textbotlang['textbot']['sell'],
-    'text_extend' => $textbotlang['textbot']['extend'],
     'text_usertest' => $textbotlang['textbot']['userTest'],
     'text_wheel_luck' => $textbotlang['textbot']['wheelLuck'],
     'text_Purchased_services' => $textbotlang['textbot']['purchasedServices'],

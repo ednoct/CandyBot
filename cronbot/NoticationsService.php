@@ -240,20 +240,7 @@ class ServiceMonitor
     {
         if (intval($status_cron_user) == 0)
             return;
-        $keyboard = $this->createExtendServiceKeyboard($invoice['id_invoice']);
-        $keyboard = $keyboard_active ? $keyboard : null;
-        sendmessage($invoice['id_user'], $message, $keyboard, 'HTML', $bot_token);
-    }
-
-    public function createExtendServiceKeyboard($invoiceId)
-    {
-        return json_encode([
-            'inline_keyboard' => [
-                [
-                    ['text' => $this->textBotLang['keyboard']['renewService'], 'callback_data' => 'extend_' . $invoiceId],
-                ],
-            ]
-        ]);
+        sendmessage($invoice['id_user'], $message, null, 'HTML', $bot_token);
     }
 
     private function sendReportNotification($reportMessage)

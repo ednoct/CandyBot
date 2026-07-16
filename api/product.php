@@ -171,7 +171,7 @@ switch ($data['actions'] ?? '') {
             $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
             $stmt->execute();
             $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            $panel = select("marzban_panel", "name_panel,code_panel", "status", "active", "fetchAll");
+            $panel = select("locations", "name as name_panel,code as code_panel", "status", "active", "fetchAll");
             $category = select("category", "*", null, null, "fetchAll");
             sendJsonResponse(true, "Successful", [
                 'products' => $products,
@@ -208,7 +208,7 @@ switch ($data['actions'] ?? '') {
             }
             $count_invoice = select("invoice", "*", "name_product", $prodcut['name_product'], "count");
             $sum_invoice = select("invoice", "SUM(price_product) as sum_price", "name_product", $prodcut['name_product'], "select");
-            $panel = select("marzban_panel", "name_panel,code_panel", "status", "active", "fetchAll");
+            $panel = select("locations", "name as name_panel,code as code_panel", "status", "active", "fetchAll");
             $category = select("category", "*", null, null, "fetchAll");
             $prodcut['hide_panel'] = json_decode($prodcut['hide_panel'], true);
             sendJsonResponse(true, "Successful", [
@@ -235,7 +235,7 @@ switch ($data['actions'] ?? '') {
         if ($prodcut != 0) {
             sendJsonResponse(false, "product name exits", [], 200);
         }
-        $panel = select("marzban_panel", "*", "code_panel", $data['location'], "select");
+        $panel = select("locations", "*", "code", $data['location'], "select");
         if (!$panel & $data['location'] != "/all")
             sendJsonResponse(false, "location not found", [], 200);
         try {
@@ -359,121 +359,10 @@ switch ($data['actions'] ?? '') {
             sendJsonResponse(false, "An error occurred while delete prodcut");
         }
         break;
-    case 'set_inbounds':
-        validateMethod('POST', $method);
-        $required_fields = ['id', 'input'];
-        $missing_fields = array_diff($required_fields, array_keys($data));
-        if (!empty($missing_fields)) {
-            sendJsonResponse(false, "Missing required fields: " . implode(', ', $missing_fields), []);
-        }
-        $product = select("product", "*", "id", $data['id'], "select");
-        if (!$product) {
-            sendJsonResponse(false, "product not found", [], 200);
-        }
-        $panel = select("marzban_panel", "*", 'name_panel', $product['Location'], "select");
-        if ($panel['type'] == "marzban") {
-            if ($new_marzban) {
-                $DataUserOut = getuser($data['input'], $panel['name_panel']);
-                if (!empty($DataUserOut['error']))
-                    sendJsonResponse(false, $DataUserOut['error'], [], 200);
-                if (!empty($DataUserOut['status']) && $DataUserOut['status'] != 200)
-                    sendJsonResponse(false, $DataUserOut['msg'], [], 200);
-                $DataUserOut = json_decode($DataUserOut['body'], true);
-                if ((isset($DataUserOut['msg']) && $DataUserOut['msg'] == "User not found") or !isset($DataUserOut['proxy_settings']))
-                    sendJsonResponse(false, "User Not Found", [], 200);
-                foreach ($DataUserOut['proxy_settings'] as $key => &$value) {
-                    if ($key == "shadowsocks") {
-                        unset($DataUserOut['proxy_settings'][$key]['password']);
-                    } elseif ($key == "trojan") {
-                        unset($DataUserOut['proxy_settings'][$key]['password']);
-                    } else {
-                        unset($DataUserOut['proxy_settings'][$key]['id']);
-                    }
-                    if (count($DataUserOut['proxy_settings'][$key]) == 0) {
-                        $DataUserOut['proxy_settings'][$key] = new stdClass();
-                    }
-                }
-                $datainbound = json_encode($DataUserOut['proxy_settings']);
-                $proxy_output = json_encode($DataUserOut['proxy_settings'], true);
-            } else {
-                $DataUserOut = getuser($data['input'], $panel['name_panel']);
-                if (!empty($DataUserOut['error']))
-                    sendJsonResponse(false, $DataUserOut['error'], [], 200);
-                if (!empty($DataUserOut['status']) && $DataUserOut['status'] != 200)
-                    sendJsonResponse(false, $DataUserOut['msg'], [], 200);
-                $DataUserOut = json_decode($DataUserOut['body'], true);
-                if ((isset($DataUserOut['msg']) && $DataUserOut['msg'] == "User not found") or !isset($DataUserOut['proxies'])) {
-                    sendJsonResponse(false, "User Not Found", [], 200);
-                }
-                foreach ($DataUserOut['proxies'] as $key => &$value) {
-                    if ($key == "shadowsocks") {
-                        unset($DataUserOut['proxies'][$key]['password']);
-                    } elseif ($key == "trojan") {
-                        unset($DataUserOut['proxies'][$key]['password']);
-                    } else {
-                        unset($DataUserOut['proxies'][$key]['id']);
-                    }
-                    if (count($DataUserOut['proxies'][$key]) == 0) {
-                        $DataUserOut['proxies'][$key] = new stdClass();
-                    }
-                }
-                $proxy_output = json_encode($DataUserOut['proxies']);
-            }
-            $stmt = $pdo->prepare("UPDATE product SET proxies = :proxies WHERE id = :id_product");
-            $stmt->bindParam(':proxies', $proxy_output);
-            $stmt->bindParam(':id_product', $data['id']);
-            $stmt->execute();
-            $datainbound = json_encode($DataUserOut['inbounds']);
-        } elseif ($panel['type'] == "marzneshin") {
-            $userdata = json_decode(getuserm($data['input'], $panel['name_panel'])['body'], true);
-            if (isset($userdata['detail']) and $userdata['detail'] == "User not found")
-                sendJsonResponse(false, "User Not Found", [], 200);
-            $datainbound = json_encode($userdata['service_ids'], true);
-        } elseif ($panel['type'] == "x-ui_single") {
-            $user_data = get_clinets($data['input'], $panel['name_panel']);
-            if (!empty($user_data['error']))
-                sendJsonResponse(false, $user_data['error'], [], 200);
-            if (!empty($user_data['status']) && $user_data['status'] != 200)
-                sendJsonResponse(false, $user_data['msg'], [], 200);
-            $user_data = json_decode($user_data['body'], true)['obj'];
-            if ($user_data == null)
-                sendJsonResponse(false, "User Not Found", [], 200);
-            $datainbound = $user_data['inboundId'];
-        } elseif ($panel['type'] == "s_ui") {
-            $user_data = GetClientsS_UI($data['input'], $panel['name_panel']);
-            if (count($user_data) == 0) {
-                sendJsonResponse(false, "User Not Found", [], 200);
-            }
-            $servies = [];
-            foreach ($user_data['inbounds'] as $service) {
-                $servies[] = $service;
-            }
-            $datainbound = json_encode($servies);
-        } elseif ($panel['type'] == "ibsng" || $panel['type'] == "mikrotik") {
-            $datainbound = $data['input'];
-        } else {
-            sendJsonResponse(false, "panel_not_support_options", [], 200);
-        }
-        $stmt = $pdo->prepare("UPDATE product SET inbounds = :inbounds WHERE id = :id_product ");
-        $stmt->bindParam(':inbounds', $datainbound);
-        $stmt->bindParam(':id_product', $data['id']);
-        $stmt->execute();
-        sendJsonResponse(true, "successfully", [], 200);
+    case 'get_inbounds':
     case 'remove_inbounds':
-        validateMethod('POST', $method);
-        $required_fields = ['id'];
-        $missing_fields = array_diff($required_fields, array_keys($data));
-        if (!empty($missing_fields)) {
-            sendJsonResponse(false, "Missing required fields: " . implode(', ', $missing_fields), []);
-        }
-        $product = select("product", "*", "id", $data['id'], "select");
-        if (!$product) {
-            sendJsonResponse(false, "product not found", [], 200);
-        }
-        $stmt = $pdo->prepare("UPDATE product SET inbounds = NULL,proxies = NULL WHERE id = :id_product ");
-        $stmt->bindParam(':id_product', $data['id']);
-        $stmt->execute();
-        sendJsonResponse(true, "successfully", [], 200);
+        sendJsonResponse(false, "Automated panel integrations are disabled", [], 200);
+        break;
     default:
         sendJsonResponse(false, "Action Invalid");
         break;

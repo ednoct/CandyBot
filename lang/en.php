@@ -15,7 +15,7 @@ return [
                 ['label' => 'Welcome text', 'key' => 'users.text_start'],
                 ['label' => 'Button: Buy subscription', 'key' => 'textbot.sell'],
                 ['label' => 'Button: My services', 'key' => 'textbot.purchasedServices'],
-                ['label' => 'Button: Renew service', 'key' => 'textbot.extend'],
+
                 ['label' => 'Button: Test account', 'key' => 'textbot.userTest'],
                 ['label' => 'Button: Wallet & top-up', 'key' => 'textbot.accountWallet'],
                 ['label' => 'Button: Add balance', 'key' => 'textbot.addBalance'],
@@ -64,7 +64,6 @@ return [
                         'sendReceiptAndConfig' => '🚀 Your receipt has been sent, and after review the service details will be sent to you',
                         'sending' => 'The payment has been received and is being reviewed, please wait',
                         'waiting' => 'Awaiting payment confirmation',
-                        'zarinpal' => '❌ Error 
     The minimum amount for payment via this gateway is 5000 Toman.',
                 ],
                 'Discount' => [
@@ -134,7 +133,7 @@ Description: %s',
                 'changeLink' => [
                         'btnTitle' => '⚙️ Change link',
                         'confirm' => 'Change connection link',
-                        'warnchange' => '⚠️ If you update the subscription link, your previous configs and service will be disconnected. To confirm, click the button below',
+                        'warnchange' => '⚠️ If you update the subscription license, your previous configs and service will be disconnected. To confirm, click the button below',
                 ],
                 'channel' => [
                         'confirmed' => 'Your membership has been successfully confirmed. Thank you ❤️',
@@ -147,29 +146,7 @@ Description: %s',
                 ],
                 'customusername' => 'Custom username',
                 'erroroccurred' => '❌ An error occurred. Please start the steps again',
-                'extend' => [
-                        'confirm' => 'Confirm renewal',
-                        'discount' => '🎁 Apply discount code',
-                        'emptyServiceforExtend' => '❌ You have no service to renew.',
-                        'renewalerror' => '❌ An error occurred during renewal. Please perform your renewal steps again',
-                        'renewalinvoice' => '📜 Your renewal invoice for username %s has been created.
 
-🛍 Product name: %s
-💸 Renewal amount: %s
-⏱ Renewal duration: %s days
-🔋 Renewal volume: %s GB
-✍️ Description: %s
-💸 Wallet balance: %s
-
-✅ To confirm and renew the service, click the button below',
-                        'selectOrderDirect' => '📌 Select your service to renew.',
-                        'selectservice' => ' 🛍 Select your product to renew',
-                        'thanks' => '🙏 Thank you for renewing your service.
-
-✅ Your renewal was completed successfully.
-⬅️ To return to your service list or view the details, click the buttons below.',
-                        'title' => '💊 Renew service',
-                ],
                 'extraTime' => [
                         'extratimecheck' => 'Confirm and receive extra time',
                         'title' => '⏳ Purchase extra time',
@@ -282,7 +259,7 @@ Thank you for using our services.',
 🔄 Please send your username again',
                         'lastTraffic' => 'Total service volume:',
                         'limited' => '🚫 Volume exhausted',
-                        'linksub' => '🔗 Subscription link',
+                        'linksub' => '🔗 subscription license',
                         'min' => 'minute',
                         'month' => ' month ',
                         'notConsumed' => 'Unused',
@@ -740,7 +717,7 @@ User\'s balance before purchase: %s
                         'err_invalid_api_key' => '❌ The entered API key is not valid.',
                         'ask_send_token' => '📌 Send the token',
                         'err_panel_manage_link_domain' => '❌ Note:
-To activate the panel, you must go to the panel management menu and be sure to configure the Set Inbound ID and Subscription Link Domain options; otherwise, the config will not be created',
+To activate the panel, you must go to the panel management menu and be sure to configure the Set Inbound ID and subscription license Domain options; otherwise, the config will not be created',
                         'err_panel_user_manage_bot' => '❌ Note:
 To activate the panel, you must go to the panel management menu and configure the protocol and inbound options so that the bot provides the config; otherwise, no config will be given to the user',
                         'err_panel_manage_bot_set_1' => '❌ Note:
@@ -754,7 +731,7 @@ To activate, you must go to Panel Management > Set Group Name and send the defau
 1 - Configure the following options from panel management
 
 1 - uuid admin: get and register the admin uuid from the panel
-2 - Subscription link domain: send the subscription link domain of the Hiddify panel',
+2 - subscription license domain: send the subscription license domain of the Hiddify panel',
                         'err_send_panel_user_1' => '❌ Note:
 1 - From Panel Management > Set ⚙️ Protocol and Inbound, send a config username.',
                         'err_send_message_1' => '❌ The message-sending system is currently performing an operation. After it finishes and notifies you, you can send a new message.',
@@ -867,10 +844,10 @@ No: 0',
 User groups: f,n,n2
 ❌ If you want the panel to be shown for all user groups, send the text all',
                         'ok_success_user_1' => '📌 User group changed successfully',
-                        'btn_link_domain_sub' => '🔗 Subscription link domain',
-                        'ask_send_panel_user_1' => '📌 If you use a Sanaei panel, copy a user\'s subscription link from the panel and send it in this section. For other panels, you must send it according to their structure.',
-                        'btn_link_sub_enable' => 'The subscription link is not active',
-                        'err_invalid_link_sub_name' => 'The subscription link is invalid',
+                        'btn_link_domain_sub' => '🔗 subscription license domain',
+                        'ask_send_panel_user_1' => '📌 If you use a Sanaei panel, copy a user\'s subscription license from the panel and send it in this section. For other panels, you must send it according to their structure.',
+                        'btn_link_sub_enable' => 'The subscription license is not active',
+                        'err_invalid_link_sub_name' => 'The subscription license is invalid',
                         'ask_send_admin' => '📌 Send the admin UUID',
                         'ok_admin_save' => '✅ Admin UUID saved',
                         'ask_send_testservice_service_time' => '🕰 Send the duration of the test service.
@@ -1285,11 +1262,9 @@ To hide a panel, select your panels from the list below, then send the /end_hide
 🧾 <b>Total sales count of active services:</b> <code>%s</code>  
 💵 <b>Total sales:</b> <code>%s</code> Toman  
 💵 <b>Total sales of active services:</b> <code>%s</code> Toman  
-🔄 <b>Total renewals:</b> <code>%s</code> Toman  
 📈 <b>Conversion rate to customer:</b> <code>%s</code>٪  
 💳 <b>Average purchase per customer:</b> <code>%s</code> Toman  
 📅 <b>Projected monthly revenue:</b> <code>%s</code> Toman  
-📊 <b>Renewal percentage of sales:</b> <code>%s</code>٪  
 
 
 👨‍💼 <b>Total agents:</b> <code>%s</code> people  
@@ -1565,10 +1540,8 @@ User balance after reduction: %s',
 
 
 ',
-                        'ask_send_api' => '⚙️ Please send your Plisio API Key.
 
 🔑 To get your API key, visit the following site:
-plisio.net
 
 📌 Your current key:
 <code>%s</code>',
@@ -1582,7 +1555,6 @@ nowpayments.io
                         'ask_enter_payment_merchant' => '💳 Obtain your merchant code from Aghaye Pardakht and enter it in this section
         
 Your current merchant code: %s',
-                        'ask_enter_zarinpal_merchant' => '💳 Obtain your merchant code from ZarinPal and enter it in this section
         
 Your current merchant code: %s',
                         'ok_select_panel_user_1' => '
@@ -1741,11 +1713,11 @@ Transaction amount deposited by admin: %s',
 
 📅 Active until: %s (%s)
 
-User subscription link: 
+User subscription license: 
 <code>%s</code>
 
 📶 Last connection time: %s
-🔄 Last subscription link update time: %s
+🔄 Last subscription license update time: %s
 #️⃣ Connected client:<code>%s</code>',
                         'msg_service_user_amount' => '
 📌 Service report 
@@ -1974,7 +1946,6 @@ Connection link:
 🧑‍🦯 You can get the connection method by pressing the button below and selecting your operating system',
                 'agentPanel' => '👨‍💻 Agency panel',
                 'agentRequestDesc' => '📌 Send your description to submit an agency request.',
-                'aqayePardakht' => '🔵 Aghaye Pardakht gateway',
                 'botOff' => '❌ The bot is off, please check back in a few minutes',
                 'cart' => 'To increase your balance, deposit the amount of <code>{price}</code>  Toman  to the account number below 👇🏻
         
@@ -2050,9 +2021,6 @@ After joining, click the check membership button',
 
 💡 If you didn\'t get the answer to your question, you can contact «support».',
                 'help' => '📚 Tutorial',
-                'iranPay1' => '💸 Rial payment gateway',
-                'iranPay2' => '💸 Second Rial payment gateway',
-                'iranPay3' => '💸 Third Rial payment gateway',
                 'manual' => '✅ Service was created successfully
 
 👤 Service username : {username}
@@ -2062,8 +2030,9 @@ After joining, click the check membership button',
  Service information :
 {config}
 🧑‍🦯 You can get the connection method by pressing the button below and selecting your operating system',
-                'nowPayment' => '💰 Crypto Payment with Plisio',
                 'nowPaymentTron' => '💵 Tron crypto deposit',
+                'nowPaymentUSDT' => '💵 USDT (Tether) deposit',
+                'nowPaymentGRAM' => '💵 GRAM (TON) deposit',
                 'paymentNotVerify' => 'Rial gateway',
                 'preInvoice' => '📇 Your pro forma invoice:
 👤 Username:  {username}
@@ -2107,7 +2076,6 @@ We hope you had a good experience with the ease and speed of your service. If yo
 🧑‍🦯 You can get the connection method by pressing the button below and selecting your operating system',
                 'wheelLuck' => '🎲 Wheel of fortune',
                 'tetraPayment' => 'Tetra98 payment gateway',
-                'zarinPal' => '🟡 ZarinPal',
         ],
         'keyboard' => [
                 'acceptRules' => '✅ I accept the rules',
@@ -2153,12 +2121,9 @@ We hope you had a good experience with the ease and speed of your service. If yo
                 'allUserList' => 'List of all users',
                 'allUsers' => 'All users',
                 'alreadyReviewed' => 'This request has been reviewed by another admin',
-                'apiIranPay' => 'Rial currency gateway api',
-                'apiPlisio' => '🧩 api plisio',
                 'apiT' => 'API T',
                 'appDownloadLink' => '🔗 App download link',
                 'appDownloadLinkAlt' => '🔗App download link',
-                'aqayePardakhtGateway' => '🔵 Aghaye Pardakht',
                 'authWithLink' => '🔑 Identity verification with link',
                 'authenticate' => '🔒 Identity verification',
                 'authenticateUser' => 'User identity verification',
@@ -2193,15 +2158,9 @@ We hope you had a good experience with the ease and speed of your service. If yo
                 'cancelOperation' => 'Cancel operation',
                 'cancelPinnedMessages' => 'Cancel pinned messages',
                 'cartToCartGateway' => '🔌 Card to card',
-                'cashbackAqayePardakht' => '💰 Aghaye Pardakht cashback',
                 'cashbackCartToCart' => '💰 Card-to-card cashback',
-                'cashbackIranPay1' => '💰 Rial currency cashback',
-                'cashbackIranPay2' => '💰 Second Rial currency cashback',
-                'cashbackIranPay3' => '💰 Third Rial currency cashback',
                 'cashbackNowPayment' => '💰 nowpayment cashback',
-                'cashbackPlisio' => '💰 plisio cashback',
                 'cashbackStar' => '💰 Star cashback',
-                'cashbackZarinPal' => '💰 ZarinPal cashback',
                 'category' => 'Category',
                 'categoryBug' => '🐛 Category ',
                 'changeLocation' => '🌍 Change location',
@@ -2300,7 +2259,7 @@ We hope you had a good experience with the ease and speed of your service. If yo
                 'enableShowCard' => '💰 Activate card number display',
                 'excludeUser' => '➕ Exempt user',
                 'excludeUserAutoConfirm' => '💳 Exempt user from automatic approval',
-                'exclusiveSubLink' => '💎 Dedicated subscription link',
+                'exclusiveSubLink' => '💎 Dedicated subscription license',
                 'exportActiveCardUsers' => '📄 Export users with active card number',
                 'exportOrders' => 'Export orders',
                 'exportPayments' => 'Export payments',
@@ -2325,8 +2284,7 @@ We hope you had a good experience with the ease and speed of your service. If yo
                 'groupCharge' => '👥 Bulk top-up',
                 'groupShowCard' => '♻️ Bulk card number display',
                 'groupVolumeOrTime' => '🔋 Bulk volume or time',
-                'hiddify' => 'Hiddify',
-                'hidePanel' => 'Hide panel',
+                                'hidePanel' => 'Hide panel',
                 'hidePanelForAgent' => '❌ Hide a panel for the agent',
                 'hidePanelForUser' => '🫣 Hide panel for a user',
                 'inactiveAccount' => '📍 Inactive account',
@@ -2335,9 +2293,6 @@ We hope you had a good experience with the ease and speed of your service. If yo
                 'increaseGroupPrice' => '⬆️ Bulk price increase',
                 'infoRefreshed' => '♻️ Information updated',
                 'infoUpdated' => 'Information was updated',
-                'iranPay1Label' => '📌 First Rial currency',
-                'iranPay2Label' => '📌 Second Rial currency',
-                'iranPay3Label' => '📌Third Rial currency',
                 'lastHourStats' => '⏱️ Last hour',
                 'lastMonth' => '⛅️ Previous month',
                 'locationChangeLimit' => '🌍 Location change limit',
@@ -2350,33 +2305,18 @@ We hope you had a good experience with the ease and speed of your service. If yo
                 'manualCreateConfig' => '🔧 Manual config creation',
                 'manualDelete' => '❌Manual deletion',
                 'manualSale' => 'Manual sale',
-                'marzban' => 'Marzban',
-                'marzneshin' => 'Marzneshin',
-                'maxAmountAqayePardakht' => '⬆️ Maximum Aghaye Pardakht amount',
-                'maxAmountCartToCart' => '⬆️ Maximum card-to-card amount',
+                                                'maxAmountCartToCart' => '⬆️ Maximum card-to-card amount',
                 'maxAmountCryptoOffline' => '⬆️ Maximum offline crypto amount',
-                'maxAmountIranPay1' => '⬆️ Maximum Rial currency amount',
-                'maxAmountIranPay2' => '⬆️ Maximum second Rial currency amount',
-                'maxAmountIranPay3' => '⬆️ Maximum third Rial currency amount',
                 'maxAmountNowPayment' => '⬆️ Maximum nowpayment amount',
-                'maxAmountPlisio' => '⬆️ Maximum plisio amount',
                 'maxAmountStar' => '⬆️ Maximum Star amount',
-                'maxAmountZarinPal' => '⬆️ Maximum ZarinPal amount',
                 'maxChargeBalance' => '⬆️ Maximum balance top-up',
                 'maxCustomTime' => '📍 Maximum custom time',
                 'maxCustomVolume' => '📍 Maximum custom volume',
                 'messagingSection' => '📨 Message sending section',
-                'mikrotik' => 'MikroTik',
-                'minAmountAqayePardakht' => '⬇️ Minimum Aghaye Pardakht amount',
-                'minAmountCartToCart' => '⬇️ Minimum card-to-card amount',
+                                'minAmountCartToCart' => '⬇️ Minimum card-to-card amount',
                 'minAmountCryptoOffline' => '⬇️ Minimum offline crypto amount',
-                'minAmountIranPay1' => '⬇️ Minimum Rial currency amount',
-                'minAmountIranPay2' => '⬇️ Minimum second Rial currency amount',
-                'minAmountIranPay3' => '⬇️ Minimum third Rial currency amount',
                 'minAmountNowPayment' => '⬇️ Minimum nowpayment amount',
-                'minAmountPlisio' => '⬇️ Minimum plisio amount',
                 'minAmountStar' => '⬇️ Minimum Star amount',
-                'minAmountZarinPal' => '⬇️ Minimum ZarinPal amount',
                 'minBulkBalance' => '⬇️ Minimum balance for bulk purchase',
                 'minChargeBalance' => '⬇️ Minimum balance top-up',
                 'minCustomTime' => '📍 Minimum custom time',
@@ -2450,7 +2390,7 @@ We hope you had a good experience with the ease and speed of your service. If yo
                 'sendMessageToSupport' => '🎟 Send message to support',
                 'sendMessageToUser' => '✍️ Send message to user',
                 'sendPhoneNumber' => '☎️ Send phone number',
-                'sendSubLink' => '⚙️ Send subscription link',
+                'sendSubLink' => '⚙️ Send subscription license',
                 'sendWithoutButton' => 'Send without button',
                 'serviceSettings' => '⚙️ Service settings',
                 'serviceStatus' => 'Service status',
@@ -2458,18 +2398,11 @@ We hope you had a good experience with the ease and speed of your service. If yo
                 'setAffiliatePercent' => '🧮 Set referral percentage',
                 'setApi' => 'Set api',
                 'setApiAddress' => 'Set api address',
-                'setAqayePardakhtMerchant' => 'Set Aghaye Pardakht merchant',
                 'setCardNumber' => '💳 Set card number',
-                'setEducationAqayePardakht' => '📚 Set Aghaye Pardakht gateway tutorial',
                 'setEducationCartToCart' => '📚 Set card-to-card tutorial',
                 'setEducationCryptoOffline' => '📚 Set offline currency tutorial ',
-                'setEducationIranPay1' => '📚 Set first Rial currency tutorial',
-                'setEducationIranPay2' => '📚 Set second Rial currency tutorial',
-                'setEducationIranPay3' => '📚 Set third Rial currency tutorial',
                 'setEducationNowPayment' => '📚 Set nowpayment tutorial',
-                'setEducationPlisio' => '📚 Set plisio tutorial',
                 'setEducationStar' => '📚 Set Star tutorial',
-                'setEducationZarinPal' => '📚 Set ZarinPal tutorial',
                 'setFirstPrize' => '1️⃣ Set first place prize',
                 'setInbound' => '🎛 Set inbound',
                 'setInboundId' => '💎 Set inbound ID',
@@ -2538,6 +2471,12 @@ We hope you had a good experience with the ease and speed of your service. If yo
                 'volumeAlert' => '⚙️ Warning volume',
                 'volumeResetType' => 'Volume reset type',
                 'walletAddress' => 'Wallet address',
+                'walletAddressUSDT' => 'USDT Wallet address',
+                'walletAddressGRAM' => 'GRAM Wallet address',
+                'usdtGatewayName' => 'USDT Gateway Name',
+                'gramGatewayName' => 'GRAM Gateway Name',
+                'usdtPwaUrl' => 'USDT Exchange URL (PWA)',
+                'setEducationUSDT' => '📚 USDT Guide',
                 'wheelOfLuck' => '🎲 Wheel of fortune',
                 'yes' => 'Yes',
                 'yesterday' => '☀️ Yesterday',
@@ -2547,8 +2486,8 @@ We hope you had a good experience with the ease and speed of your service. If yo
                 'cashbacktetra' => '🎁 Tetra cashback settings',
                 'setEducationtetra' => '📚 Set Tetra guide',
                 'tetraGateway' => '🌐 Tetra gateway',
-                'zarinPalGateway' => '🟡 ZarinPal',
-                'zarinPalMerchant' => 'ZarinPal merchant',
+                'copy_usdt'   => 'Copy Tether Amount',
+                'copy_wallet' => 'Copy Wallet Address',
                 'zeroBalance' => '0️⃣ Reset balance to zero',
         ],
         'language' => [
@@ -2612,10 +2551,8 @@ We hope you had a good experience with the ease and speed of your service. If yo
                         'panelSetting' => '🎛 Panel Settings',
                         'candyAgentPanel' => 'Candy Agent',
                         'setGroupName' => '🎛 Set group name',
-                        'subLinkDomain' => '🔗 Subscription link domain',
-                        'panelTypeSanaei' => 'Sanaei single port',
-                        'panelTypeAlireza' => 'Alireza single port',
-                        'usernameMethodAgentCustom' => 'Custom agent text + sequential number',
+                        'subLinkDomain' => '🔗 subscription license domain',
+                                                                        'usernameMethodAgentCustom' => 'Custom agent text + sequential number',
                         'currencyToman' => 'Toman',
                 ],
                 'index_php' => [
@@ -2675,7 +2612,7 @@ We hope you had a good experience with the ease and speed of your service. If yo
                         'serviceInactiveCannotChangeLink' => '❌ The service is disabled and changing the link for the service is not possible.',
                         'changeLinkError' => '❌ An error occurred while changing the link.',
                         'configUpdatedSuccess' => '✅ Your config was updated successfully.',
-                        'subscriptionLine' => 'Your subscription : <code>{output_config_link}</code>',
+                        'subscriptionLine' => 'Your subscription license : <code>{output_config_link}</code>',
                         'extraVolumeNotSupportedPanel' => '❌ Purchasing extra volume is not possible on this panel',
                         'purchaseError' => '❌ The purchase failed. Perform the steps again.',
                         'extraVolumeServiceError' => '❌An error occurred while purchasing extra volume for the service. Contact support',
@@ -2715,7 +2652,7 @@ We hope you had a good experience with the ease and speed of your service. If yo
                         'bulkPurchaseDisabled' => '❌ This section is currently disabled',
                         'bulkPurchaseMinBalance' => '❌ For bulk purchase you must have at least {PaySetting} Toman balance.',
                         'depositAmountRange' => '❌ The minimum deposit amount for this payment method must be {mainbalance} and the maximum {maxbalance} Toman',
-                        'depositAmountRangePlisio' => '❌ The minimum deposit amount for this payment method must be {mainbalance} and the maximum {maxbalance} Toman',
+                        'depositAmountRange' => '❌ The minimum deposit amount for this payment method must be {mainbalance} and the maximum {maxbalance} Toman',
                         'bankCardRetrieveError' => '❌ An internal error occurred while retrieving the bank card. Please try again later.',
                         'noActiveBankCard' => '❌ No active bank card was found for this payment method. Please try again later or contact support.',
                         'receiptCooldown' => '❗ You sent a receipt in the last 2 minutes. Please send a new receipt in 2 minutes.',
@@ -2896,7 +2833,6 @@ User username :‌ %s',
                 'agentExpiredNotice' => '📌 Dear agent, your agency period has ended and your account was removed from agency status. To reactivate your agency, you can contact support.',
                 'amountRangeError' => '❌ Error 
 💬 The amount must be at least %s Toman and at most %s Toman',
-                'aqayePardakhtLinkError' => '⭕️ Error creating Aghaye Pardakht link
 ✍️ Error reason : %s
             
 User ID : %s
@@ -2977,7 +2913,7 @@ Service location change
 ⏳ Expiry time :  %s | %s 
 
 
-🔗 Your subscription link: 
+🔗 Your subscription license: 
 
 <code>%s</code>',
                 'configCreateError' => '
@@ -3080,8 +3016,6 @@ User username : @%s',
 🔔 The minimum volume is %s gigabytes and the maximum is %s gigabytes.',
                 'dailyBotReport' => '📌 Daily bot performance report :
 
-🧲 Number of renewals today : %s
-💰 Total renewals today : %s Toman
 🛍 Number of orders today : %s
 🛍 Total order amount today : %s Toman
 🔑 Test accounts today : %s
@@ -3277,8 +3211,6 @@ Error reason : %s',
 🛒 Your payment method : %s
 📌 Invoice code : <code>%s</code>
 🪙 Invoice amount :  %s Toman',
-                'iranpayGiftDepositNotice' => '🎁 Dear user, the amount of %s Toman has been deposited into your account as a gift.',
-                'iranpayNewPaymentLog' => '💵 New payment
 - 👤 User username : @%s
 - 🆔User numeric ID : %s
 - 💸 Transaction amount %s
@@ -3652,16 +3584,11 @@ User username : @%s',
                 'paymentQueueBusyNotice' => 'The number of people in the payment gateway queue is extremely high 📊
 
 ‼️Please use another payment method for now',
-                'plisioGiftDepositNotice' => '🎁 Dear user, the amount of %s Toman has been deposited into your account as a gift.',
-                'plisioNewPaymentLog' => '💵 New payment
 - 👤 User username : @%s
 - 🆔User numeric ID : %s
 - 💸 Transaction amount %s
 - 🔗 <a href = "%s">Payment link </a>
-- 🔗 <a href = "%s">plisio payment link </a>
 - 📥 Deposited Tron amount. : %s
-- 💳 Payment method :  plisio',
-                'plisioTransactionExpired' => '❌ The transaction below expired due to non-payment. Please do not pay any amount for this transaction
 
 🛒 Order code: %s
 💰 Amount:  %s Toman',
@@ -3795,7 +3722,7 @@ Error reason: %s',
                 'selectedProductNotFound' => 'The selected product was not found',
                 'serviceConnectionInfo' => '
 📶 Last connection time  : %s
-🔄 Last subscription link update time  : %s
+🔄 Last subscription license update time  : %s
 #️⃣ Connected client :<code>%s</code>',
                 'serviceCreateFailedRefund' => '💎  Dear user, because the service was not created, an amount of %s Toman was added to your wallet.',
                 'serviceCreatedSuccess' => '✅ Service was created successfully
@@ -3870,11 +3797,11 @@ Note change time : %s ',
 
 📅 Active until: %s (%s)
 
-User subscription link: 
+User subscription license: 
 <code>%s</code>
 
 📶 Last connection time: %s
-🔄 Last subscription link update time: %s
+🔄 Last subscription license update time: %s
 #️⃣ Connected client:<code>%s</code>',
                 'serviceTimePrompt' => '⌛️ Select your service time 
 📌 Daily rate  : %s  Toman
@@ -3994,6 +3921,38 @@ Panel name : %s',
 🔹 Each transaction is valid for 1 day; after expiry, refrain from depositing.
 
 ✅ If you have a problem, contact support.',
+                'transactionCreatedUSDT' => '✅ Your invoice has been created
+
+🛒 Tracking code: <code>%s</code>
+🌐 Network: BSC (BEP-20)
+💵 USDT Rate: %s Toman
+💰 Amount: <code>%s</code> USDT
+
+📌 Use the copy buttons below to copy your USDT amount and wallet address, then complete your transfer and click the button to send your receipt.
+
+⚠️ WARNING: Please ensure you select the correct BSC (BEP-20) network when transferring your USDT, or your funds may be lost.
+⚠️ This invoice is valid for 2 hours.
+💡 <b>Important Notes Before Transfer:</b>
+Please carefully check and enter the destination wallet address and USDT network. If you enter the wrong address, your assets will be lost and will never reach us. Also, if you are transferring from an exchange wallet (withdrawal), when purchasing USDT, please consider the exchange withdrawal fee so you can transfer the exact invoice amount from your exchange to our wallet address. If you already have USDT in your exchange wallet, your balance must be at least the invoice amount + your exchange withdrawal fee.
+If you are depositing from a personal wallet, make sure you have enough BNB in your wallet for the network fee so you can complete the transfer and the invoice can be approved. If we receive an amount less than the amount stated in the invoice, your invoice will not be approved. However, if you have entered the correct network address and network type and the amount is received by us, your assets will not be lost and your in-bot wallet will be charged by the received amount.',
+                'transactionCreatedGRAM' => '✅ Your invoice has been created
+
+🛒 Tracking code: <code>%s</code>
+🌐 Network: TON OPEN NETWORK
+💵 (TON) GRAM Rate: %s Toman
+💰 Amount: <code>%s</code> GRAM (TON)
+💳 Wallet Address: <code>%s</code>
+📝 Memo: <code>%s</code>
+
+💡 <b>Safe Deposit Guide:</b>
+Please carefully enter the wallet address and <b>Memo</b> shown above. If you enter the wrong address or comment, your assets will be lost and will never reach us.
+
+🎁 <b>Exchanger Advantage:</b>
+If you use the <b>Dedicated Exchanger (button below the invoice)</b>, the network transfer fee is <b>free</b> for you, and you only need to purchase the GRAM amount stated in the invoice. When withdrawing GRAM from the dedicated exchanger, enter the GRAM amount you purchased along with the wallet address and memo stated in the invoice. If the exchange shows a fee, do not worry because it will not be applied.
+However, if you proceed from another exchange, when purchasing the invoice\'s GRAM amount, also consider the TON network fee which is usually 0.1, so that during withdrawal from the exchange you can withdraw the exact invoice amount to the wallet address and memo stated in the invoice.
+But if you proceed from a personal wallet, please check that the invoice amount + network fee is available in your wallet so that you can send the <b>exact invoice amount</b> to the wallet address and memo stated in the invoice. If we receive an amount less than the amount stated in the invoice, your invoice will not be approved. However, if you have entered the correct memo and wallet address and the amount is received by us, your assets will not be lost and your in-bot wallet will be charged by the received amount.',
+                'invoice_expires_24h' => '⚠️ Your invoice will expire in 24 hours.',
+                'invoice_expired_msg' => 'Your invoice expired. Please generate a new one to proceed.',
                 'transactionCreatedTron' => '✅ Your invoice has been created
 
 🛒 Tracking code: <code>%s</code>
@@ -4023,7 +3982,6 @@ Performing admin : api site',
                 'userUnblockedByApiLog' => 'User with numeric ID %s was unblocked in the bot 
 Performing admin : api site',
                 'usernameExistsRestart' => 'The username exists. Perform the steps from the beginning',
-                'zarinpalLinkError' => '⭕️ Error creating ZarinPal link
 ✍️ Error reason : %s
             
 User ID : %s
@@ -4192,14 +4150,12 @@ User username : @%s',
                 'paymentDetailsTitle' => 'Amount',
                 'paymentMethodAdminAdd' => 'Increase by admin',
                 'paymentMethodAdminDeduct' => 'Admin balance deduction',
-                'paymentMethodAqayePardakht' => 'Aghaye Pardakht',
                 'paymentMethodCardToCard' => 'Card to card',
                 'paymentMethodCryptoOffline' => 'Offline cryptocurrency',
                 'paymentMethodRialGateway1' => 'Rial gateway 1',
                 'paymentMethodRialGateway2' => 'Rial gateway 2',
                 'paymentMethodRialGateway3' => 'Rial gateway 3',
                 'paymentMethodTelegramStar' => 'Telegram Stars',
-                'paymentMethodZarinpal' => 'ZarinPal',
                 'paymentSearchBtn' => 'Total count',
                 'paymentSearchTransactionPlaceholder' => 'User ID or transaction number...',
                 'paymentStatusExpired' => 'Expired',
@@ -4416,14 +4372,12 @@ User username : @%s',
                 'userMessagePlaceholder' => 'Registration',
                 'userMethodAdminAdd' => 'Admin increase',
                 'userMethodAdminDeduct' => 'Admin deduction',
-                'userMethodAqayePardakht' => 'Aghaye Pardakht',
                 'userMethodCardToCard' => 'Card→card',
                 'userMethodCrypto' => 'Cryptocurrency',
                 'userMethodRial1' => 'Rial 1',
                 'userMethodRial2' => 'Rial 2',
                 'userMethodRial3' => 'Rial 3',
                 'userMethodTelegramStar' => 'Telegram Stars',
-                'userMethodZarinpal' => 'ZarinPal',
                 'userMinAmountToman' => 'The minimum amount is 1,000 Toman.',
                 'userNoName' => 'No name',
                 'userNoOrderForUser' => 'Referral',
@@ -4506,7 +4460,6 @@ User username : @%s',
                 'usersViewBtn' => 'View',
         ],
         'paymentGateway' => [
-                'zarinpalErrors' => [
                         -9 => 'Error sending data',
                         -10 => 'The IP or merchant code of the acceptor is incorrect.',
                         -11 => 'The merchant code is not active,',
@@ -4531,7 +4484,6 @@ User username : @%s',
                         -53 => 'The payment does not belong to this merchant code.',
                         -54 => 'The authority is invalid.',
                 ],
-                'zarinpalResultCodes' => [
                         0 => 'Payment was not completed',
                         2 => 'The transaction has already been verified and paid',
                 ],
@@ -4540,26 +4492,23 @@ User username : @%s',
                 'descThanks' => 'Thank you for completing the transaction!',
                 'giftReport' => '🎁 Dear user, the amount of %s Toman has been deposited into your account as a gift.',
                 'lowAmount' => '❌ The user deposited less than the specified amount.',
-                'reportZarinpal' => '💵 New payment
         
 User numeric ID : %s
 User username : %s
 Transaction amount %s
 Payment transaction number : %s
 User card number : %s
-Payment method :  ZarinPal gateway',
-                'reportAqayepardakht' => '💵 New payment
         
 User numeric ID : %s
 User username : %s
 Transaction amount %s
 Payment method :  Aghaye Pardakht gateway',
-                'reportIranpay' => '💵 New payment
+                'reportTetra' => '💵 New payment
         
 User numeric ID : %s
 User username : %s
 Transaction amount %s
-Payment method : First Rial currency',
+Payment method : Tetra98 gateway',
                 'reportCard' => 'A receipt was approved by the bot
 
 Information :
@@ -4568,14 +4517,12 @@ Information :
 👤 User username : @%s 
 User balance : %s Toman
 Payment tracking code : %s',
-                'reportTronado' => '💵 New payment
 %s
 - 👤 User username : @%s
 - 🆔User numeric ID : %s
 - 💸 Transaction amount %s
 - 🔗 <a href = "https://tronscan.org/#/transaction/%s">Payment link </a>
 - 📥 Deposited Tron amount. : %s
-- 💳 Payment method :  Tronado',
                 'reportNowpayment' => '💵 New payment
 - 👤 User username : @%s
 - 🆔User numeric ID : %s
@@ -4589,3 +4536,5 @@ Payment tracking code : %s',
                 'invoiceDate' => 'Date:',
         ],
 ];
+
+

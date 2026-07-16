@@ -61,7 +61,7 @@ if (isset($_GET['delete'])) {
 
 $panels = [];
 try {
-  $panels = db_fetchAll($pdo, "SELECT * FROM marzban_panel");
+$panels = db_fetchAll($pdo, "SELECT * FROM locations");
 } catch (Exception $e) {
 }
 $products = db_fetchAll($pdo, "SELECT * FROM product ORDER BY id");
@@ -188,8 +188,8 @@ include __DIR__ . '/inc/layout_head.php';
             <select name="namepanel" class="select">
               <option value=""><?= $textbotlang['panel']['productFieldNote'] ?></option>
               <?php foreach ($panels as $pl): ?>
-                <option value="<?= htmlspecialchars($pl['name_panel'] ?? $pl['id']) ?>">
-                  <?= htmlspecialchars($pl['name_panel'] ?? $pl['id']) ?>
+                <option value="<?= htmlspecialchars($pl['name'] ?? $pl['id']) ?>">
+                  <?= htmlspecialchars($pl['name'] ?? $pl['id']) ?>
                 </option><?php endforeach; ?>
             </select>
           </div>
@@ -252,8 +252,8 @@ include __DIR__ . '/inc/layout_head.php';
             <select name="namepanel" id="edit_panel" class="select">
               <option value=""><?= $textbotlang['panel']['productDetailLocation'] ?></option>
               <?php foreach ($panels as $pl): ?>
-                <option value="<?= htmlspecialchars($pl['name_panel'] ?? $pl['id']) ?>">
-                  <?= htmlspecialchars($pl['name_panel'] ?? $pl['id']) ?>
+                <option value="<?= htmlspecialchars($pl['name'] ?? $pl['id']) ?>">
+                  <?= htmlspecialchars($pl['name'] ?? $pl['id']) ?>
                 </option><?php endforeach; ?>
             </select>
           </div>

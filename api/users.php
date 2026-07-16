@@ -222,15 +222,15 @@ switch ($data['actions'] ?? '') {
             $bot_agent = select("botsaz", "*", "id_user", $data['chat_id'], "select");
             $list_panel = [];
             if ($bot_agent) {
-                $stmt = $pdo->prepare("SELECT * FROM marzban_panel WHERE status = 'active'");
+                $stmt = $pdo->prepare("SELECT * FROM locations WHERE status = 'active'");
                 $stmt->execute();
                 while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-                    $list_panel[] = $row['name_panel'];
+                    $list_panel[] = $row['name'];
                 }
             }
             $users[0]['agent_bot'] = $bot_agent;
             $users[0]['panels'] = $list_panel;
-            $panel = select("marzban_panel", "code_panel,name_panel", null, null, "fetchAll");
+            $panel = select("locations", "code as code_panel,name as name_panel", null, null, "fetchAll");
             $product = select("product", "code_product,name_product", null, null, "fetchAll");
             sendJsonResponse(true, "Successful", [
 

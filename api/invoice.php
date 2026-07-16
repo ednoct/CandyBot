@@ -369,57 +369,7 @@ switch ($action) {
         }
         sendJsonResponse(true, "Successful");
         break;
-    case 'extend_service_admin':
-        if ($method !== 'POST') {
-            sendJsonResponse(false, "method invalid; must be POST");
-        }
 
-        $required_fields = ['id_invoice', 'time_service', 'volume_service'];
-        $missing_fields = array_diff($required_fields, array_keys($data));
-
-        if (!empty($missing_fields)) {
-            sendJsonResponse(false, "Missing required fields: " . implode(', ', $missing_fields), []);
-        }
-        $invoice = select("invoice", "*", "id_invoice", $data['id_invoice'], "select");
-        if (!$invoice)
-            sendJsonResponse(false, "invoice  not found", [], 200);
-        $DataUserOut = $ManagePanel->DataUser($invoice['Service_location'], $invoice['username']);
-        $panel = select("marzban_panel", "*", "name_panel", $invoice['Service_location'], "select");
-        if (!$panel)
-            sendJsonResponse(false, "Panel Not Found", [], 200);
-        $extend = $ManagePanel->extend($panel['Methodextend'], $data['volume_service'], $data['time_service'], $invoice['username'], "custom_volume", $panel['code_panel']);
-        if ($extend['status'] == false) {
-            $extend['msg'] = json_encode($extend['msg']);
-            $textreports = sprintf($textbotlang['hardcoded']['renewServiceErrorApi'], $panel['name_panel'], $invoice['username'], $extend['msg']);
-            sendmessage($invoice['id_user'], $textbotlang['hardcoded']['renewServiceGenericErrorApi'], null, 'HTML');
-            if (strlen($setting['Channel_Report']) > 0) {
-                telegram('sendmessage', [
-                    'chat_id' => $setting['Channel_Report'],
-                    'message_thread_id' => $errorreport,
-                    'text' => $textreports,
-                    'parse_mode' => "HTML"
-                ]);
-            }
-            sendJsonResponse(false, "Error in extend service", [[json_decode($extend["msg"], true)]], 200);
-        }
-        $stmt = $pdo->prepare("INSERT IGNORE INTO service_other (id_user, username, value, type, time, price, output) VALUES (:id_user, :username, :value, :type, :time, :price, :output)");
-        $date = date('Y/m/d H:i:s');
-        $value = $data['volume_service'] . "_" . $data['time_service'];
-        $type = "extend_user_by_admin";
-        $price = 0;
-        $stmt->bindParam(':id_user', $invoice['id_user'], PDO::PARAM_STR);
-        $stmt->bindParam(':username', $invoice['username'], PDO::PARAM_STR);
-        $stmt->bindParam(':value', $value, PDO::PARAM_STR);
-        $stmt->bindParam(':type', $type, PDO::PARAM_STR);
-        $stmt->bindParam(':time', $date, PDO::PARAM_STR);
-        $stmt->bindParam(':price', $price, PDO::PARAM_STR);
-        $output_json = json_encode($extend);
-        $output_json_var = $output_json;
-        $stmt->bindParam(':output', $output_json_var, PDO::PARAM_STR);
-        $stmt->execute();
-        update("invoice", "Status", "active", "id_invoice", $data['id_invoice']);
-        sendJsonResponse(true, "Successful");
-        break;
     default:
         sendJsonResponse(false, "Action Invalid");
         break;

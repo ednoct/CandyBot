@@ -350,15 +350,11 @@ include __DIR__ . '/inc/layout_head.php';
                                     'cart to cart' => $textbotlang['panel']['userMethodCardToCard'],
                                     'add balance by admin' => $textbotlang['panel']['userMethodAdminAdd'],
                                     'low balance by admin' => $textbotlang['panel']['userMethodAdminDeduct'],
-                                    'zarinpal' => $textbotlang['panel']['userMethodZarinpal'],
-                                    'aqayepardakht' => $textbotlang['panel']['userMethodAqayePardakht'],
-                                    'plisio' => 'Plisio',
                                     'nowpayment' => 'NowPayment',
                                     'Star Telegram' => $textbotlang['panel']['userMethodTelegramStar'],
-                                    'Currency Rial 1' => $textbotlang['panel']['userMethodRial1'],
-                                    'Currency Rial tow' => $textbotlang['panel']['userMethodRial2'],
-                                    'Currency Rial 3' => $textbotlang['panel']['userMethodRial3'],
                                     'arze digital offline' => $textbotlang['panel']['userMethodCrypto'],
+                                    'usdt offline' => $textbotlang['panel']['userMethodCrypto'],
+                                    'gram offline' => $textbotlang['panel']['userMethodCrypto'],
                                 ];
                                 $payStatusMap = [
                                     'paid' => ['tag-ok', $textbotlang['panel']['userStatusSuccess']],

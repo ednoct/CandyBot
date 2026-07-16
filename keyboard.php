@@ -235,41 +235,12 @@ $CartManage = json_encode([
     ],
     'resize_keyboard' => true
 ]);
-$trnado = json_encode([
-    'keyboard' => [
-        [['text' => $textbotlang['keyboard']['apiT']]],
-        [['text' => $textbotlang['keyboard']['setApiAddress']]],
-        [['text' => $textbotlang['keyboard']['cashbackIranPay2']]],
-        [['text' => $textbotlang['keyboard']['minAmountIranPay2']], ['text' => $textbotlang['keyboard']['maxAmountIranPay2']]],
-        [['text' => $textbotlang['keyboard']['setEducationIranPay2']]],
-        [['text' => $textbotlang['Admin']['backAdminBtn']], ['text' => $textbotlang['Admin']['backMenuBtn']]]
-    ],
-    'resize_keyboard' => true
-]);
-$keyboardzarinpal = json_encode([
-    'keyboard' => [
-        [['text' => $textbotlang['keyboard']['zarinPalMerchant']]],
-        [['text' => $textbotlang['keyboard']['cashbackZarinPal']]],
-        [['text' => $textbotlang['keyboard']['minAmountZarinPal']], ['text' => $textbotlang['keyboard']['maxAmountZarinPal']]],
-        [['text' => $textbotlang['keyboard']['setEducationZarinPal']]],
-        [['text' => $textbotlang['Admin']['backAdminBtn']], ['text' => $textbotlang['Admin']['backMenuBtn']]]
-    ],
-    'resize_keyboard' => true
-]);
-$aqayepardakht = json_encode([
-    'keyboard' => [
-        [['text' => $textbotlang['keyboard']['setAqayePardakhtMerchant']], ['text' => $textbotlang['keyboard']['cashbackAqayePardakht']]],
-        [['text' => $textbotlang['keyboard']['minAmountAqayePardakht']], ['text' => $textbotlang['keyboard']['maxAmountAqayePardakht']]],
-        [['text' => $textbotlang['keyboard']['setEducationAqayePardakht']]],
-        [['text' => $textbotlang['Admin']['backAdminBtn']], ['text' => $textbotlang['Admin']['backMenuBtn']]]
-    ],
-    'resize_keyboard' => true
-]);
+
 $NowPaymentsManage = json_encode([
     'keyboard' => [
-        [['text' => $textbotlang['keyboard']['apiPlisio']], ['text' => $textbotlang['keyboard']['cashbackPlisio']]],
-        [['text' => $textbotlang['keyboard']['minAmountPlisio']], ['text' => $textbotlang['keyboard']['maxAmountPlisio']]],
-        [['text' => $textbotlang['keyboard']['setEducationPlisio']]],
+        [['text' => $textbotlang['keyboard']['apiNowPayment']], ['text' => $textbotlang['keyboard']['cashbackNowPayment']]],
+        [['text' => $textbotlang['keyboard']['minAmountNowPayment']], ['text' => $textbotlang['keyboard']['maxAmountNowPayment']]],
+        [['text' => $textbotlang['keyboard']['setEducationNowPayment']]],
         [['text' => $textbotlang['Admin']['backAdminBtn']], ['text' => $textbotlang['Admin']['backMenuBtn']]]
     ],
     'resize_keyboard' => true
@@ -290,84 +261,81 @@ $setting_panel = json_encode([
 ]);
 $PaySettingcard = getPaySettingValue("Cartstatus");
 $PaySettingnow = getPaySettingValue("nowpaymentstatus");
-$PaySettingaqayepardakht = getPaySettingValue("statusaqayepardakht");
 $PaySettingpv = getPaySettingValue("Cartstatuspv");
 $usernamecart = getPaySettingValue("CartDirect");
 $Swapino = getPaySettingValue("statusSwapWallet");
-$trnadoo = getPaySettingValue("statustarnado");
+
 $paymentverify = getPaySettingValue("checkpaycartfirst");
 $stmt = $pdo->prepare("SELECT * FROM Payment_report WHERE id_user = :user_id AND payment_Status = 'paid' ");
 $stmt->bindValue(':user_id', $from_id);
 $stmt->execute();
 $paymentexits = $stmt->rowCount();
-$zarinpal = getPaySettingValue("zarinpalstatus");
+
 $affilnecurrency = getPaySettingValue("digistatus");
 $tetra = getPaySettingValue("tetrastatus");
-$arzireyali3 = getPaySettingValue("statusiranpay3");
+
 $paymentstatussnotverify = getPaySettingValue("paymentstatussnotverify");
 $paymentsstartelegram = getPaySettingValue("statusstar");
 $payment_status_nowpayment = getPaySettingValue("statusnowpayment");
 $step_payment = [
     'inline_keyboard' => []
 ];
-if ($PaySettingcard == "oncard" && intval($users['cardpayment']) == 1) {
-    if ($PaySettingpv == "oncardpv") {
-        $step_payment['inline_keyboard'][] = [
-            ['text' => $textbotlang['textbot']['cartToCart'], 'url' => "https://t.me/$usernamecart"],
-        ];
-    } else {
-        $step_payment['inline_keyboard'][] = [
-            ['text' => $textbotlang['textbot']['cartToCart'], 'callback_data' => "cart_to_offline"],
-        ];
-    }
-}
-if (($paymentexits == 0 && $paymentverify == "onpayverify"))
-    unset($step_payment['inline_keyboard']);
-if ($PaySettingnow == "onnowpayment") {
-    $step_payment['inline_keyboard'][] = [
-        ['text' => $textbotlang['textbot']['nowPayment'], 'callback_data' => "plisio"]
-    ];
-}
-if ($payment_status_nowpayment == "1") {
-    $step_payment['inline_keyboard'][] = [
-        ['text' => $textbotlang['textbot']['cryptoPayment'], 'callback_data' => "nowpayment"]
-    ];
-}
+$name_gram = select("PaySetting", "ValuePay", "NamePay", "namegram", "select")['ValuePay'];
+if ($name_gram == '0' || empty($name_gram)) $name_gram = "GRAM (TON)";
+
+$name_tetra = select("PaySetting", "ValuePay", "NamePay", "nametetra", "select")['ValuePay'];
+if ($name_tetra == '0' || empty($name_tetra)) $name_tetra = $textbotlang['textbot']['tetraPayment'] ?? "Tetra98";
+
+$name_usdt = select("PaySetting", "ValuePay", "NamePay", "nameusdt", "select")['ValuePay'];
+if ($name_usdt == '0' || empty($name_usdt)) $name_usdt = $textbotlang['textbot']['nowPaymentUSDT'] ?? "USDT";
+
+$name_cart = select("PaySetting", "ValuePay", "NamePay", "namecart", "select")['ValuePay'];
+if ($name_cart == '0' || empty($name_cart)) $name_cart = $textbotlang['textbot']['cartToCart'] ?? "Cart to Cart";
+
+$name_nowpayment = select("PaySetting", "ValuePay", "NamePay", "namenowpayment", "select")['ValuePay'];
+if ($name_nowpayment == '0' || empty($name_nowpayment)) $name_nowpayment = $textbotlang['textbot']['cryptoPayment'] ?? "NowPayment";
+
 if ($affilnecurrency == "ondigi") {
+    $step_payment['inline_keyboard'][] = [
+        ['text' => $name_gram, 'callback_data' => "digitalgram"]
+    ];
+}
+
+if ($tetra == "ontetra") {
+    $step_payment['inline_keyboard'][] = [
+        ['text' => $name_tetra, 'callback_data' => "tetra"]
+    ];
+}
+
+if ($affilnecurrency == "ondigi") {
+    $step_payment['inline_keyboard'][] = [
+        ['text' => $name_usdt, 'callback_data' => "digitalusdt"]
+    ];
     $step_payment['inline_keyboard'][] = [
         ['text' => $textbotlang['textbot']['nowPaymentTron'], 'callback_data' => "digitaltron"]
     ];
 }
-if ($tetra == "ontetra") {
+
+if ($PaySettingcard == "oncard" && intval($users['cardpayment']) == 1) {
+    if (!($paymentexits == 0 && $paymentverify == "onpayverify")) {
+        if ($PaySettingpv == "oncardpv") {
+            $step_payment['inline_keyboard'][] = [
+                ['text' => $name_cart, 'url' => "https://t.me/$usernamecart"],
+            ];
+        } else {
+            $step_payment['inline_keyboard'][] = [
+                ['text' => $name_cart, 'callback_data' => "cart_to_offline"],
+            ];
+        }
+    }
+}
+
+if ($payment_status_nowpayment == "1") {
     $step_payment['inline_keyboard'][] = [
-        ['text' => $textbotlang['textbot']['tetraPayment'], 'callback_data' => "tetra"]
+        ['text' => $name_nowpayment, 'callback_data' => "nowpayment"]
     ];
 }
-if ($Swapino == "onSwapinoBot") {
-    $step_payment['inline_keyboard'][] = [
-        ['text' => $textbotlang['textbot']['iranPay2'], 'callback_data' => "iranpay1"]
-    ];
-}
-if ($trnadoo == "onternado") {
-    $step_payment['inline_keyboard'][] = [
-        ['text' => $textbotlang['textbot']['iranPay3'], 'callback_data' => "iranpay2"]
-    ];
-}
-if ($arzireyali3 == "oniranpay3" && $paymentexits >= 2) {
-    $step_payment['inline_keyboard'][] = [
-        ['text' => $textbotlang['textbot']['iranPay1'], 'callback_data' => "iranpay3"]
-    ];
-}
-if ($PaySettingaqayepardakht == "onaqayepardakht") {
-    $step_payment['inline_keyboard'][] = [
-        ['text' => $textbotlang['textbot']['aqayePardakht'], 'callback_data' => "aqayepardakht"]
-    ];
-}
-if ($zarinpal == "onzarinpal") {
-    $step_payment['inline_keyboard'][] = [
-        ['text' => $textbotlang['textbot']['zarinPal'], 'callback_data' => "zarinpal"]
-    ];
-}
+
 if ($paymentstatussnotverify == "onverifypay") {
     $step_payment['inline_keyboard'][] = [
         ['text' => $textbotlang['textbot']['paymentNotVerify'], 'callback_data' => "paymentnotverify"]
@@ -396,7 +364,7 @@ $shopkeyboard = json_encode([
         [['text' => $textbotlang['keyboard']['manageCategory']], ['text' => $textbotlang['keyboard']['manageProducts']]],
         [['text' => $textbotlang['keyboard']['createGiftCode']], ['text' => $textbotlang['keyboard']['deleteGiftCode']]],
         [['text' => $textbotlang['keyboard']['createDiscountCode']], ['text' => $textbotlang['keyboard']['deleteDiscountCode']]],
-        [['text' => $textbotlang['keyboard']['minBulkBalance']], ['text' => $textbotlang['keyboard']['renewalCashback']]],
+        [['text' => $textbotlang['keyboard']['minBulkBalance']]],
         [['text' => $textbotlang['Admin']['backAdminBtn']], ['text' => $textbotlang['Admin']['backMenuBtn']]]
     ],
     'resize_keyboard' => true
@@ -477,41 +445,41 @@ $backadmin = json_encode([
     'resize_keyboard' => true,
 ]);
 //------------------  [ list panel ]----------------//
-$stmt = $pdo->prepare("SHOW TABLES LIKE 'marzban_panel'");
+$stmt = $pdo->prepare("SHOW TABLES LIKE 'locations'");
 $stmt->execute();
 $result = $stmt->fetchAll();
 $table_exists = count($result) > 0;
 $namepanel = [];
 if ($table_exists) {
-    $stmt = $pdo->prepare("SELECT * FROM marzban_panel");
+    $stmt = $pdo->prepare("SELECT * FROM locations");
     $stmt->execute();
     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-        $namepanel[] = [$row['name_panel']];
+        $namepanel[] = [$row['name']];
     }
-    $list_marzban_panel = [
+    $list_locations = [
         'keyboard' => [],
         'resize_keyboard' => true,
     ];
     foreach ($namepanel as $button) {
-        $list_marzban_panel['keyboard'][] = [
+        $list_locations['keyboard'][] = [
             ['text' => $button[0]]
         ];
     }
-    $list_marzban_panel['keyboard'][] = [
+    $list_locations['keyboard'][] = [
         ['text' => $textbotlang['Admin']['backAdminBtn']],
         ['text' => $textbotlang['Admin']['backMenuBtn']]
     ];
-    $json_list_marzban_panel = json_encode($list_marzban_panel);
+    $json_list_locations = json_encode($list_locations);
     //------------------  [ list panel inline ]----------------//
-    $stmt = $pdo->prepare("SELECT * FROM marzban_panel");
+    $stmt = $pdo->prepare("SELECT * FROM locations");
     $stmt->execute();
-    $list_marzban_panel_edit_product = ['inline_keyboard' => []];
+    $list_locations_edit_product = ['inline_keyboard' => []];
     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-        $list_marzban_panel_edit_product['inline_keyboard'][] = [['text' => $row['name_panel'], 'callback_data' => 'locationedit_' . $row['code_panel']]];
+        $list_locations_edit_product['inline_keyboard'][] = [['text' => $row['name'], 'callback_data' => 'locationedit_' . $row['code']]];
     }
-    $list_marzban_panel_edit_product['inline_keyboard'][] = [['text' => $textbotlang['keyboard']['allPanels'], 'callback_data' => 'locationedit_all']];
-    $list_marzban_panel_edit_product['inline_keyboard'][] = [['text' => $textbotlang['keyboard']['backToPreviousMenu'], 'callback_data' => 'backproductadmin']];
-    $list_marzban_panel_edit_product = json_encode($list_marzban_panel_edit_product);
+    $list_locations_edit_product['inline_keyboard'][] = [['text' => $textbotlang['keyboard']['allPanels'], 'callback_data' => 'locationedit_all']];
+    $list_locations_edit_product['inline_keyboard'][] = [['text' => $textbotlang['keyboard']['backToPreviousMenu'], 'callback_data' => 'backproductadmin']];
+    $list_locations_edit_product = json_encode($list_locations_edit_product);
 }
 //------------------  [ list channel ]----------------//
 $stmt = $pdo->prepare("SHOW TABLES LIKE 'channels'");
@@ -648,11 +616,11 @@ $helpappremove['keyboard'][] = [
 ];
 $json_list_remove_helpـlink = json_encode($helpappremove);
 //------------------  [ listpanelusers ]----------------//
-$stmt = $pdo->prepare("SELECT * FROM marzban_panel WHERE status = 'active' AND (agent = :agent OR agent = 'all')");
+$stmt = $pdo->prepare("SELECT * FROM locations WHERE status = 'active' AND (agent = :agent OR agent = 'all')");
 $stmt->bindParam(':agent', $users['agent']);
 $stmt->execute();
-$list_marzban_panel_users = ['inline_keyboard' => []];
-$panelcount = select("marzban_panel", "*", "status", "active", "count");
+$list_locations_users = ['inline_keyboard' => []];
+$panelcount = select("locations", "*", "status", "active", "count");
 if ($panelcount > 10) {
     $temp_row = [];
     while ($result = $stmt->fetch(PDO::FETCH_ASSOC)) {
@@ -660,30 +628,30 @@ if ($panelcount > 10) {
             continue;
         if ($result['type'] == "Manualsale") {
             $stmt = $pdo->prepare("SELECT * FROM manualsell WHERE codepanel = :codepanel AND status = 'active'");
-            $stmt->bindParam(':codepanel', $result['code_panel']);
+            $stmt->bindParam(':codepanel', $result['code']);
             $stmt->execute();
             $configexits = $stmt->rowCount();
             if (intval($configexits) == 0)
                 continue;
         }
         if ($users['step'] == "getusernameinfo") {
-            $temp_row[] = ['text' => $result['name_panel'], 'callback_data' => "locationnotuser_{$result['code_panel']}"];
+            $temp_row[] = ['text' => $result['name'], 'callback_data' => "locationnotuser_{$result['code']}"];
         } else {
-            $temp_row[] = ['text' => $result['name_panel'], 'callback_data' => "location_{$result['code_panel']}"];
+            $temp_row[] = ['text' => $result['name'], 'callback_data' => "location_{$result['code']}"];
         }
         if (count($temp_row) == 2) {
-            $list_marzban_panel_users['inline_keyboard'][] = $temp_row;
+            $list_locations_users['inline_keyboard'][] = $temp_row;
             $temp_row = [];
         }
     }
     if (!empty($temp_row)) {
-        $list_marzban_panel_users['inline_keyboard'][] = $temp_row;
+        $list_locations_users['inline_keyboard'][] = $temp_row;
     }
 } else {
     while ($result = $stmt->fetch(PDO::FETCH_ASSOC)) {
         if ($result['type'] == "Manualsale") {
             $stmts = $pdo->prepare("SELECT * FROM manualsell WHERE codepanel = :codepanel AND status = 'active'");
-            $stmts->bindParam(':codepanel', $result['code_panel']);
+            $stmts->bindParam(':codepanel', $result['code']);
             $stmts->execute();
             $configexits = $stmts->rowCount();
             if (intval($configexits) == 0)
@@ -692,12 +660,12 @@ if ($panelcount > 10) {
         if ($result['hide_user'] != null and in_array($from_id, json_decode($result['hide_user'], true)))
             continue;
         if ($users['step'] == "getusernameinfo") {
-            $list_marzban_panel_users['inline_keyboard'][] = [
-                ['text' => $result['name_panel'], 'callback_data' => "locationnotuser_{$result['code_panel']}"]
+            $list_locations_users['inline_keyboard'][] = [
+                ['text' => $result['name'], 'callback_data' => "locationnotuser_{$result['code']}"]
             ];
         } else {
-            $list_marzban_panel_users['inline_keyboard'][] = [
-                ['text' => $result['name_panel'], 'callback_data' => "location_{$result['code_panel']}"]
+            $list_locations_users['inline_keyboard'][] = [
+                ['text' => $result['name'], 'callback_data' => "location_{$result['code']}"]
             ];
         }
     }
@@ -708,87 +676,87 @@ if ($setting['statusnamecustom'] == 'onnamecustom')
 if ($setting['statusnoteforf'] == "0" && $users['agent'] == "f")
     $statusnote = false;
 if ($statusnote) {
-    $list_marzban_panel_users['inline_keyboard'][] = [
+    $list_locations_users['inline_keyboard'][] = [
         ['text' => $textbotlang['users']['backbtn'], 'callback_data' => "buyback"],
     ];
 } else {
-    $list_marzban_panel_users['inline_keyboard'][] = [
+    $list_locations_users['inline_keyboard'][] = [
         ['text' => $textbotlang['users']['backbtn'], 'callback_data' => "backuser"],
     ];
 }
-$list_marzban_panel_user = json_encode($list_marzban_panel_users);
+$list_locations_user = json_encode($list_locations_users);
 
 
 //------------------  [ listpanelusers omdhe ]----------------//
-$stmt = $pdo->prepare("SELECT * FROM marzban_panel WHERE status = 'active' AND (agent = :agent OR agent = 'all')");
+$stmt = $pdo->prepare("SELECT * FROM locations WHERE status = 'active' AND (agent = :agent OR agent = 'all')");
 $stmt->bindParam(':agent', $users['agent']);
 $stmt->execute();
-$list_marzban_panel_users_om = ['inline_keyboard' => []];
+$list_locations_users_om = ['inline_keyboard' => []];
 while ($result = $stmt->fetch(PDO::FETCH_ASSOC)) {
     if ($result['hide_user'] != null and in_array($from_id, json_decode($result['hide_user'], true)))
         continue;
-    $list_marzban_panel_users_om['inline_keyboard'][] = [
-        ['text' => $result['name_panel'], 'callback_data' => "locationom_{$result['code_panel']}"]
+    $list_locations_users_om['inline_keyboard'][] = [
+        ['text' => $result['name'], 'callback_data' => "locationom_{$result['code']}"]
     ];
 }
-$list_marzban_panel_users_om['inline_keyboard'][] = [
+$list_locations_users_om['inline_keyboard'][] = [
     ['text' => $textbotlang['users']['backbtn'], 'callback_data' => "backuser"],
 ];
-$list_marzban_panel_userom = json_encode($list_marzban_panel_users_om);
+$list_locations_userom = json_encode($list_locations_users_om);
 
 //------------------  [ change location ]----------------//
-$stmt = $pdo->prepare("SELECT * FROM marzban_panel WHERE status = 'active' AND (agent = :agent OR agent = 'all') AND name_panel != :name_panel");
-$stmt->bindValue(':name_panel', $users['Processing_value_four'], PDO::PARAM_STR);
+$stmt = $pdo->prepare("SELECT * FROM locations WHERE status = 'active' AND (agent = :agent OR agent = 'all') AND name != :name");
+$stmt->bindValue(':name', $users['Processing_value_four'], PDO::PARAM_STR);
 $stmt->bindValue(':agent', $users['agent'], PDO::PARAM_STR);
 $stmt->execute();
-$list_marzban_panel_users_change = ['inline_keyboard' => []];
-$panelcount = select("marzban_panel", "*", "status", "active", "count");
+$list_locations_users_change = ['inline_keyboard' => []];
+$panelcount = select("locations", "*", "status", "active", "count");
 if ($panelcount > 10) {
     $temp_row = [];
     while ($result = $stmt->fetch(PDO::FETCH_ASSOC)) {
         if ($result['hide_user'] != null && in_array($from_id, json_decode($result['hide_user'], true)))
             continue;
 
-        $temp_row[] = ['text' => $result['name_panel'], 'callback_data' => "changelocselectlo-{$result['code_panel']}"];
+        $temp_row[] = ['text' => $result['name'], 'callback_data' => "changelocselectlo-{$result['code']}"];
         if (count($temp_row) == 2) {
-            $list_marzban_panel_users_change['inline_keyboard'][] = $temp_row;
+            $list_locations_users_change['inline_keyboard'][] = $temp_row;
             $temp_row = [];
         }
     }
     if (!empty($temp_row)) {
-        $list_marzban_panel_users_change['inline_keyboard'][] = $temp_row;
+        $list_locations_users_change['inline_keyboard'][] = $temp_row;
     }
 } else {
     while ($result = $stmt->fetch(PDO::FETCH_ASSOC)) {
         if ($result['hide_user'] != null and in_array($from_id, json_decode($result['hide_user'], true)))
             continue;
-        $list_marzban_panel_users_change['inline_keyboard'][] = [
-            ['text' => $result['name_panel'], 'callback_data' => "changelocselectlo-{$result['code_panel']}"]
+        $list_locations_users_change['inline_keyboard'][] = [
+            ['text' => $result['name'], 'callback_data' => "changelocselectlo-{$result['code']}"]
         ];
     }
 }
-$list_marzban_panel_users_change['inline_keyboard'][] = [
+$list_locations_users_change['inline_keyboard'][] = [
     ['text' => $textbotlang['users']['backbtn'], 'callback_data' => "backorder"],
 ];
-$list_marzban_panel_userschange = json_encode($list_marzban_panel_users_change);
+$list_locations_userschange = json_encode($list_locations_users_change);
 
 
 //------------------  [ listpanelusers test ]----------------//
-$stmt = $pdo->prepare("SELECT * FROM marzban_panel WHERE TestAccount = 'ONTestAccount' AND (agent = :agent OR agent = 'all')");
+$stmt = $pdo->prepare("SELECT * FROM locations WHERE TestAccount = 'ONTestAccount' AND (agent = :agent OR agent = 'all')");
 $stmt->bindValue(':agent', $users['agent'], PDO::PARAM_STR);
 $stmt->execute();
-$list_marzban_panel_usertest = ['inline_keyboard' => []];
+$list_locations_usertest = ['inline_keyboard' => []];
 while ($result = $stmt->fetch(PDO::FETCH_ASSOC)) {
     if ($result['hide_user'] != null and in_array($from_id, json_decode($result['hide_user'], true)))
         continue;
-    $list_marzban_panel_usertest['inline_keyboard'][] = [
-        ['text' => $result['name_panel'], 'callback_data' => "locationtest_{$result['code_panel']}"]
+    $list_locations_usertest['inline_keyboard'][] = [
+        ['text' => $result['name'], 'callback_data' => "locationtest_{$result['code']}"]
     ];
 }
-$list_marzban_panel_usertest['inline_keyboard'][] = [
+$list_locations_usertest['inline_keyboard'][] = [
     ['text' => $textbotlang['users']['backbtn'], 'callback_data' => "backuser"],
 ];
-$list_marzban_usertest = json_encode($list_marzban_panel_usertest);
+$list_marzban_usertest = json_encode($list_locations_usertest);
 
 
 //--------------------------------------------------
@@ -969,7 +937,7 @@ $optionMarzban = json_encode([
         [['text' => $textbotlang['keyboard']['panelName']], ['text' => $textbotlang['keyboard']['deletePanel']]],
         [['text' => $textbotlang['keyboard']['editPassword']], ['text' => $textbotlang['keyboard']['editUsername']]],
         [['text' => $textbotlang['keyboard']['editPanelUrl']], ['text' => $textbotlang['keyboard']['setProtocolInbound']]],
-        [['text' => $textbotlang['keyboard']['renewalMethod']], ['text' => $textbotlang['keyboard']['usernameMethod']]],
+        [['text' => $textbotlang['keyboard']['usernameMethod']]],
         [['text' => $textbotlang['keyboard']['accountCreateLimit']], ['text' => $textbotlang['keyboard']['changeUserGroup']]],
         [['text' => $textbotlang['keyboard']['testServiceTime']], ['text' => $textbotlang['keyboard']['testAccountVolume']]],
         [['text' => $textbotlang['keyboard']['customVolumePrice']], ['text' => $textbotlang['keyboard']['extraVolumePrice']]],
@@ -990,7 +958,7 @@ $optionrebecca = json_encode([
         [['text' => $textbotlang['keyboard']['panelName']], ['text' => $textbotlang['keyboard']['deletePanel']]],
         [['text' => $textbotlang['keyboard']['editPassword']], ['text' => $textbotlang['keyboard']['editUsername']]],
         [['text' => $textbotlang['keyboard']['editPanelUrl']], ['text' => $textbotlang['keyboard']['setProtocolInbound']]],
-        [['text' => $textbotlang['keyboard']['renewalMethod']], ['text' => $textbotlang['keyboard']['usernameMethod']]],
+        [['text' => $textbotlang['keyboard']['usernameMethod']]],
         [['text' => $textbotlang['keyboard']['accountCreateLimit']], ['text' => $textbotlang['keyboard']['changeUserGroup']]],
         [['text' => $textbotlang['keyboard']['testServiceTime']], ['text' => $textbotlang['keyboard']['testAccountVolume']]],
         [['text' => $textbotlang['keyboard']['customVolumePrice']], ['text' => $textbotlang['keyboard']['extraVolumePrice']]],
@@ -1011,7 +979,7 @@ $optionibsng = json_encode([
         [['text' => $textbotlang['keyboard']['panelName']], ['text' => $textbotlang['keyboard']['deletePanel']]],
         [['text' => $textbotlang['keyboard']['editPassword']], ['text' => $textbotlang['keyboard']['editUsername']]],
         [['text' => $textbotlang['keyboard']['editPanelUrl']], ['text' => $textbotlang['extracted']['keyboard_php']['setGroupName']]],
-        [['text' => $textbotlang['keyboard']['renewalMethod']], ['text' => $textbotlang['keyboard']['usernameMethod']]],
+        [['text' => $textbotlang['keyboard']['usernameMethod']]],
         [['text' => $textbotlang['keyboard']['accountCreateLimit']], ['text' => $textbotlang['keyboard']['changeUserGroup']]],
         [['text' => $textbotlang['keyboard']['customVolumePrice']], ['text' => $textbotlang['keyboard']['extraVolumePrice']]],
         [['text' => $textbotlang['keyboard']['extraTimePrice']], ['text' => $textbotlang['keyboard']['customTimePrice']]],
@@ -1029,7 +997,7 @@ $option_mikrotik = json_encode([
         [['text' => $textbotlang['keyboard']['panelName']], ['text' => $textbotlang['keyboard']['deletePanel']]],
         [['text' => $textbotlang['keyboard']['editPassword']], ['text' => $textbotlang['keyboard']['editUsername']]],
         [['text' => $textbotlang['keyboard']['editPanelUrl']], ['text' => $textbotlang['extracted']['keyboard_php']['setGroupName']]],
-        [['text' => $textbotlang['keyboard']['renewalMethod']], ['text' => $textbotlang['keyboard']['usernameMethod']]],
+        [['text' => $textbotlang['keyboard']['usernameMethod']]],
         [['text' => $textbotlang['keyboard']['accountCreateLimit']], ['text' => $textbotlang['keyboard']['changeUserGroup']]],
         [['text' => $textbotlang['keyboard']['customVolumePrice']], ['text' => $textbotlang['keyboard']['extraVolumePrice']]],
         [['text' => $textbotlang['keyboard']['extraTimePrice']], ['text' => $textbotlang['keyboard']['customTimePrice']]],
@@ -1047,7 +1015,7 @@ $options_ui = json_encode([
         [['text' => $textbotlang['keyboard']['panelName']], ['text' => $textbotlang['keyboard']['deletePanel']]],
         [['text' => $textbotlang['keyboard']['editPassword']], ['text' => $textbotlang['keyboard']['editUsername']]],
         [['text' => $textbotlang['keyboard']['editPanelUrl']], ['text' => $textbotlang['keyboard']['setProtocolInbound']]],
-        [['text' => $textbotlang['keyboard']['renewalMethod']], ['text' => $textbotlang['keyboard']['usernameMethod']]],
+        [['text' => $textbotlang['keyboard']['usernameMethod']]],
         [['text' => $textbotlang['keyboard']['accountCreateLimit']], ['text' => $textbotlang['keyboard']['changeUserGroup']]],
         [['text' => $textbotlang['keyboard']['testServiceTime']], ['text' => $textbotlang['keyboard']['testAccountVolume']]],
         [['text' => $textbotlang['keyboard']['customVolumePrice']], ['text' => $textbotlang['keyboard']['extraVolumePrice']]],
@@ -1068,7 +1036,7 @@ $optionwg = json_encode([
         [['text' => $textbotlang['keyboard']['panelName']], ['text' => $textbotlang['keyboard']['deletePanel']]],
         [['text' => $textbotlang['keyboard']['editPassword']]],
         [['text' => $textbotlang['keyboard']['editPanelUrl']], ['text' => $textbotlang['keyboard']['setInboundId']]],
-        [['text' => $textbotlang['keyboard']['renewalMethod']], ['text' => $textbotlang['keyboard']['usernameMethod']]],
+        [['text' => $textbotlang['keyboard']['usernameMethod']]],
         [['text' => $textbotlang['keyboard']['accountCreateLimit']], ['text' => $textbotlang['keyboard']['changeUserGroup']]],
         [['text' => $textbotlang['keyboard']['testServiceTime']], ['text' => $textbotlang['keyboard']['testAccountVolume']]],
         [['text' => $textbotlang['keyboard']['customVolumePrice']], ['text' => $textbotlang['keyboard']['extraVolumePrice']]],
@@ -1088,7 +1056,7 @@ $optionmarzneshin = json_encode([
         [['text' => $textbotlang['keyboard']['panelFeatureStatus']]],
         [['text' => $textbotlang['keyboard']['panelName']], ['text' => $textbotlang['keyboard']['deletePanel']]],
         [['text' => $textbotlang['keyboard']['editPassword']], ['text' => $textbotlang['keyboard']['editUsername']]],
-        [['text' => $textbotlang['keyboard']['editPanelUrl']], ['text' => $textbotlang['keyboard']['renewalMethod']]],
+        [['text' => $textbotlang['keyboard']['editPanelUrl']]],
         [['text' => $textbotlang['keyboard']['usernameMethod']]],
         [['text' => $textbotlang['keyboard']['serviceSettings']], ['text' => $textbotlang['keyboard']['accountCreateLimit']]],
         [['text' => $textbotlang['keyboard']['changeUserGroup']]],
@@ -1123,7 +1091,7 @@ $optionX_ui_single = json_encode([
         [['text' => $textbotlang['keyboard']['panelFeatureStatus']]],
         [['text' => $textbotlang['keyboard']['panelName']], ['text' => $textbotlang['keyboard']['deletePanel']]],
         [['text' => $textbotlang['keyboard']['editPassword']]],
-        [['text' => $textbotlang['keyboard']['editPanelUrl']], ['text' => $textbotlang['keyboard']['renewalMethod']]],
+        [['text' => $textbotlang['keyboard']['editPanelUrl']]],
         [['text' => $textbotlang['keyboard']['setProtocolInbound']]],
         [['text' => $textbotlang['keyboard']['usernameMethod']], ['text' => $textbotlang['extracted']['keyboard_php']['subLinkDomain']]],
         [['text' => $textbotlang['keyboard']['changeUserGroup']], ['text' => $textbotlang['keyboard']['accountCreateLimit']]],
@@ -1144,7 +1112,7 @@ $optionalireza_single = json_encode([
         [['text' => $textbotlang['keyboard']['panelFeatureStatus']]],
         [['text' => $textbotlang['keyboard']['panelName']], ['text' => $textbotlang['keyboard']['deletePanel']]],
         [['text' => $textbotlang['keyboard']['editPassword']], ['text' => $textbotlang['keyboard']['editUsername']]],
-        [['text' => $textbotlang['keyboard']['editPanelUrl']], ['text' => $textbotlang['keyboard']['renewalMethod']]],
+        [['text' => $textbotlang['keyboard']['editPanelUrl']]],
         [['text' => $textbotlang['keyboard']['setInboundId']]],
         [['text' => $textbotlang['keyboard']['usernameMethod']]],
         [['text' => $textbotlang['extracted']['keyboard_php']['subLinkDomain']]],
@@ -1165,7 +1133,7 @@ $optionhiddfy = json_encode([
     'keyboard' => [
         [['text' => $textbotlang['keyboard']['panelFeatureStatus']]],
         [['text' => $textbotlang['keyboard']['panelName']], ['text' => $textbotlang['keyboard']['deletePanel']]],
-        [['text' => $textbotlang['keyboard']['editPanelUrl']], ['text' => $textbotlang['keyboard']['renewalMethod']]],
+        [['text' => $textbotlang['keyboard']['editPanelUrl']]],
         [['text' => $textbotlang['keyboard']['changeUserGroup']]],
         [['text' => $textbotlang['keyboard']['usernameMethod']]],
         [['text' => $textbotlang['extracted']['keyboard_php']['subLinkDomain']]],
@@ -1265,31 +1233,7 @@ $keyboardtimereset = json_encode([
 $keyboardtypepanel = json_encode([
     'inline_keyboard' => [
         [
-            ['text' => $textbotlang['keyboard']['marzban'], 'callback_data' => "typepanel#marzban"],
-            ['text' => $textbotlang['keyboard']['marzneshin'], 'callback_data' => "typepanel#marzneshin"]
-        ],
-        [
-            ['text' => $textbotlang['keyboard']['passargadPanel'], 'callback_data' => "typepanel#pasarguard"],
-            ['text' => $textbotlang['extracted']['keyboard_php']['candyAgentPanel'], 'callback_data' => "typepanel#candy_agent"]
-        ],
-        [
-            ['text' => $textbotlang['extracted']['keyboard_php']['panelTypeSanaei'], 'callback_data' => 'typepanel#x-ui_single'],
-            ['text' => $textbotlang['extracted']['keyboard_php']['panelTypeAlireza'], 'callback_data' => 'typepanel#alireza_single']
-        ],
-        [
-            ['text' => $textbotlang['keyboard']['manualSale'], 'callback_data' => 'typepanel#Manualsale'],
-            ['text' => $textbotlang['keyboard']['hiddify'], 'callback_data' => 'typepanel#hiddify'],
-        ],
-        [
-            ['text' => "WGDashboard", 'callback_data' => 'typepanel#WGDashboard'],
-            ['text' => "s_ui", 'callback_data' => 'typepanel#s_ui']
-        ],
-        [
-            ['text' => "ibsng", 'callback_data' => 'typepanel#ibsng'],
-            ['text' => $textbotlang['keyboard']['mikrotik'], 'callback_data' => 'typepanel#mikrotik']
-        ],
-        [
-            ['text' => $textbotlang['keyboard']['rebecca'], 'callback_data' => 'typepanel#rebecca']
+            ['text' => $textbotlang['keyboard']['manualSale'], 'callback_data' => 'typepanel#Manualsale']
         ],
         [
             ['text' => $textbotlang['Admin']['backAdminBtn'], 'callback_data' => 'admin']
@@ -1297,7 +1241,7 @@ $keyboardtypepanel = json_encode([
     ],
 ]);
 
-$panelechekc = select("marzban_panel", "*", "MethodUsername", $textbotlang['extracted']['keyboard_php']['usernameMethodAgentCustom'], "count");
+$panelechekc = select("locations", "*", "MethodUsername", $textbotlang['extracted']['keyboard_php']['usernameMethodAgentCustom'], "count");
 if ($setting['inlinebtnmain'] == "oninline") {
     $keyboardagent = [
         'inline_keyboard' => [
@@ -1366,16 +1310,7 @@ $configedit = json_encode([
     ],
     'resize_keyboard' => true
 ]);
-$iranpaykeyboard = json_encode([
-    'keyboard' => [
-        [['text' => $textbotlang['keyboard']['apiIranPay']]],
-        [['text' => $textbotlang['keyboard']['minAmountIranPay3']], ['text' => $textbotlang['keyboard']['maxAmountIranPay3']]],
-        [['text' => $textbotlang['keyboard']['cashbackIranPay3']]],
-        [['text' => $textbotlang['keyboard']['setEducationIranPay3']]],
-        [['text' => $textbotlang['Admin']['backAdminBtn']], ['text' => $textbotlang['Admin']['backMenuBtn']]]
-    ],
-    'resize_keyboard' => true
-]);
+
 $tetrakeyboard = json_encode([
     'keyboard' => [
         [['text' => $textbotlang['keyboard']['apitetra']]],
@@ -1526,11 +1461,11 @@ function KeyboardCategory($location, $agent, $backuser = "backuser")
     return json_encode($list_category);
 }
 
-function keyboardTimeCategory($name_panel, $agent, $callback_data = "producttime_", $callback_data_back = "backuser", $statuscustomvolume = false, $statusbtnextend = false)
+function keyboardTimeCategory($name, $agent, $callback_data = "producttime_", $callback_data_back = "backuser", $statuscustomvolume = false, $statusbtnextend = false)
 {
     global $pdo, $textbotlang;
-    $stmt = $pdo->prepare("SELECT (Service_time) FROM product WHERE (Location = :name_panel OR Location = '/all') AND  agent = :agent");
-    $stmt->bindValue(':name_panel', $name_panel, PDO::PARAM_STR);
+    $stmt = $pdo->prepare("SELECT (Service_time) FROM product WHERE (Location = :name OR Location = '/all') AND  agent = :agent");
+    $stmt->bindValue(':name', $name, PDO::PARAM_STR);
     $stmt->bindValue(':agent', $agent, PDO::PARAM_STR);
     $stmt->execute();
     $montheproduct = array_flip(array_flip($stmt->fetchAll(PDO::FETCH_COLUMN)));

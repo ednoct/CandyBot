@@ -54,20 +54,6 @@ $sqlNewUsers = "SELECT COUNT(*) AS count
 $stmt = executeQuery($pdo, $sqlNewUsers, $params);
 $usernew = $stmt->fetchColumn() ?? 0;
 
-// Fetch extension data
-$datefirstextend = date("Y/m/d") . " 00:00:00";
-$dateendextend = date("Y/m/d") . " 23:59:59";
-
-$sqlExtensions = "SELECT COUNT(*) AS count, SUM(price) AS total_price 
-                  FROM service_other 
-                  WHERE (time BETWEEN :startDate AND :endDate) 
-                  AND type = 'extend_user'
-                  AND status != 'unpaid'";
-$params = [':startDate' => $datefirstextend, ':endDate' => $dateendextend];
-$stmt = executeQuery($pdo, $sqlExtensions, $params);
-$result = $stmt->fetch(PDO::FETCH_ASSOC);
-$countextendday = $result['count'] ?? 0;
-$sumcountextend = number_format($result['total_price'] ?? 0);
 
 // Fetch top agents
 $sqlTopAgents = "
@@ -123,7 +109,7 @@ foreach ($panels as $panel) {
 }
 
 // Daily report text
-$textreport = sprintf($textbotlang['hardcoded']['dailyBotReport'], $countextendday, $sumcountextend, $dayListSell, $suminvoiceday, $dayListSelltest, $sumvolume, $usernew);
+$textreport = sprintf($textbotlang['hardcoded']['dailyBotReport'], $dayListSell, $suminvoiceday, $dayListSelltest, $sumvolume, $usernew);
 
 // Send reports to Telegram
 if (!empty($setting['Channel_Report'])) {

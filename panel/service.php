@@ -40,7 +40,7 @@ $typeMap = [
   'extra_user' => $textbotlang['panel']['serviceExtraVolumeLabel'],
   'extra_time_user' => $textbotlang['panel']['serviceExtraTimeLabel'],
   'extends_not_user' => $textbotlang['panel']['serviceRenewLabel'],
-  'extend_user' => $textbotlang['panel']['serviceRenewLabel2'],
+
   'transfertouser' => $textbotlang['panel']['serviceTransferOrderLabel']
 ];
 

@@ -33,19 +33,27 @@ error_log('[Tetra98] callback received: ' . json_encode([
 $setting = select("setting", "*");
 $PaySetting = trim((string) getPaySettingValue("apitetra", ""));
 $Payment_reports = null;
-if ($hashid !== '') {
-    $Payment_reports = select("Payment_report", "*", "id_order", $hashid, "select");
-}
-if (!$Payment_reports && $authority !== '') {
+if ($authority !== '') {
     $Payment_reports = select("Payment_report", "*", "dec_not_confirmed", $authority, "select");
 }
+
 if (!$Payment_reports) {
-    error_log('[Tetra98] payment report not found: ' . json_encode([
+    error_log('[Tetra98] payment report not found or invalid authority: ' . json_encode([
         'hashid' => $hashid,
         'authority' => $authority,
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    exit;
 }
-$invoice_id = $Payment_reports['id_order'] ?? $hashid;
+
+if ($hashid !== '' && $Payment_reports['id_order'] !== $hashid) {
+    error_log('[Tetra98] hashid mismatch: ' . json_encode([
+        'expected' => $Payment_reports['id_order'],
+        'received' => $hashid,
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    exit;
+}
+
+$invoice_id = $Payment_reports['id_order'];
 $price = $Payment_reports['price'] ?? 0;
 // verify Transaction
 $dec_payment_status = "";
@@ -55,7 +63,6 @@ if ($PaySetting !== "" && $PaySetting !== "0" && $Payment_reports && $StatusPaym
     $data = [
         "ApiKey" => $PaySetting,
         "authority" => $authority,
-        "Hash_id" => $invoice_id,
     ];
     curl_setopt_array($curl, array(
         CURLOPT_URL => "https://tetra98.com/api/verify",
@@ -93,29 +100,33 @@ if ($PaySetting !== "" && $PaySetting !== "0" && $Payment_reports && $StatusPaym
         $dec_payment_status = $textbotlang['paymentGateway']['descThanks'];
         $Payment_report = $Payment_reports;
         if ($Payment_report['payment_Status'] != "paid") {
-            $textbotlang = languagechange();
-            DirectPayment($invoice_id, "../images.jpg");
-            $pricecashback = select("PaySetting", "ValuePay", "NamePay", "chashbacktetra", "select")['ValuePay'];
-            $Balance_id = select("user", "*", "id", $Payment_report['id_user'], "select");
-            if ($pricecashback != "0") {
-                $result = ($Payment_report['price'] * $pricecashback) / 100;
-                $Balance_confrim = intval($Balance_id['Balance']) + $result;
-                update("user", "Balance", $Balance_confrim, "id", $Balance_id['id']);
-                $pricecashback = number_format($pricecashback);
-                $text_report = sprintf($textbotlang['paymentGateway']['giftReport'], $result);
-                sendmessage($Balance_id['id'], $text_report, null, 'HTML');
-            }
-            update("Payment_report", "payment_Status", "paid", "id_order", $Payment_report['id_order']);
-            $paymentreports = select("topicid", "idreport", "report", "paymentreport", "select")['idreport'];
-            $price = number_format($price);
-            $text_report = sprintf($textbotlang['paymentGateway']['reportIranpay'], $Payment_report['id_user'], $Balance_id['username'], $price);
-            if (strlen($setting['Channel_Report']) > 0) {
-                telegram('sendmessage', [
-                    'chat_id' => $setting['Channel_Report'],
-                    'message_thread_id' => $paymentreports,
-                    'text' => $text_report,
-                    'parse_mode' => "HTML"
-                ]);
+            global $pdo;
+            $stmt = $pdo->prepare("UPDATE Payment_report SET payment_Status = 'paid' WHERE id_order = ? AND payment_Status != 'paid'");
+            $stmt->execute([$Payment_report['id_order']]);
+            if ($stmt->rowCount() > 0) {
+                $textbotlang = languagechange();
+                DirectPayment($invoice_id, "../images.jpg");
+                $pricecashback = select("PaySetting", "ValuePay", "NamePay", "chashbacktetra", "select")['ValuePay'];
+                $Balance_id = select("user", "*", "id", $Payment_report['id_user'], "select");
+                if ($pricecashback != "0") {
+                    $result = ($Payment_report['price'] * $pricecashback) / 100;
+                    $Balance_confrim = intval($Balance_id['Balance']) + $result;
+                    update("user", "Balance", $Balance_confrim, "id", $Balance_id['id']);
+                    $pricecashback = number_format($pricecashback);
+                    $text_report = sprintf($textbotlang['paymentGateway']['giftReport'], $result);
+                    sendmessage($Balance_id['id'], $text_report, null, 'HTML');
+                }
+                $paymentreports = select("topicid", "idreport", "report", "paymentreport", "select")['idreport'];
+                $price = number_format($price);
+                $text_report = sprintf($textbotlang['paymentGateway']['reportTetra'], $Payment_report['id_user'], $Balance_id['username'], $price);
+                if (strlen($setting['Channel_Report']) > 0) {
+                    telegram('sendmessage', [
+                        'chat_id' => $setting['Channel_Report'],
+                        'message_thread_id' => $paymentreports,
+                        'text' => $text_report,
+                        'parse_mode' => "HTML"
+                    ]);
+                }
             }
         }
     } else {

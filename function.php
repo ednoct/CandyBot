@@ -529,17 +529,107 @@ function generateUUID()
 function rate_arze()
 {
     $arze_rate = [];
-    $requests_tron = json_decode(file_get_contents('https://api.diadata.org/v1/assetQuotation/Tron/0x0000000000000000000000000000000000000000'), true);
-    $html_read = file_get_contents("https://www.bon-bast.com/");
-    preg_match('/<span>\s*([\d,]+)\s*<\/span>/', $html_read, $matches);
-    if (!empty($matches[1])) {
-        $requestsusd = str_replace(',', '', $matches[1]);
+    $requests_tron = json_decode(@file_get_contents('https://api.diadata.org/v1/assetQuotation/Tron/0x0000000000000000000000000000000000000000'), true);
+    $trx_price_usd = isset($requests_tron['Price']) ? $requests_tron['Price'] : 0;
+    
+    $requestsusd = get_arz_usdt_rate();
+    if ($requestsusd === null || $trx_price_usd == 0) {
+        return null;
     }
+    
     $arze_rate['USD'] = intval($requestsusd);
-    $arze_rate['TRX'] = intval($requests_tron['Price'] * $arze_rate['USD']);
+    $arze_rate['TRX'] = intval($trx_price_usd * $arze_rate['USD']);
 
     return $arze_rate;
 }
+function get_arz_usdt_rate()
+{
+    $timeout = 5;
+    // Cloaked User-Agent to mimic a standard Google Chrome browser on Windows 10/11
+    $userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36';
+
+    // --- Provider 1: Exir (Main) ---
+    $ch = curl_init('https://api.exir.io/v2/tickers');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
+    curl_setopt($ch, CURLOPT_USERAGENT, $userAgent);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+    $response = curl_exec($ch);
+    curl_close($ch);
+
+    if ($response) {
+        $data = json_decode($response, true);
+        if (isset($data['usdt-irt']['last'])) {
+            $raw = $data['usdt-irt']['last'];
+            $toman_price = intval(str_replace(',', '', $raw));
+            if ($toman_price > 0) return $toman_price;
+        }
+    }
+
+    // --- Provider 2: Bitpin (Fallback 1) ---
+    $ch = curl_init('https://api.bitpin.org/api/v1/mkt/tickers/');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
+    curl_setopt($ch, CURLOPT_USERAGENT, $userAgent);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+    $response = curl_exec($ch);
+    curl_close($ch);
+
+    if ($response) {
+        $data = json_decode($response, true);
+        if (is_array($data)) {
+            foreach ($data as $market) {
+                if (isset($market['symbol']) && $market['symbol'] === 'USDT_IRT') {
+                    $raw = $market['price'];
+                    $toman_price = intval(str_replace(',', '', $raw));
+                    if ($toman_price > 0) return $toman_price;
+                }
+            }
+        }
+    }
+
+    // --- Provider 3: Wallex (Fallback 2) ---
+    $ch = curl_init('https://api.wallex.ir/hector/web/v1/markets');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
+    curl_setopt($ch, CURLOPT_USERAGENT, $userAgent);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+    $response = curl_exec($ch);
+    curl_close($ch);
+
+    if ($response) {
+        $data = json_decode($response, true);
+        if (isset($data['result']['markets']) && is_array($data['result']['markets'])) {
+            foreach ($data['result']['markets'] as $market) {
+                if (isset($market['symbol']) && $market['symbol'] === 'USDTTMN') {
+                    $raw = $market['price'];
+                    $toman_price = intval(str_replace(',', '', $raw));
+                    if ($toman_price > 0) return $toman_price;
+                }
+            }
+        }
+    }
+
+    // Return null if all endpoints fail
+    return null; 
+}
+
+function get_gram_irt_price()
+{
+    $usdt_irt_price = get_arz_usdt_rate();
+    if ($usdt_irt_price === null) return null;
+    
+    $ton_data = json_decode(@file_get_contents('https://api.diadata.org/v1/assetQuotation/Ton/0x0000000000000000000000000000000000000000'), true);
+    if (!isset($ton_data['Price'])) return null;
+    
+    $ton_usd_price = $ton_data['Price'];
+    $gram_irt_price = round($ton_usd_price * $usdt_irt_price);
+    return $gram_irt_price;
+}
+
 function updatePaymentMessageId($response, $orderId)
 {
     if (!is_array($response)) {
@@ -635,41 +725,7 @@ function isValidDate($date)
 {
     return (strtotime($date) != false);
 }
-function trnado($order_id, $price)
-{
-    global $domainhosts;
-    $apitronseller = select("PaySetting", "*", "NamePay", "apiternado", "select")['ValuePay'];
-    $walletaddress = select("PaySetting", "*", "NamePay", "walletaddress", "select")['ValuePay'];
-    $urlpay = select("PaySetting", "*", "NamePay", "urlpaymenttron", "select")['ValuePay'];
-    $curl = curl_init();
-    $data = array(
-        "PaymentID" => $order_id,
-        "WalletAddress" => $walletaddress,
-        "TronAmount" => $price,
-        "CallbackUrl" => "https://" . $domainhosts . "/payment/tronado.php"
-    );
-    $datasend = json_encode($data);
-    curl_setopt_array($curl, array(
-        CURLOPT_URL => "$urlpay",
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_ENCODING => '',
-        CURLOPT_MAXREDIRS => 10,
-        CURLOPT_TIMEOUT => 0,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-        CURLOPT_CUSTOMREQUEST => 'POST',
-        CURLOPT_HTTPHEADER => array(
-            'x-api-key:' . $apitronseller,
-            'Content-Type: application/json',
-            'Cookie: ASP.NET_SessionId=spou2s5lo4nnxkjtavscrrlo'
-        ),
-    ));
-    curl_setopt($curl, CURLOPT_POSTFIELDS, $datasend);
 
-    $response = curl_exec($curl);
-
-    return json_decode($response, true);
-}
 function formatBytes($bytes, $precision = 2): string
 {
     global $textbotlang;
@@ -966,136 +1022,12 @@ function DirectPayment($order_id, $image = 'images.jpg')
             update("user", "score", $scorenew, "id", $Balance_id['id']);
         }
         update("invoice", "Status", "active", "username", $get_invoice['username']);
-        if ($Payment_report['Payment_Method'] == "cart to cart" or $Payment_report['Payment_Method'] == "arze digital offline") {
+        if ($Payment_report['Payment_Method'] == "cart to cart" or $Payment_report['Payment_Method'] == "arze digital offline" or $Payment_report['Payment_Method'] == "usdt offline" or $Payment_report['Payment_Method'] == "gram offline") {
             update("invoice", "Status", "active", "id_invoice", $get_invoice['id_invoice']);
             $textconfrom = sprintf($textbotlang['hardcoded']['paymentConfirmedNewService'], $username_ac, $get_invoice['Service_location'], $Balance_id['id'], $Payment_report['id_order'], $Balance_id['username'], $Balance_id['Balance'], $format_price_cart, $Payment_report['dec_not_confirmed']);
             Editmessagetext($from_id, $message_id, $textconfrom, $Confirm_pay);
         }
     } elseif ($steppay[0] == "getextenduser") {
-        $balanceformatsell = number_format(select("user", "Balance", "id", $Balance_id['id'], "select")['Balance'], 0);
-        $partsdic = explode("%", $steppay[1]);
-        $usernamepanel = $partsdic[0];
-        $sql = "SELECT * FROM service_other WHERE username = :username  AND value  LIKE CONCAT('%', :value, '%') AND id_user = :id_user ";
-        $stmt = $pdo->prepare($sql);
-        $stmt->bindParam(':username', $usernamepanel, PDO::PARAM_STR);
-        $stmt->bindParam(':value', $partsdic[1], PDO::PARAM_STR);
-        $stmt->bindParam(':id_user', $Balance_id['id']);
-        $stmt->execute();
-        $data_order = $stmt->fetch(PDO::FETCH_ASSOC);
-        $service_other = $data_order;
-        if ($service_other == false) {
-            sendmessage($Balance_id['id'], $textbotlang['hardcoded']['renewGenericError'], $keyboard, 'HTML');
-            return;
-        }
-        $service_other = json_decode($service_other['value'], true);
-        $codeproduct = $service_other['code_product'];
-        $nameloc = select("invoice", "*", "username", $usernamepanel, "select");
-        $marzban_list_get = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
-        if ($codeproduct == "custom_volume") {
-            $prodcut['code_product'] = "custom_volume";
-            $prodcut['name_product'] = $nameloc['name_product'];
-            $prodcut['price_product'] = $data_order['price'];
-            $prodcut['Service_time'] = $service_other['Service_time'];
-            $prodcut['Volume_constraint'] = $service_other['volumebuy'];
-        } else {
-            $stmt = $pdo->prepare("SELECT * FROM product WHERE (Location = :mp2 OR Location = '/all') AND agent= :mp3 AND code_product = :mp4");
-            $stmt->execute([':mp2' => $nameloc['Service_location'], ':mp3' => $Balance_id['agent'], ':mp4' => $codeproduct]);
-            $prodcut = $stmt->fetch(PDO::FETCH_ASSOC);
-        }
-        if ($nameloc['name_product'] == $textbotlang['hardcoded']['testServiceNameFn']) {
-            update("invoice", "name_product", $prodcut['name_product'], "id_invoice", $nameloc['id_invoice']);
-            update("invoice", "price_product", $prodcut['price_product'], "id_invoice", $nameloc['id_invoice']);
-        }
-        $dateacc = date('Y/m/d H:i:s');
-        $DataUserOut = $ManagePanel->DataUser($nameloc['Service_location'], $nameloc['username']);
-        $Balance_Low_user = 0;
-        update("user", "Balance", $Balance_Low_user, "id", $Balance_id['id']);
-        $extend = $ManagePanel->extend($marzban_list_get['Methodextend'], $prodcut['Volume_constraint'], $prodcut['Service_time'], $nameloc['username'], $prodcut['code_product'], $marzban_list_get['code_panel']);
-        if ($extend['status'] == false) {
-            $balance = $Balance_id['Balance'] + $Payment_report['price'];
-            update("user", "Balance", $balance, "id", $Balance_id['id']);
-            sendmessage($Balance_id['id'], $textbotlang['users']['sell']['errorConfig'], $keyboard, 'HTML');
-            sendmessage($Balance_id['id'], sprintf($textbotlang['hardcoded']['serviceRenewFailedRefund'], $balance), $keyboard, 'HTML');
-            $extend['msg'] = json_encode($extend['msg']);
-            $textreports = sprintf($textbotlang['hardcoded']['renewServiceErrorFn'], $marzban_list_get['name_panel'], $nameloc['username'], $extend['msg']);
-            sendmessage($nameloc['id_user'], $textbotlang['extracted']['index_php']['renewServiceError'], null, 'HTML');
-            if (strlen($setting['Channel_Report']) > 0) {
-                telegram('sendmessage', [
-                    'chat_id' => $setting['Channel_Report'],
-                    'message_thread_id' => $errorreport,
-                    'text' => $textreports,
-                    'parse_mode' => "HTML"
-                ]);
-            }
-            return;
-        }
-
-        update("service_other", "output", json_encode($extend), "id", $data_order['id']);
-        update("service_other", "status", "paid", "id", $data_order['id']);
-        $partsdic = explode("_", $Balance_id['Processing_value_four']);
-        if ($partsdic[0] == "dis") {
-            $SellDiscountlimit = select("DiscountSell", "*", "codeDiscount", $partsdic[1], "select");
-            $value = intval($SellDiscountlimit['usedDiscount']) + 1;
-            update("DiscountSell", "usedDiscount", $value, "codeDiscount", $partsdic[1]);
-            $stmt = $pdo->prepare("INSERT INTO Giftcodeconsumed (id_user,code) VALUES (:id_user,:code)");
-            $stmt->bindParam(':id_user', $Balance_id['id']);
-            $stmt->bindParam(':code', $partsdic[1]);
-            $stmt->execute();
-            $text_report = sprintf($textbotlang['hardcoded']['discountCodeUsedAdminFn'], $Balance_id['username'], $Balance_id['id'], $partsdic[1]);
-            if (strlen($setting['Channel_Report']) > 0) {
-                telegram('sendmessage', [
-                    'chat_id' => $setting['Channel_Report'],
-                    'message_thread_id' => $otherreport,
-                    'text' => $text_report,
-                ]);
-            }
-        }
-        $keyboardextendfnished = json_encode([
-            'inline_keyboard' => [
-                [
-                    ['text' => $textbotlang['users']['status']['backlist'], 'callback_data' => "backorder"],
-                ],
-                [
-                    ['text' => $textbotlang['users']['status']['backservice'], 'callback_data' => "product_" . $nameloc['id_invoice']],
-                ]
-            ]
-        ]);
-        if ($Balance_id['agent'] == "f") {
-            $valurcashbackextend = select("shopSetting", "*", "Namevalue", "chashbackextend", "select")['value'];
-        } else {
-            $valurcashbackextend = json_decode(select("shopSetting", "*", "Namevalue", "chashbackextend_agent", "select")['value'], true)[$Balance_id['agenr']];
-        }
-        if (intval($valurcashbackextend) != 0) {
-            $result = ($prodcut['price_product'] * $valurcashbackextend) / 100;
-            $pricelastextend = $result;
-            update("user", "Balance", $pricelastextend, "id", $Balance_id['id']);
-            sendmessage($Balance_id['id'], sprintf($textbotlang['hardcoded']['renewGiftChargedFn'], $result), null, 'HTML');
-        }
-        $priceproductformat = number_format($prodcut['price_product']);
-        $textextend = sprintf($textbotlang['hardcoded']['renewServiceSuccessFn'], $usernamepanel, $prodcut['name_product'], $priceproductformat);
-        sendmessage($Balance_id['id'], $textextend, $keyboardextendfnished, 'HTML');
-        if (intval($setting['scorestatus']) == 1 and !in_array($Balance_id['id'], $admin_ids)) {
-            sendmessage($Balance_id['id'], $textbotlang['extracted']['index_php']['earned2Points'], null, 'html');
-            $scorenew = $Balance_id['score'] + 2;
-            update("user", "score", $scorenew, "id", $Balance_id['id']);
-        }
-        $timejalali = jdate('Y/m/d H:i:s');
-        $text_report = sprintf($textbotlang['hardcoded']['renewReportAdminFn'], $Balance_id['id'], $Balance_id['username'], $usernamepanel, $nameloc['Service_location'], $prodcut['name_product'], $prodcut['Volume_constraint'], $prodcut['Service_time'], $priceproductformat, $balanceformatsell, $timejalali);
-        if (strlen($setting['Channel_Report']) > 0) {
-            telegram('sendmessage', [
-                'chat_id' => $setting['Channel_Report'],
-                'message_thread_id' => $otherservice,
-                'text' => $text_report,
-                'parse_mode' => "HTML"
-            ]);
-        }
-        update("invoice", "Status", "active", "id_invoice", $nameloc['id_invoice']);
-        if ($Payment_report['Payment_Method'] == "cart to cart" or $Payment_report['Payment_Method'] == "arze digital offline") {
-
-            $textconfrom = sprintf($textbotlang['hardcoded']['paymentConfirmedRenew'], $usernamepanel, $prodcut['name_product'], $nameloc['Service_location'], $Balance_id['id'], $Payment_report['id_order'], $Balance_id['username'], $Balance_id['Balance'], $format_price_cart, $Payment_report['dec_not_confirmed']);
-            Editmessagetext($from_id, $message_id, $textconfrom, $Confirm_pay);
-        }
-    } elseif ($steppay[0] == "getextravolumeuser") {
         $steppay = explode("%", $steppay[1]);
         $volume = $steppay[1];
         $nameloc = select("invoice", "*", "username", $steppay[0], "select");
@@ -1248,31 +1180,14 @@ function DirectPayment($order_id, $image = 'images.jpg')
         update("Payment_report", "payment_Status", "paid", "id_order", $Payment_report['id_order']);
         $Payment_report['price'] = number_format($Payment_report['price'], 0);
         $format_price_cart = $Payment_report['price'];
-        if ($Payment_report['Payment_Method'] == "cart to cart" or $Payment_report['Payment_Method'] == "arze digital offline") {
+        if ($Payment_report['Payment_Method'] == "cart to cart" or $Payment_report['Payment_Method'] == "arze digital offline" or $Payment_report['Payment_Method'] == "usdt offline" or $Payment_report['Payment_Method'] == "gram offline") {
             $textconfrom = sprintf($textbotlang['hardcoded']['newPaymentBalanceChargeFn'], $Balance_id['id'], $Payment_report['id_order'], $Balance_id['username'], $format_price_cart, $Balance_id['Balance'], $Payment_report['dec_not_confirmed']);
             Editmessagetext($from_id, $message_id, $textconfrom, $Confirm_pay);
         }
         sendmessage($Payment_report['id_user'], sprintf($textbotlang['hardcoded']['balanceChargedThanks'], $Payment_report['price'], $Payment_report['id_order']), null, 'HTML');
     }
 }
-function plisio($order_id, $price, $from_id)
-{
-    $apinowpayments = select("PaySetting", "ValuePay", "NamePay", "apinowpayment", "select")['ValuePay'];
-    $api_key = $apinowpayments;
 
-    $url = 'https://api.plisio.net/api/v1/invoices/new';
-    $url .= '?source_currency=USD';
-    $url .= '&source_amount=' . urlencode($price);
-    $url .= '&order_number=' . urlencode($order_id);
-    $url .= '&email=customer@plisio.net';
-    $url .= '&order_name=' . urlencode('TopUp - ' . $from_id);
-    $url .= '&language=fa';
-    $url .= '&api_key=' . urlencode($api_key);
-    $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    $response = json_decode(curl_exec($ch), true);
-    return $response['data'];
-}
 function checkConnection($address, $port)
 {
     $socket = @stream_socket_client("tcp://$address:$port", $errno, $errstr, 5);
@@ -1519,10 +1434,8 @@ function activecron()
         "*/1 * * * * curl https://$domainhosts/cronbot/NoticationsService.php",
         "*/5 * * * * curl https://$domainhosts/cronbot/payment_expire.php",
         "*/1 * * * * curl https://$domainhosts/cronbot/sendmessage.php",
-        "*/3 * * * * curl https://$domainhosts/cronbot/plisio.php",
         "*/1 * * * * curl https://$domainhosts/cronbot/activeconfig.php",
         "*/1 * * * * curl https://$domainhosts/cronbot/disableconfig.php",
-        "*/1 * * * * curl https://$domainhosts/cronbot/iranpay1.php",
         "0 */5 * * * curl https://$domainhosts/cronbot/backupbot.php",
         "*/2 * * * * curl https://$domainhosts/cronbot/gift.php",
         "*/30 * * * * curl https://$domainhosts/cronbot/expireagent.php",
@@ -1534,58 +1447,8 @@ function activecron()
 
     addCronIfNotExists($cronCommands);
 }
-function createInvoice($amount)
-{
-    global $from_id, $domainhosts;
-    $PaySetting = select("PaySetting", "*", "NamePay", "apiiranpay", "select")['ValuePay'];
-    $walletaddress = select("PaySetting", "*", "NamePay", "walletaddress", "select")['ValuePay'];
-
-    $curl = curl_init();
-
-    curl_setopt_array($curl, array(
-        CURLOPT_URL => 'https://pay.melorinabeauty.com/api/factor/create',
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_ENCODING => '',
-        CURLOPT_MAXREDIRS => 10,
-        CURLOPT_TIMEOUT => 0,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-        CURLOPT_CUSTOMREQUEST => 'POST',
-        CURLOPT_POSTFIELDS => array('amount' => $amount, 'address' => $walletaddress, 'base' => 'trx'),
-        CURLOPT_HTTPHEADER => array(
-            'Authorization: Token ' . $PaySetting
-        ),
-    ));
-
-    $response = curl_exec($curl);
-    return json_decode($response, true);
-}
-function verifpay($id)
-{
-    global $from_id, $domainhosts;
-    $PaySetting = select("PaySetting", "*", "NamePay", "apiiranpay", "select")['ValuePay'];
-    $walletaddress = select("PaySetting", "*", "NamePay", "walletaddress", "select")['ValuePay'];
-    $curl = curl_init();
-
-    curl_setopt_array($curl, array(
-        CURLOPT_URL => 'https://pay.melorinabeauty.ir/api/factor/status?id=' . $id,
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_ENCODING => '',
-        CURLOPT_MAXREDIRS => 10,
-        CURLOPT_TIMEOUT => 0,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-        CURLOPT_CUSTOMREQUEST => 'GET',
-        CURLOPT_HTTPHEADER => array(
-            'Authorization: Token ' . $PaySetting
-        ),
-    ));
-
-    $response = curl_exec($curl);
 
 
-    return $response;
-}
 
 function createInvoiceTetra($amount, $id_invoice)
 {
@@ -1720,37 +1583,7 @@ function createInvoiceTetra($amount, $id_invoice)
     return $decodedResponse;
 }
 
-function createInvoiceiranpay1($amount, $id_invoice)
-{
-    global $domainhosts;
-    $PaySetting = select("PaySetting", "*", "NamePay", "marchent_floypay", "select")['ValuePay'];
-    $curl = curl_init();
-    $amount = intval($amount);
-    $data = [
-        "ApiKey" => $PaySetting,
-        "Hash_id" => $id_invoice,
-        "Amount" => $amount . "0",
-        "CallbackURL" => "https://$domainhosts/payment/iranpay1.php"
-    ];
-    curl_setopt_array($curl, array(
-        CURLOPT_URL => "https://tetra98.com/api/create_order",
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_ENCODING => '',
-        CURLOPT_MAXREDIRS => 10,
-        CURLOPT_TIMEOUT => 0,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-        CURLOPT_CUSTOMREQUEST => 'POST',
-        CURLOPT_POSTFIELDS => json_encode($data),
-        CURLOPT_HTTPHEADER => array(
-            'accept: application/json',
-            'Content-Type: application/json'
-        ),
-    ));
 
-    $response = curl_exec($curl);
-    return json_decode($response, true);
-}
 function sanitizeUserName($userName)
 {
     $forbiddenCharacters = [
@@ -1966,68 +1799,8 @@ function isValidInvitationCode($setting, $fromId, $verfy_status)
         update("user", "cardpayment", "1", "id", $fromId);
     }
 }
-function createPayZarinpal($price, $order_id)
-{
-    global $domainhosts;
-    $marchent_zarinpal = select("PaySetting", "ValuePay", "NamePay", "merchant_zarinpal", "select")['ValuePay'];
-    $curl = curl_init();
-    curl_setopt_array($curl, array(
-        CURLOPT_URL => 'https://payment.zarinpal.com/pg/v4/payment/request.json',
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_ENCODING => '',
-        CURLOPT_MAXREDIRS => 10,
-        CURLOPT_TIMEOUT => 0,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-        CURLOPT_CUSTOMREQUEST => 'POST',
-        CURLOPT_HTTPHEADER => array(
-            'Content-Type: application/json',
-            'Accept: application/json'
-        ),
-    ));
-    curl_setopt($curl, CURLOPT_POSTFIELDS, json_encode([
-        "merchant_id" => $marchent_zarinpal,
-        "currency" => "IRT",
-        "amount" => $price,
-        "callback_url" => "https://$domainhosts/payment/zarinpal.php",
-        "description" => $order_id,
-        "metadata" => array(
-            "order_id" => $order_id
-        )
-    ]));
-    $response = curl_exec($curl);
-    curl_close($curl);
-    return json_decode($response, true);
-}
-function createPayaqayepardakht($price, $order_id)
-{
-    global $domainhosts;
-    $merchant_aqayepardakht = select("PaySetting", "ValuePay", "NamePay", "merchant_id_aqayepardakht", "select")['ValuePay'];
-    $curl = curl_init();
-    curl_setopt_array($curl, array(
-        CURLOPT_URL => 'https://panel.aqayepardakht.ir/api/v2/create',
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_ENCODING => '',
-        CURLOPT_MAXREDIRS => 10,
-        CURLOPT_TIMEOUT => 0,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-        CURLOPT_CUSTOMREQUEST => 'POST',
-        CURLOPT_HTTPHEADER => array(
-            'Content-Type: application/json',
-            'Accept: application/json'
-        ),
-    ));
-    curl_setopt($curl, CURLOPT_POSTFIELDS, json_encode([
-        'pin' => $merchant_aqayepardakht,
-        'amount' => $price,
-        'callback' => $domainhosts . "/payment/aqayepardakht.php",
-        'invoice_id' => $order_id,
-    ]));
-    $response = curl_exec($curl);
-    curl_close($curl);
-    return json_decode($response, true);
-}
+
+
 function parseConfigs($input)
 {
     $lines = explode("\n", $input);

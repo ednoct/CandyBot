@@ -33,7 +33,7 @@ function DirectPaymentbot($order_id,$image = 'images.jpg'){
         update("Payment_report","payment_Status","paid","id_order",$Payment_report['id_order']);
         $Payment_report['price'] = number_format($Payment_report['price'], 0);
         $format_price_cart = $Payment_report['price'];
-        if($Payment_report['Payment_Method'] == "cart to cart" or   $Payment_report['Payment_Method'] == "arze digital offline"){
+        if($Payment_report['Payment_Method'] == "cart to cart" or   $Payment_report['Payment_Method'] == "arze digital offline" or $Payment_report['Payment_Method'] == "usdt offline" or $Payment_report['Payment_Method'] == "gram offline"){
         $textconfrom = "⭕️ یک پرداخت جدید انجام شده است
         افزایش موجودی.
 👤 شناسه کاربر: <code>{$Balance_id['id']}</code>

@@ -16,7 +16,7 @@ $autoconfirm = select("PaySetting", "ValuePay", "NamePay", "autoconfirmcart", "s
 if ($autoconfirm != "onauto")
     return;
 $paymentreports = select("topicid", "idreport", "report", "paymentreport", "select")['idreport'];
-$stmt = $pdo->prepare("SELECT * FROM Payment_report WHERE payment_Status = 'waiting' AND (Payment_Method = 'cart to cart' OR Payment_Method = 'arze digital offline') AND bottype IS NULL");
+$stmt = $pdo->prepare("SELECT * FROM Payment_report WHERE payment_Status = 'waiting' AND (Payment_Method = 'cart to cart' OR Payment_Method = 'arze digital offline' OR Payment_Method = 'usdt offline' OR Payment_Method = 'gram offline') AND bottype IS NULL");
 $stmt->execute();
 while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
     $timecheck = $setting['timeauto_not_verify'] * 60;
