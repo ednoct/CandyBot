@@ -1,0 +1,75 @@
+{% extends "admin/base.html" %}
+
+{% block page_title %}مخزن لایسنس‌ها{% endblock %}
+
+{% block content %}
+<div class="glass-card" style="margin-bottom: 2rem;">
+    <h3>افزودن لایسنس جدید به مخزن</h3>
+    <form method="POST" action="/admin/licenses">
+        <div class="form-group">
+            <label class="form-label">انتخاب کامبو (پلن + زمان + حجم)</label>
+            <select name="combo" class="glass-input" required>
+                <option value="" disabled selected>لطفا انتخاب کنید...</option>
+                <option value="free_test">🎁 مخزن تست رایگان</option>
+                <optgroup label="کامبوهای پلن‌ها">
+                {% for plan in plans %}
+                    {% for t in plan.times %}
+                        {% for tr in plan.traffics %}
+                        <option value="{{ plan.id }}_{{ t.id }}_{{ tr.id }}">{{ plan.name }} - {{ t.days }} روز - {{ tr.gb }} گیگ</option>
+                        {% endfor %}
+                    {% endfor %}
+                {% endfor %}
+                </optgroup>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">لایسنس‌ها (هر خط یک لایسنس)</label>
+            <textarea name="license_keys" class="glass-input glass-textarea" placeholder="vmess://...\nvless://..." required style="min-height: 150px;"></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary" style="margin-top: 1rem;">افزودن به مخزن</button>
+    </form>
+</div>
+
+<div class="glass-table-container">
+    <table class="glass-table">
+        <thead>
+            <tr>
+                <th>شناسه</th>
+                <th>لایسنس (مخفی)</th>
+                <th>نوع/پلن</th>
+                <th>زمان/حجم</th>
+                <th>عملیات</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for lic in licenses %}
+            <tr>
+                <td>{{ lic.id }}</td>
+                <td style="font-family: monospace; color: var(--text-muted);">
+                    {{ lic.license_key[:25] }}... 
+                </td>
+                <td>
+                    {% if lic.is_free_test %}
+                        <span class="badge badge-success">🎁 تست رایگان</span>
+                    {% else %}
+                        <span class="badge badge-warning">{{ lic.plan_name }}</span>
+                    {% endif %}
+                </td>
+                <td dir="ltr">
+                    {% if not lic.is_free_test %}
+                        {{ lic.time_days }}D | {{ lic.traffic_gb }}GB
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+                <td>
+                    <a href="/admin/licenses/delete/{{ lic.id }}" class="btn btn-danger" style="padding: 0.25rem 0.75rem; font-size: 0.8rem;" onclick="return confirm('آیا مطمئن هستید؟');">حذف</a>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" style="text-align:center;">هیچ لایسنسی در مخزن وجود ندارد.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

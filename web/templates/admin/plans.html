@@ -1,0 +1,90 @@
+{% extends "admin/base.html" %}
+
+{% block page_title %}مدیریت پلن‌ها{% endblock %}
+
+{% block content %}
+<div class="glass-card" style="margin-bottom: 2rem;">
+    <h3>تعریف پلن جدید</h3>
+    <form method="POST" action="/admin/plans">
+        <input type="hidden" name="action" value="add_plan">
+        <div class="card-grid">
+            <div class="form-group">
+                <label class="form-label">نام پلن (مثل: ویژه 💎)</label>
+                <input type="text" name="name" class="glass-input" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label">توضیحات ادمین</label>
+                <input type="text" name="admin_description" class="glass-input">
+            </div>
+            <div class="form-group">
+                <label class="form-label">قیمت هر روز (تومان)</label>
+                <input type="number" name="price_per_day" class="glass-input" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label">قیمت هر گیگ (تومان)</label>
+                <input type="number" name="price_per_gb" class="glass-input" required>
+            </div>
+        </div>
+        <button type="submit" class="btn btn-primary" style="margin-top: 1rem;">ذخیره پلن</button>
+    </form>
+</div>
+
+{% for plan in plans %}
+<div class="glass-card" style="margin-bottom: 2rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h3>📁 پلن: <span style="color:var(--accent-primary);">{{ plan.name }}</span></h3>
+        <a href="/admin/plans/delete/{{ plan.id }}?type=plan" class="btn btn-danger" onclick="return confirm('آیا مطمئن هستید؟ با حذف این پلن تمام بسته‌ها و مخازن مرتبط نیز پاک خواهند شد.');">حذف کل پلن</a>
+    </div>
+    <p><strong>توضیحات:</strong> {{ plan.admin_description }} | <strong>قیمت پایه (روز/گیگ):</strong> {{ "{:,}".format(plan.price_per_day) }} / {{ "{:,}".format(plan.price_per_gb) }} تومان</p>
+    
+    <div class="card-grid" style="margin-top: 1.5rem;">
+        <!-- Time Packages -->
+        <div class="glass-card" style="background: rgba(255,255,255,0.02);">
+            <h4>⏱ بسته‌های زمان</h4>
+            <ul style="list-style:none; padding:0; margin-bottom: 1rem;">
+                {% for tp in plan.time_packages %}
+                <li style="display:flex; justify-content:space-between; padding: 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                    <span>{{ tp.days }} روز</span>
+                    <a href="/admin/plans/delete/{{ tp.id }}?type=time" class="text-danger" style="text-decoration:none;" onclick="return confirm('حذف شود؟');">❌</a>
+                </li>
+                {% else %}
+                <li style="color: var(--text-muted); padding: 0.5rem;">بسته‌ای تعریف نشده است.</li>
+                {% endfor %}
+            </ul>
+            <form method="POST" action="/admin/plans" style="display:flex; gap: 0.5rem;">
+                <input type="hidden" name="action" value="add_time">
+                <input type="hidden" name="plan_id" value="{{ plan.id }}">
+                <input type="number" name="days" class="glass-input" placeholder="تعداد روز" required style="width: 100%;">
+                <button type="submit" class="btn btn-success" style="padding: 0.5rem;">➕</button>
+            </form>
+        </div>
+        
+        <!-- Traffic Packages -->
+        <div class="glass-card" style="background: rgba(255,255,255,0.02);">
+            <h4>🔋 بسته‌های حجم</h4>
+            <ul style="list-style:none; padding:0; margin-bottom: 1rem;">
+                {% for tr in plan.traffic_packages %}
+                <li style="display:flex; justify-content:space-between; padding: 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                    <span>{{ tr.gb }} گیگابایت</span>
+                    <a href="/admin/plans/delete/{{ tr.id }}?type=traffic" class="text-danger" style="text-decoration:none;" onclick="return confirm('حذف شود؟');">❌</a>
+                </li>
+                {% else %}
+                <li style="color: var(--text-muted); padding: 0.5rem;">بسته‌ای تعریف نشده است.</li>
+                {% endfor %}
+            </ul>
+            <form method="POST" action="/admin/plans" style="display:flex; gap: 0.5rem;">
+                <input type="hidden" name="action" value="add_traffic">
+                <input type="hidden" name="plan_id" value="{{ plan.id }}">
+                <input type="number" name="gb" class="glass-input" placeholder="گیگابایت" required style="width: 100%;">
+                <button type="submit" class="btn btn-success" style="padding: 0.5rem;">➕</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="glass-card" style="text-align: center;">
+    هیچ پلنی تعریف نشده است.
+</div>
+{% endfor %}
+
+{% endblock %}

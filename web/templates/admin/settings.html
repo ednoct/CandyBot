@@ -1,0 +1,117 @@
+{% extends "admin/base.html" %}
+
+{% block page_title %}تنظیمات بات و سیستم{% endblock %}
+
+{% block content %}
+<div class="card-grid">
+    <div class="glass-card" style="grid-column: 1 / -1;">
+        <form method="POST" action="/admin/settings">
+            
+            <h3>⚙️ تنظیمات اصلی</h3>
+            <div class="form-group">
+                <label class="form-label">شناسه کانال گزارشات (Channel_Report)</label>
+                <input type="text" name="Channel_Report" class="glass-input" value="{{ settings.get('Channel_Report', '') }}">
+            </div>
+            <div class="form-group">
+                <label class="form-label">آیدی پشتیبانی (support_username)</label>
+                <input type="text" name="support_username" class="glass-input" value="{{ settings.get('support_username', '') }}">
+            </div>
+            
+            <hr style="border-color: rgba(255,255,255,0.1); margin: 2rem 0;">
+            
+            <h3>💬 متن های ربات</h3>
+            <div class="form-group">
+                <label class="form-label">متن خوش‌آمدگویی (Welcome Text)</label>
+                <textarea name="bot_text_welcome" class="glass-input" rows="3">{{ settings.get('bot_text_welcome', 'به ربات کندی کانکت خوش آمدید!\\nجهت تهیه لایسنس یکبار مصرف از منوی زیر استفاده کنید.') }}</textarea>
+            </div>
+            <div class="form-group">
+                <label class="form-label">متن قوانین (Rules Text)</label>
+                <textarea name="bot_text_rules" class="glass-input" rows="3">{{ settings.get('bot_text_rules', '') }}</textarea>
+            </div>
+
+            <hr style="border-color: rgba(255,255,255,0.1); margin: 2rem 0;">
+
+            <h3>💳 درگاه‌های پرداخت</h3>
+            
+            <div class="glass-card" style="margin-bottom: 1rem; padding: 1rem; background: rgba(255,255,255,0.02);">
+                <h4>Tetra (تترا)</h4>
+                <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
+                    <input type="checkbox" name="tetra_status" {% if settings.get('tetra_status') == '1' %}checked{% endif %}>
+                    <label class="form-label" style="margin: 0;">فعال سازی درگاه تترا</label>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Tetra API Key</label>
+                    <input type="text" name="tetra_api_key" class="glass-input" value="{{ settings.get('tetra_api_key', '') }}">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">حداقل واریز تترا (تومان)</label>
+                    <input type="number" name="min_deposit_tetra" class="glass-input" value="{{ settings.get('min_deposit_tetra', '50000') }}">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">حداکثر واریز تترا (تومان)</label>
+                    <input type="number" name="max_deposit_tetra" class="glass-input" value="{{ settings.get('max_deposit_tetra', '50000000') }}">
+                </div>
+            </div>
+
+            <div class="glass-card" style="margin-bottom: 1rem; padding: 1rem; background: rgba(255,255,255,0.02);">
+                <h4>USDT (آفلاین)</h4>
+                <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
+                    <input type="checkbox" name="usdt_status" {% if settings.get('usdt_status') == '1' %}checked{% endif %}>
+                    <label class="form-label" style="margin: 0;">فعال سازی درگاه تتر</label>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">آدرس کیف پول USDT</label>
+                    <input type="text" name="wallet_usdt" class="glass-input" value="{{ settings.get('wallet_usdt', '') }}">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">حداقل واریز تتر (تومان)</label>
+                    <input type="number" name="min_deposit_usdt" class="glass-input" value="{{ settings.get('min_deposit_usdt', '50000') }}">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">حداکثر واریز تتر (تومان)</label>
+                    <input type="number" name="max_deposit_usdt" class="glass-input" value="{{ settings.get('max_deposit_usdt', '50000000') }}">
+                </div>
+            </div>
+
+            <div class="glass-card" style="margin-bottom: 1rem; padding: 1rem; background: rgba(255,255,255,0.02);">
+                <h4>GRAM (آفلاین)</h4>
+                <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
+                    <input type="checkbox" name="gram_status" {% if settings.get('gram_status') == '1' %}checked{% endif %}>
+                    <label class="form-label" style="margin: 0;">فعال سازی درگاه گرام</label>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">آدرس کیف پول GRAM</label>
+                    <input type="text" name="wallet_gram" class="glass-input" value="{{ settings.get('wallet_gram', '') }}">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">کامنت (Memo) گرام</label>
+                    <input type="text" name="memo_gram" class="glass-input" value="{{ settings.get('memo_gram', '') }}">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">لینک صرافی (Exchanger PWA)</label>
+                    <input type="text" name="exchanger_gram" class="glass-input" value="{{ settings.get('exchanger_gram', '') }}">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">حداقل واریز گرام (تومان)</label>
+                    <input type="number" name="min_deposit_gram" class="glass-input" value="{{ settings.get('min_deposit_gram', '50000') }}">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">حداکثر واریز گرام (تومان)</label>
+                    <input type="number" name="max_deposit_gram" class="glass-input" value="{{ settings.get('max_deposit_gram', '50000000') }}">
+                </div>
+            </div>
+
+            <hr style="border-color: rgba(255,255,255,0.1); margin: 2rem 0;">
+
+            <h3>⌨️ چیدمان کیبورد</h3>
+            <p style="font-size: 12px; color: #ccc;">یک آرایه JSON معتبر وارد کنید</p>
+            <div class="form-group">
+                <label class="form-label">ساختار کیبورد منوی اصلی (JSON)</label>
+                <textarea name="keyboard_layout" class="glass-input" rows="5" dir="ltr" style="font-family: monospace;">{{ settings.get('keyboard_layout', '[\n  [{"text": "🛒 خرید اشتراک", "callback_data": "buy_subscription"}],\n  [{"text": "📦 سرویس های من", "callback_data": "my_services"}],\n  [{"text": "🎁 تست رایگان", "callback_data": "free_test"}],\n  [{"text": "👤 پروفایل من", "callback_data": "my_profile"}],\n  [{"text": "👥 زیرمجموعه گیری", "callback_data": "affiliate"}],\n  [{"text": "📱 دانلود اپلیکیشن", "callback_data": "app_download"}],\n  [{"text": "☎️ پشتیبانی", "callback_data": "support"}]\n]') }}</textarea>
+            </div>
+
+            <button type="submit" class="btn btn-primary" style="margin-top: 2rem; width: 100%;">ذخیره همه تغییرات</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

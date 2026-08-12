@@ -1,0 +1,44 @@
+{% extends "admin/base.html" %}
+
+{% block page_title %}مالی و فاکتورها{% endblock %}
+
+{% block content %}
+<div class="glass-table-container">
+    <table class="glass-table">
+        <thead>
+            <tr>
+                <th>شناسه فاکتور</th>
+                <th>کاربر</th>
+                <th>محصول (پلن)</th>
+                <th>مبلغ پرداخت (تومان)</th>
+                <th>درگاه</th>
+                <th>وضعیت</th>
+                <th>تاریخ ثبت</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for inv in invoices %}
+            <tr>
+                <td style="font-family:monospace;">{{ inv.id }}</td>
+                <td>{{ inv.user_id }}</td>
+                <td>{{ inv.plan_name }}</td>
+                <td>{{ "{:,}".format(inv.final_amount) }}</td>
+                <td>{{ inv.payment_method }}</td>
+                <td>
+                    {% if inv.status == 'paid' %}
+                        <span class="badge badge-success">پرداخت شده</span>
+                    {% elif inv.status == 'pending' %}
+                        <span class="badge badge-warning">در انتظار</span>
+                    {% else %}
+                        <span class="badge badge-danger">ناموفق / منقضی</span>
+                    {% endif %}
+                </td>
+                <td dir="ltr" style="text-align: right;">{{ inv.created_at }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" style="text-align:center;">هیچ فاکتوری یافت نشد.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

@@ -1,0 +1,38 @@
+{% extends "admin/base.html" %}
+
+{% block page_title %}کاربران{% endblock %}
+
+{% block content %}
+<div class="glass-table-container">
+    <table class="glass-table">
+        <thead>
+            <tr>
+                <th>شناسه (Telegram ID)</th>
+                <th>نام کاربری</th>
+                <th>وضعیت</th>
+                <th>موجودی (تومان)</th>
+                <th>امتیاز / زیرمجموعه</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user in users %}
+            <tr>
+                <td>{{ user.id }}</td>
+                <td style="font-weight:bold; color:var(--text-primary);">@{{ user.username }}</td>
+                <td>
+                    {% if user.User_Status == 'Active' %}
+                        <span class="badge badge-success">فعال</span>
+                    {% else %}
+                        <span class="badge badge-danger">غیرفعال</span>
+                    {% endif %}
+                </td>
+                <td>{{ "{:,}".format(user.Balance) }}</td>
+                <td>{{ user.score }} / {{ user.affiliatescount }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" style="text-align:center;">هیچ کاربری یافت نشد.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
