@@ -1,14 +1,16 @@
 # === IMPORTS ===
 from aiogram import Router, F, types
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, StateFilter
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.fsm.context import FSMContext
 from database import db_manager
 
 user_router = Router()
 
 # === ROUTER: START COMMAND ===
-@user_router.message(CommandStart())
-async def cmd_start(message: types.Message):
+@user_router.message(CommandStart(), StateFilter("*"))
+async def cmd_start(message: types.Message, state: FSMContext):
+    await state.clear()
     await db_manager.create_user(message.from_user.id, message.from_user.username)
     
     # Fetch dynamic settings

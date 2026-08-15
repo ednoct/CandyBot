@@ -60,6 +60,7 @@ async def main():
         user_router
     )
     
+    dp.include_router(user_router)
     dp.include_router(admin_router)
     dp.include_router(admin_reports_router)
     dp.include_router(admin_settings_router)
@@ -70,7 +71,6 @@ async def main():
     dp.include_router(checkout_router)
     dp.include_router(payment_router)
     dp.include_router(support_router)
-    dp.include_router(user_router)
     
     # === CRON TASKS ===
     setup_cron_tasks(bot)
