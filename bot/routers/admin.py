@@ -8,7 +8,7 @@ admin_router = Router()
 
 # === ADMIN FILTER ===
 def is_admin(message: types.Message):
-    return message.from_user.id in ADMIN_IDS
+    return message.chat.id in ADMIN_IDS
 
 # === ROUTER: ADMIN PANEL ===
 @admin_router.message(Command("admin"))
