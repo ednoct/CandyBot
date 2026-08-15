@@ -208,10 +208,10 @@ async def process_wallet_charge(message: types.Message, state: FSMContext):
     
     async with aiosqlite.connect(DB_PATH) as db:
         for name, code, cb_data in available_gateways:
-            async with db.execute("SELECT value FROM settings WHERE key = ?", (f"gateway_status_{code}",)) as cursor:
+            key_name = f"{code}_status" if code in ['tetra', 'usdt', 'gram'] else f"gateway_status_{code}"
+            async with db.execute("SELECT value FROM settings WHERE key = ?", (key_name,)) as cursor:
                 row = await cursor.fetchone()
-                # By default make cart active
-                is_active = (row and row[0] == '1') or (not row and code in ['cart'])
+                is_active = (row and row[0] == '1')
                 if is_active:
                     builder.row(types.InlineKeyboardButton(text=f"💳 {name}", callback_data=cb_data))
                     

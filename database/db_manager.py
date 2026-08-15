@@ -20,6 +20,11 @@ async def init_db():
         except Exception:
             pass # Ignore if columns already exist
             
+        try:
+            await db.execute("ALTER TABLE licenses_cargo ADD COLUMN is_free_test INTEGER DEFAULT 0")
+        except Exception:
+            pass
+            
         await db.commit()
 
 async def cleanup_miniapp_migration():

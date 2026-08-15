@@ -1,4 +1,4 @@
-﻿# === IMPORTS ===
+# === IMPORTS ===
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -159,7 +159,9 @@ async def cargo_stock_prompt(callback: types.CallbackQuery, state: FSMContext):
             count = (await cursor.fetchone())[0]
             
     await state.set_state(AdminStates.waiting_for_cargo_stock)
-    await callback.message.edit_text(f"📦 موجودی فعلی این کامبو: **{count} لایسنس**\n\nبرای شارژ مخزن، لایسنس‌ها را بفرستید (هر خط یک لایسنس):", parse_mode="Markdown")
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 انصراف و بازگشت", callback_data="cancel_cargo_add")
+    await callback.message.edit_text(f"📦 موجودی فعلی این کامبو: **{count} لایسنس**\n\nبرای شارژ مخزن، لایسنس‌ها را بفرستید (هر خط یک لایسنس):", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
 @admin_plans_router.message(AdminStates.waiting_for_cargo_stock)
 async def cargo_stock_save(message: types.Message, state: FSMContext):
@@ -171,7 +173,10 @@ async def cargo_stock_save(message: types.Message, state: FSMContext):
     async with aiosqlite.connect(DB_PATH) as db:
         if data.get('cargo_free_test', False):
             for line in lines:
-                await db.execute('INSERT INTO licenses_cargo (license_key, is_free_test) VALUES (?, 1)', (line,))
+                try:
+                    await db.execute('INSERT INTO licenses_cargo (license_key, is_free_test) VALUES (?, 1)', (line,))
+                except aiosqlite.OperationalError as e:
+                    return await message.reply(f"❌ خطای دیتابیس در ثبت لایسنس (ستون‌های مخزن ناقص است): {e}")
         else:
             for line in lines:
                 await db.execute('INSERT INTO licenses_cargo (plan_id, time_package_id, traffic_package_id, license_key) VALUES (?, ?, ?, ?)',
@@ -190,7 +195,14 @@ async def cargo_free_test_prompt(callback: types.CallbackQuery, state: FSMContex
             count = (await cursor.fetchone())[0]
             
     await state.set_state(AdminStates.waiting_for_cargo_stock)
-    await callback.message.edit_text(f"🎁 موجودی فعلی تست رایگان: **{count} لایسنس**\n\nبرای شارژ مخزن، لایسنس‌ها را بفرستید (هر خط یک لایسنس):", parse_mode="Markdown")
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 انصراف و بازگشت", callback_data="cancel_cargo_add")
+    await callback.message.edit_text(f"🎁 موجودی فعلی تست رایگان: **{count} لایسنس**\n\nبرای شارژ مخزن، لایسنس‌ها را بفرستید (هر خط یک لایسنس):", reply_markup=builder.as_markup(), parse_mode="Markdown")
+    
+@admin_plans_router.callback_query(F.data == "cancel_cargo_add")
+async def cancel_cargo_add(callback: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    await manage_plans_menu(callback)
 
 # === ROUTER: MANAGE TIME PACKAGES ===
 @admin_plans_router.callback_query(F.data.startswith("pkgtime_"))

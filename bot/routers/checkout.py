@@ -226,10 +226,10 @@ async def prepare_and_send_invoice(message: types.Message, user_id: int, data: d
         
         async with aiosqlite.connect(DB_PATH) as db:
             for name, code, cb_data in available_gateways:
-                async with db.execute("SELECT value FROM settings WHERE key = ?", (f"gateway_status_{code}",)) as cursor:
+                key_name = f"{code}_status" if code in ['tetra', 'usdt', 'gram'] else f"gateway_status_{code}"
+                async with db.execute("SELECT value FROM settings WHERE key = ?", (key_name,)) as cursor:
                     row = await cursor.fetchone()
-                    # By default make cart and zarinpal active if not defined yet
-                    is_active = (row and row[0] == '1') or (not row and code in ['cart', 'zarinpal'])
+                    is_active = (row and row[0] == '1')
                     if is_active:
                         builder.row(types.InlineKeyboardButton(text=f"💳 {name}", callback_data=cb_data))
     else:
@@ -335,22 +335,37 @@ async def process_free_test(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     
     async with aiosqlite.connect(db_manager.DB_PATH) as db:
-        async with db.execute("SELECT COUNT(*) FROM payment_reports WHERE user_id = ? AND payment_method = 'free_test'", (user_id,)) as cursor:
-            count = (await cursor.fetchone())[0]
+        try:
+            # First try the modern schema
+            async with db.execute("SELECT COUNT(*) FROM payment_reports WHERE user_id = ? AND payment_method = 'free_test'", (user_id,)) as cursor:
+                count = (await cursor.fetchone())[0]
+        except aiosqlite.OperationalError:
+            # Fallback to legacy schema
+            async with db.execute("SELECT COUNT(*) FROM payment_reports WHERE id_user = ? AND Payment_Method = 'free_test'", (user_id,)) as cursor:
+                count = (await cursor.fetchone())[0]
             
         if count > 0:
             return await callback.answer("❌ شما قبلا از تست رایگان استفاده کرده‌اید.", show_alert=True)
             
-        async with db.execute("SELECT id, license_key FROM licenses_cargo WHERE is_free_test = 1 LIMIT 1") as cursor:
-            cargo = await cursor.fetchone()
+        try:
+            async with db.execute("SELECT id, license_key FROM licenses_cargo WHERE is_free_test = 1 LIMIT 1") as cursor:
+                cargo = await cursor.fetchone()
+        except aiosqlite.OperationalError as e:
+            # If is_free_test column is missing, this handles it
+            return await callback.message.edit_text(f"❌ خطای دیتابیس در بخش مخزن تست: {e}")
             
         if not cargo:
             return await callback.answer("❌ متاسفانه در حال حاضر لایسنس تست رایگان موجود نیست.", show_alert=True)
             
         await db.execute("DELETE FROM licenses_cargo WHERE id = ?", (cargo[0],))
         
-        await db.execute("INSERT INTO payment_reports (user_id, invoice_id, amount, payment_method, status) VALUES (?, ?, ?, ?, ?)",
-            (user_id, 'TEST', 0, 'free_test', 'approved'))
+        try:
+            await db.execute("INSERT INTO payment_reports (user_id, invoice_id, amount, payment_method, status) VALUES (?, ?, ?, ?, ?)",
+                (user_id, 'TEST', 0, 'free_test', 'approved'))
+        except aiosqlite.OperationalError:
+            await db.execute("INSERT INTO payment_reports (id_user, id_order, price, Payment_Method, payment_Status) VALUES (?, ?, ?, ?, ?)",
+                (user_id, 'TEST', 0, 'free_test', 'approved'))
+                
         await db.commit()
         
     text = (
