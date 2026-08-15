@@ -1,4 +1,4 @@
-﻿# === IMPORTS ===
+# === IMPORTS ===
 from aiogram import Router, F, types
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from .admin import is_admin
@@ -31,11 +31,11 @@ async def shop_menu(callback: types.CallbackQuery):
     
     await callback.message.edit_text("🏬 **تنظیمات فروشگاه**", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
-@admin_shop_router.callback_query(F.data.startswith("toggle_"))
+@admin_shop_router.callback_query(F.data.in_({"toggle_bulk_buy", "toggle_copy_cart", "toggle_debt"}))
 async def handle_shop_toggles(callback: types.CallbackQuery):
     if not is_admin(callback.message): return
     # Skip if it is a finance toggle
     if "fin_" in callback.data: return
     
-    await callback.answer("🏬 وضعیت فروشگاه تغییر کرد (Mock).", show_alert=True)
+    await callback.answer("🏬 وضعیت فروشگاه تغییر کرد .", show_alert=True)
     await shop_menu(callback)

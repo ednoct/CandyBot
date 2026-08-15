@@ -1,4 +1,4 @@
-﻿# === IMPORTS ===
+# === IMPORTS ===
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -52,7 +52,7 @@ async def settings_menu(callback: types.CallbackQuery):
     
     await callback.message.edit_text("⚙️ **تنظیمات عمومی ربات**", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
-@admin_settings_router.callback_query(F.data.startswith("toggle_"))
+@admin_settings_router.callback_query(F.data.in_({"toggle_bot_status", "toggle_phone_auth", "toggle_test_acc"}))
 async def handle_toggles(callback: types.CallbackQuery):
     if not is_admin(callback.message): return
     await callback.answer("⚙️ تنظیم تغییر کرد (Mock).", show_alert=True)
