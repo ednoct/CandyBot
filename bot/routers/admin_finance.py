@@ -1,4 +1,4 @@
-﻿"""
+"""
 This module corresponds to the 'bot/routers/admin_finance.py' branch in the candy_architecture.md map.
 Manages the Telegram Admin Finance menu, including gateway toggles and crypto wallet settings.
 """
@@ -59,7 +59,7 @@ async def finance_menu(callback: types.CallbackQuery):
     builder.button(text="🚫 استثناء تایید خودکار", callback_data="fin_auto_confirm_exceptions")
     
     # New Options
-    builder.button(text="🤖 تایید رسید بدون بررسی", callback_data="toggle_fin_auto_confirm")
+    builder.button(text="🤖 تایید رسید بدون بررسی", callback_data="toggle_auto_confirm_global")
     builder.button(text="💵 رسید های تایید نشده", callback_data="fin_pending_receipts")
     builder.button(text="📈 محدودیت‌های واریز", callback_data="fin_limits_menu")
     
@@ -101,7 +101,6 @@ async def set_card_number_process(message: types.Message, state: FSMContext):
 @admin_finance_router.callback_query(F.data.startswith("toggle_fin_"))
 async def handle_finance_toggles(callback: types.CallbackQuery):
     if not is_admin(callback.message): return
-    if callback.data == 'toggle_fin_auto_confirm': return # Handled below
     
     code = callback.data.split('_')[2]
     from database.db_manager import DB_PATH
@@ -130,11 +129,12 @@ async def crypto_wallets_menu(callback: types.CallbackQuery):
     builder.button(text="تغییر آدرس GRAM", callback_data="set_wallet_gram")
     builder.button(text="تغییر کامنت GRAM", callback_data="set_memo_gram")
     builder.button(text="تغییر لینک صرافی", callback_data="set_exchanger_gram")
+    builder.button(text="تنظیم API تترا", callback_data="set_tetra_api_key")
     builder.button(text="🔙 بازگشت", callback_data="admin_finance")
     builder.adjust(1)
     await callback.message.edit_text("🪙 **مدیریت آدرس‌های کریپتو**", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
-@admin_finance_router.callback_query(F.data.in_(["set_wallet_usdt", "set_wallet_gram", "set_memo_gram", "set_exchanger_gram"]))
+@admin_finance_router.callback_query(F.data.in_(["set_wallet_usdt", "set_wallet_gram", "set_memo_gram", "set_exchanger_gram", "set_tetra_api_key"]))
 async def set_crypto_wallet_prompt(callback: types.CallbackQuery, state: FSMContext):
     if not is_admin(callback.message): return
     key_name = callback.data.replace('set_', '')
@@ -275,7 +275,7 @@ async def view_exceptions_process(callback: types.CallbackQuery):
     await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
 
 # === ROUTER: GLOBAL AUTO CONFIRM ===
-@admin_finance_router.callback_query(F.data == 'toggle_fin_auto_confirm')
+@admin_finance_router.callback_query(F.data == 'toggle_auto_confirm_global')
 async def toggle_auto_confirm(callback: types.CallbackQuery):
     if not is_admin(callback.message): return
     from database.db_manager import DB_PATH

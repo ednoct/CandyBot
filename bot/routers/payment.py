@@ -66,12 +66,16 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
     if gateway_code == 'card':
         # Default card number fallback
         card_number = legacy_settings.get('card_number', "1234-5678-9012-3456")
+        builder = InlineKeyboardBuilder()
+        builder.row(types.InlineKeyboardButton(text="ارسال رسید تراکنش", callback_data=f"sendtxid_{invoice_id}"))
+        
         await callback.message.edit_text(
             f"💳 **پرداخت کارت به کارت**\n\n"
             f"کد فاکتور شما: `{invoice_id}`\n"
             f"مبلغ قابل پرداخت: {amount:,} تومان\n\n"
             f"شماره کارت: `{card_number}`\n\n"
-            f"پس از واریز، رسید خود را به پشتیبانی ارسال کنید.",
+            f"پس از واریز، رسید خود را به پشتیبانی ارسال کنید یا از دکمه زیر جهت ارسال رسید استفاده نمایید.",
+            reply_markup=builder.as_markup(),
             parse_mode="Markdown"
         )
         return
@@ -225,7 +229,14 @@ async def cancel_txid(callback: types.CallbackQuery, state: FSMContext):
 
 @payment_router.message(PaymentState.waiting_for_txid)
 async def process_txid(message: types.Message, state: FSMContext):
-    txid = message.text
+    if message.photo:
+        txid = message.photo[-1].file_id
+    else:
+        txid = message.text or message.caption
+        
+    if not txid:
+        return await message.answer("❌ لطفا هش تراکنش (متن) یا تصویر رسید را ارسال کنید.")
+        
     data = await state.get_data()
     invoice_id = data.get('txid_invoice_id')
     
@@ -238,4 +249,13 @@ async def process_txid(message: types.Message, state: FSMContext):
         await db.commit()
         
     await state.clear()
-    await message.reply(f"✅ تراکنش شما با هش `{txid}` جهت بررسی ثبت شد. پس از تایید مدیر، حساب شما شارژ خواهد شد.", parse_mode="Markdown")
+    await message.reply(f"✅ رسید شما جهت بررسی ثبت شد. پس از تایید مدیر، حساب شما شارژ خواهد شد.", parse_mode="Markdown")
+    
+    # Forward receipt to admins
+    from bot.config import ADMIN_IDS
+    for admin_id in ADMIN_IDS:
+        try:
+            await message.forward(chat_id=admin_id)
+            await message.bot.send_message(chat_id=admin_id, text=f"رسید جدید برای فاکتور `{invoice_id}` ارسال شد.\nلطفا از بخش رسیدهای تایید نشده بررسی کنید.", parse_mode="Markdown")
+        except:
+            pass
