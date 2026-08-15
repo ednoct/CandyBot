@@ -1,4 +1,4 @@
-﻿# === IMPORTS ===
+# === IMPORTS ===
 import logging
 import aiosqlite
 from typing import Optional, Dict, Any
@@ -37,26 +37,45 @@ class PaymentConfirmationManager:
                 async with db.execute("SELECT * FROM users WHERE id = ?", (user_id,)) as cursor:
                     user = await cursor.fetchone()
                 
+                added_balance = 0
+                if invoice['plan_id'] == 0:
+                    added_balance += invoice['final_amount']
+                
                 # Handle cashback
                 cashback_amount = 0
                 if cashback_percent > 0:
                     cashback_amount = int((invoice['final_amount'] * cashback_percent) / 100)
                     if cashback_amount > 0:
-                        await db.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (cashback_amount, user_id))
-                        try:
-                            await self.bot.send_message(
-                                chat_id=user_id,
-                                text=f"🎁 کاربر عزیز مبلغ {cashback_amount} تومان به عنوان هدیه به حساب شما واریز گردید.",
-                                parse_mode="HTML"
-                            )
-                        except Exception as e:
-                            logging.error(f"Failed to send cashback message: {e}")
+                        added_balance += cashback_amount
+                        
+                if added_balance > 0:
+                    await db.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (added_balance, user_id))
+
+                if cashback_amount > 0:
+                    try:
+                        await self.bot.send_message(
+                            chat_id=user_id,
+                            text=f"🎁 کاربر عزیز مبلغ {cashback_amount} تومان به عنوان هدیه به حساب شما واریز گردید.",
+                            parse_mode="HTML"
+                        )
+                    except Exception as e:
+                        logging.error(f"Failed to send cashback message: {e}")
+                        
+                if invoice['plan_id'] == 0:
+                    try:
+                        await self.bot.send_message(
+                            chat_id=user_id,
+                            text=f"✅ کیف پول شما با موفقیت به مبلغ {invoice['final_amount']:,} تومان شارژ شد.",
+                            parse_mode="HTML"
+                        )
+                    except Exception:
+                        pass
 
                 await db.commit()
 
                 # Notify user of successful payment
                 price_fmt = f"{invoice['final_amount']:,}"
-                new_balance_fmt = f"{(user['balance'] + cashback_amount):,}" if user else "0"
+                new_balance_fmt = f"{(user['balance'] + added_balance):,}" if user else "0"
                 
                 success_text = (
                     f"✅ <b>پرداخت شما با موفقیت تایید شد</b>\n\n"

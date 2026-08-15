@@ -12,8 +12,11 @@ def is_admin(message: types.Message):
 
 # === ROUTER: ADMIN PANEL ===
 @admin_router.message(Command("admin"))
-async def admin_panel(message: types.Message):
-    if not is_admin(message): return
+@admin_router.callback_query(F.data == "admin_panel_start")
+async def admin_panel(message: types.Message | types.CallbackQuery):
+    msg = message.message if isinstance(message, types.CallbackQuery) else message
+    user_id = message.from_user.id
+    if user_id not in ADMIN_IDS: return
     
     builder = InlineKeyboardBuilder()
     builder.button(text="📁 مدیریت پلن‌ها", callback_data="admin_manage_plans")
@@ -27,7 +30,11 @@ async def admin_panel(message: types.Message):
     
     text = "💎 **مدیریت پیشرفته کندی (Candy Admin)**\n\nلطفا بخش مورد نظر را انتخاب کنید:"
     
-    await message.answer(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+    if isinstance(message, types.CallbackQuery):
+        await message.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+        await message.answer() # Ack callback
+    else:
+        await message.answer(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
 
 @admin_router.callback_query(F.data == "admin_back")
 async def admin_back_handler(callback: types.CallbackQuery):

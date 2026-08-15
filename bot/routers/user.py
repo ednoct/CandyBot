@@ -1,4 +1,4 @@
-﻿# === IMPORTS ===
+# === IMPORTS ===
 from aiogram import Router, F, types
 from aiogram.filters import CommandStart
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -43,7 +43,10 @@ async def cmd_start(message: types.Message):
         builder.button(text="📱 دانلود اپلیکیشن", callback_data="app_download")
         builder.button(text="☎️ پشتیبانی", callback_data="support")
         builder.adjust(2, 2, 2, 1)
-    
+    from bot.config import ADMIN_IDS
+    if message.from_user.id in ADMIN_IDS:
+        builder.row(types.InlineKeyboardButton(text="⚙️ ورود به مدیریت", callback_data="admin_panel_start"))
+        
     await message.answer(welcome_text, reply_markup=builder.as_markup())
 
 # === ROUTER: BUY SUBSCRIPTION ===
@@ -107,8 +110,69 @@ async def return_main_menu(callback: types.CallbackQuery):
         builder.button(text="📱 دانلود اپلیکیشن", callback_data="app_download")
         builder.button(text="☎️ پشتیبانی", callback_data="support")
         builder.adjust(2, 2, 2, 1)
-    
+    from bot.config import ADMIN_IDS
+    if callback.from_user.id in ADMIN_IDS:
+        builder.row(types.InlineKeyboardButton(text="⚙️ ورود به مدیریت", callback_data="admin_panel_start"))
+        
     await callback.message.edit_text(welcome_text, reply_markup=builder.as_markup())
+from aiogram.fsm.context import FSMContext
+from ..states import UserStates
+import aiosqlite
+
+# === NEW HANDLERS FOR USER ROUTER ===
+@user_router.callback_query(F.data == "my_services")
+async def my_services(callback: types.CallbackQuery):
+    from database.db_manager import DB_PATH
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM invoices WHERE user_id = ? AND status = 'paid' ORDER BY created_at DESC LIMIT 10", (callback.from_user.id,)) as cursor:
+            invoices = await cursor.fetchall()
+            
+    if not invoices:
+        return await callback.answer("شما هیچ سرویس فعالی ندارید.", show_alert=True)
+        
+    text = "📦 **لیست 10 سرویس آخر شما:**\n\n"
+    for inv in invoices:
+        text += f"🔹 فاکتور: `{inv['id']}` | وضعیت: ✅ پرداخت شده\n"
+        
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 برگشت", callback_data="main_menu")
+    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+
+@user_router.callback_query(F.data == "app_download")
+async def app_download(callback: types.CallbackQuery):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📥 دانلود اندروید", url="https://play.google.com")
+    builder.button(text="📥 دانلود ویندوز", url="https://example.com")
+    builder.button(text="🔙 برگشت", callback_data="main_menu")
+    builder.adjust(1)
+    await callback.message.edit_text("📱 **دانلود اپلیکیشن کندی کانکت:**", reply_markup=builder.as_markup(), parse_mode="Markdown")
+
+@user_router.callback_query(F.data == "affiliate")
+async def affiliate_dashboard(callback: types.CallbackQuery):
+    user = await db_manager.get_user(callback.from_user.id)
+    bot_info = await callback.bot.me()
+    ref_link = f"https://t.me/{bot_info.username}?start={callback.from_user.id}"
+    
+    text = f"👥 **سیستم زیرمجموعه گیری (بازاریابی)**\n\n"
+    text += f"تعداد زیرمجموعه‌های شما: {user.get('affiliatescount', 0)} نفر\n\n"
+    text += f"🔗 لینک اختصاصی شما:\n`{ref_link}`"
+    
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 برگشت", callback_data="main_menu")
+    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+
+@user_router.callback_query(F.data == "wallet_charge")
+async def wallet_charge_start(callback: types.CallbackQuery, state: FSMContext):
+    await state.set_state(UserStates.waiting_for_charge_amount)
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 انصراف", callback_data="my_profile")
+    await callback.message.edit_text("💰 لطفاً مبلغ مورد نظر برای شارژ کیف پول را به تومان وارد کنید (مثلاً 50000):", reply_markup=builder.as_markup())
+
+@user_router.message(UserStates.waiting_for_charge_amount)
+async def process_wallet_charge(message: types.Message, state: FSMContext):
+    if not message.text.isdigit():
+        return await message.answer("❌ لطفاً یک عدد معتبر وارد کنید.")
 from aiogram.fsm.context import FSMContext
 from ..states import UserStates
 import aiosqlite
@@ -173,22 +237,44 @@ async def process_wallet_charge(message: types.Message, state: FSMContext):
         return await message.answer("❌ حداقل مبلغ شارژ 10,000 تومان است.")
         
     await state.set_state(None)
+    # We create a FSMContext directly for payment.py since this is a pseudo invoice
+    await state.update_data(
+        final_amount=amount,
+        base_price=amount,
+        plan_id=0,
+        days=0,
+        gb=0,
+        wallet_deduction=0,
+        discount_code=None,
+        discount_amount=0,
+        gift_code=None,
+        gift_amount=0
+    )
     
-    # We create a pseudo-invoice for Wallet Charge and redirect to checkout
+    builder = InlineKeyboardBuilder()
+    
+    # Show gateways directly
     from database.db_manager import DB_PATH
-    import uuid
-    inv_id = str(uuid.uuid4())[:8].upper()
+    import aiosqlite
+    available_gateways = [
+        ('کارت به کارت', 'cart', 'pay_card'),
+        ('تتر (BSC)', 'usdt', 'pay_usdt'),
+        ('گرام (TON)', 'gram', 'pay_gram')
+    ]
     
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute('''INSERT INTO invoices 
-            (id, user_id, plan_id, base_price, final_amount, status) 
-            VALUES (?, ?, ?, ?, ?, ?)''', 
-            (inv_id, message.from_user.id, 0, amount, amount, 'pending_charge'))
-        await db.commit()
-        
-    builder = InlineKeyboardBuilder()
-    # Route to standard checkout payment selection
-    builder.button(text="💳 پرداخت", callback_data=f"pay_invoice_{inv_id}")
-    builder.button(text="🔙 انصراف", callback_data="my_profile")
+        for name, code, cb_data in available_gateways:
+            async with db.execute("SELECT value FROM settings WHERE key = ?", (f"gateway_status_{code}",)) as cursor:
+                row = await cursor.fetchone()
+                # By default make cart active
+                is_active = (row and row[0] == '1') or (not row and code in ['cart'])
+                if is_active:
+                    builder.row(types.InlineKeyboardButton(text=f"💳 {name}", callback_data=cb_data))
+                    
+    builder.row(types.InlineKeyboardButton(text="🔙 انصراف", callback_data="my_profile"))
     
-    await message.answer(f"🧾 فاکتور شارژ کیف پول ایجاد شد.\nمبلغ: {amount} تومان\nشماره فاکتور: {inv_id}", reply_markup=builder.as_markup())
+    from bot.config import ADMIN_IDS
+    if message.from_user.id in ADMIN_IDS:
+        builder.row(types.InlineKeyboardButton(text="⚙️ ورود به مدیریت", callback_data="admin_panel_start"))
+    
+    await message.answer(f"💰 مبلغ {amount:,} تومان جهت شارژ تایید شد.\nلطفاً یک روش پرداخت انتخاب کنید:", reply_markup=builder.as_markup())
