@@ -160,7 +160,9 @@ async def cargo_stock_prompt(callback: types.CallbackQuery, state: FSMContext):
             
     await state.set_state(AdminStates.waiting_for_cargo_stock)
     builder = InlineKeyboardBuilder()
+    builder.button(text="🗑 پاکسازی کامل موجودی مخزن", callback_data="clear_cargo_stock")
     builder.button(text="🔙 انصراف و بازگشت", callback_data="cancel_cargo_add")
+    builder.adjust(1)
     await callback.message.edit_text(f"📦 موجودی فعلی این کامبو: **{count} لایسنس**\n\nبرای شارژ مخزن، لایسنس‌ها را بفرستید (هر خط یک لایسنس):", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
 @admin_plans_router.message(AdminStates.waiting_for_cargo_stock)
@@ -196,9 +198,28 @@ async def cargo_free_test_prompt(callback: types.CallbackQuery, state: FSMContex
             
     await state.set_state(AdminStates.waiting_for_cargo_stock)
     builder = InlineKeyboardBuilder()
+    builder.button(text="🗑 پاکسازی کامل موجودی مخزن", callback_data="clear_cargo_stock")
     builder.button(text="🔙 انصراف و بازگشت", callback_data="cancel_cargo_add")
+    builder.adjust(1)
     await callback.message.edit_text(f"🎁 موجودی فعلی تست رایگان: **{count} لایسنس**\n\nبرای شارژ مخزن، لایسنس‌ها را بفرستید (هر خط یک لایسنس):", reply_markup=builder.as_markup(), parse_mode="Markdown")
     
+@admin_plans_router.callback_query(F.data == "clear_cargo_stock")
+async def clear_cargo_stock_handler(callback: types.CallbackQuery, state: FSMContext):
+    if not is_admin(callback.message): return
+    data = await state.get_data()
+    
+    from database.db_manager import DB_PATH
+    async with aiosqlite.connect(DB_PATH) as db:
+        if data.get('cargo_free_test', False):
+            await db.execute('DELETE FROM licenses_cargo WHERE is_free_test=1')
+        else:
+            await db.execute('DELETE FROM licenses_cargo WHERE plan_id=? AND time_package_id=? AND traffic_package_id=?', 
+                (data['cargo_plan_id'], data['cargo_time_id'], data['cargo_traffic_id']))
+        await db.commit()
+        
+    await state.clear()
+    await callback.message.edit_text("✅ موجودی این مخزن با موفقیت پاکسازی شد.")
+
 @admin_plans_router.callback_query(F.data == "cancel_cargo_add")
 async def cancel_cargo_add(callback: types.CallbackQuery, state: FSMContext):
     await state.clear()
