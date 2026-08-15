@@ -1,4 +1,4 @@
-﻿"""
+"""
 This module corresponds to the 'bot/routers/payment.py' branch in the candy_architecture.md map.
 It acts as the UNIFIED PAYMENT HANDLER, routing 'pay_*' callbacks triggered from checkout,
 and integrating both online (Tetra) and offline (USDT, GRAM) gateways.
@@ -170,6 +170,38 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
             parse_mode="HTML",
             reply_markup=builder.as_markup()
         )
+        return
+
+    # 4. Handle Tetra (Online)
+    if gateway_code == 'tetra':
+        from payment.gateways import TetraGateway
+        tetra_api_key = legacy_settings.get('tetra_api_key', '')
+        if not tetra_api_key:
+            return await callback.answer("❌ درگاه تتر فعال یا پیکربندی نشده است.", show_alert=True)
+            
+        gateway = TetraGateway(tetra_api_key)
+        # We can hardcode the URL or get it from settings, usually the API domain is enough
+        domain = legacy_settings.get('web_domain', 'https://candy.candyconnect.online')
+        callback_url = f"{domain}/api/payment/webhook/tetra"
+        
+        # TetraGateway expects (invoice_id, amount_toman, callback_url)
+        result = await gateway.create_payment(invoice_id, amount, callback_url)
+        
+        if result.get('success'):
+            url = result.get('payment_url_bot') or result.get('payment_url_web')
+            builder = InlineKeyboardBuilder()
+            builder.row(types.InlineKeyboardButton(text="💳 پرداخت آنلاین", url=url))
+            
+            await callback.message.edit_text(
+                f"✅ فاکتور آنلاین شما ایجاد شد\n\n"
+                f"🛒 کد پیگیری: `{invoice_id}`\n"
+                f"💰 مبلغ قابل پرداخت: {amount:,} تومان\n\n"
+                f"لطفاً از طریق دکمه زیر پرداخت را انجام دهید:",
+                reply_markup=builder.as_markup(),
+                parse_mode="Markdown"
+            )
+        else:
+            await callback.answer(f"❌ خطا در ایجاد فاکتور: {result.get('error', 'Unknown Error')}", show_alert=True)
         return
 
 @payment_router.callback_query(F.data.startswith("sendtxid_"))

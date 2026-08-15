@@ -1,4 +1,4 @@
-﻿# === IMPORTS ===
+# === IMPORTS ===
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -218,7 +218,10 @@ async def prepare_and_send_invoice(message: types.Message, user_id: int, data: d
         from database.db_manager import DB_PATH
         
         available_gateways = [
-            ('کارت به کارت', 'cart', 'pay_card')
+            ('کارت به کارت', 'cart', 'pay_card'),
+            ('گرام (TON)', 'gram', 'pay_gram'),
+            ('تتر (BSC)', 'usdt', 'pay_usdt'),
+            ('کارت به کارت هوشمند', 'tetra', 'pay_tetra')
         ]
         
         async with aiosqlite.connect(DB_PATH) as db:
