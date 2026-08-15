@@ -11,6 +11,15 @@ async def init_db():
         await db.execute('PRAGMA foreign_keys = ON;')
         with open(SCHEMA_PATH, 'r', encoding='utf-8') as f:
             await db.executescript(f.read())
+            
+        try:
+            await db.execute("ALTER TABLE users ADD COLUMN agent TEXT DEFAULT 'f'")
+            await db.execute("ALTER TABLE users ADD COLUMN expire INTEGER")
+            await db.execute("ALTER TABLE users ADD COLUMN maxbuyagent INTEGER DEFAULT 0")
+            await db.execute("ALTER TABLE users ADD COLUMN pricediscount INTEGER DEFAULT 0")
+        except Exception:
+            pass # Ignore if columns already exist
+            
         await db.commit()
 
 async def cleanup_miniapp_migration():

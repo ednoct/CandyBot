@@ -12,6 +12,10 @@ CREATE TABLE IF NOT EXISTS users (
     affiliatescount INTEGER DEFAULT 0,
     affiliates TEXT,
     joinchannel INTEGER DEFAULT 0,
+    agent TEXT DEFAULT 'f',
+    expire INTEGER,
+    maxbuyagent INTEGER DEFAULT 0,
+    pricediscount INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

@@ -22,9 +22,11 @@ WEBHOOK_URL = f"https://{WEBHOOK_DOMAIN}{WEBHOOK_PATH}"
 
 # === STARTUP / SHUTDOWN HANDLERS ===
 async def on_startup(bot: Bot):
-    # Introduce the webhook URL to Telegram
-    await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
-    logging.info(f"Webhook set to {WEBHOOK_URL}")
+    try:
+        await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
+        logging.info(f"Webhook set to {WEBHOOK_URL}")
+    except Exception as e:
+        logging.error(f"Failed to set webhook (might be rate-limited): {e}")
 
 async def on_shutdown(bot: Bot):
     logging.info("Shutting down... deleting webhook.")

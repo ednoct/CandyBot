@@ -1,4 +1,4 @@
-﻿"""
+"""
 This module corresponds to the 'cron/tasks.py' branch in the candy_architecture.md map.
 Contains async background loops for DB cleanup, broadcasting, and payment checks (including expiring USDT/GRAM invoices).
 """
@@ -25,22 +25,21 @@ async def cron_payment_check(bot=None):
                 
                 # Check for expired offline payments (USDT / GRAM)
                 async with db.execute(
-                    "SELECT * FROM payment_reports WHERE payment_Status = 'Unpaid' AND Payment_Method IN ('usdt offline', 'gram offline') AND expires_at IS NOT NULL AND expires_at < ?", 
-                    (current_time,)
+                    "SELECT * FROM payment_reports WHERE status = 'Unpaid' AND payment_method IN ('usdt offline', 'gram offline') AND created_at < datetime('now', '-1 hour')"
                 ) as cursor:
                     expired_reports = await cursor.fetchall()
                     
                 for report in expired_reports:
-                    logging.info(f"Expiring offline payment report {report['id_order']}")
+                    logging.info(f"Expiring offline payment report {report['invoice_id']}")
                     # Update status to expire
-                    await db.execute("UPDATE payment_reports SET payment_Status = 'expire' WHERE id_order = ?", (report['id_order'],))
+                    await db.execute("UPDATE payment_reports SET status = 'expire' WHERE invoice_id = ?", (report['invoice_id'],))
                     
                     # Also expire the main invoice
-                    await db.execute("UPDATE invoices SET status = 'expired' WHERE id = ?", (report['id_order'],))
+                    await db.execute("UPDATE invoices SET status = 'expired' WHERE id = ?", (report['invoice_id'],))
                     # Send the exact expiration notification
                     if bot:
                         try:
-                            await bot.send_message(report['id_user'], 'فاکتور خرید شما منقضی شد. برای صدور مجدد اقدام کنید.')
+                            await bot.send_message(report['user_id'], 'فاکتور خرید شما منقضی شد. برای صدور مجدد اقدام کنید.')
                         except Exception:
                             pass
                             
