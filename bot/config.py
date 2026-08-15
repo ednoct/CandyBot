@@ -7,7 +7,7 @@ load_dotenv()
 # === BOT CONFIGURATION ===
 BOT_TOKEN = os.getenv('BOT_TOKEN', 'YOUR_BOT_TOKEN_HERE')
 ADMIN_IDS = [int(id) for id in os.getenv('ADMIN_IDS', '').split(',') if id.isdigit()]
-WEBHOOK_DOMAIN = os.getenv('WEBHOOK_DOMAIN', 'example.com')
+WEBHOOK_DOMAIN = os.getenv('WEBHOOK_DOMAIN', 'localhost')
 
 # === WEB CONFIGURATION ===
 WEB_HOST = os.getenv('WEB_HOST', '0.0.0.0')

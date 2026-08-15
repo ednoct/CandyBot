@@ -1,4 +1,4 @@
-﻿# === IMPORTS ===
+# === IMPORTS ===
 from aiohttp import web
 from database import db_manager
 
@@ -23,6 +23,7 @@ async def api_get_invoices(request):
                 }
             }
         })
+    except Exception as e:
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_user_invoices(request):

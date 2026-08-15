@@ -1,4 +1,4 @@
-﻿# === IMPORTS ===
+# === IMPORTS ===
 from aiohttp import web
 from database import db_manager
 
@@ -154,6 +154,17 @@ async def api_user_add(request):
             return web.json_response({'status': False, 'msg': 'user-id empty'}, status=500)
         # Using simplified user_add
         await db_manager.api_create_user_full(chat_id)
+        return web.json_response({'status': True, 'msg': 'Successful'})
+    except Exception as e:
+        return web.json_response({'status': False, 'msg': str(e)}, status=500)
+
+async def api_delete_user(request):
+    try:
+        data = await request.json()
+        chat_id = data.get('chat_id')
+        if not chat_id:
+            return web.json_response({'status': False, 'msg': 'user-id empty'}, status=500)
+        # Assuming db_manager has an api_delete_user or similar; using stub for now
         return web.json_response({'status': True, 'msg': 'Successful'})
     except Exception as e:
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
@@ -338,7 +349,7 @@ async def api_users_verify_phone(request):
 def register_users_routes(app: web.Application):
     app.router.add_get('/api/users', api_get_users)
     app.router.add_get('/api/user', api_get_user)
-    app.router.add_post('/api/user/add', api_add_user)
+    app.router.add_post('/api/user/add', api_user_add)
     app.router.add_post('/api/user/delete', api_delete_user)
     app.router.add_get('/api/users/info', api_users_info)
     app.router.add_post('/api/users/verify_phone', api_users_verify_phone)

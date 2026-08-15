@@ -28,6 +28,7 @@
 │   ├── confirm.py
 │   ├── gateways.py
 │   └── verifiers.py
+├── run.py
 ├── utils/
 │   ├── __init__.py
 │   ├── auth.py
@@ -62,11 +63,14 @@
 
 ## Branch Briefings
 
+### `run.py`
+> New absolute root entry point script. Imports the main async function from `bot.main` and runs the event loop, avoiding relative import traps when executing the bot.
+
 ### `bot/config.py`
 * `# === IMPORTS AND ENV LOAD ===`
 * `# === BOT CONFIGURATION ===`
 * `# === WEB CONFIGURATION ===`
-> Handles environment variable loading and sets up configuration constants.
+> Handles environment variable loading and sets up configuration constants. Explicitly defines `WEBHOOK_DOMAIN` to prevent import errors.
 
 ### `bot/main.py`
 * `# === IMPORTS ===`
@@ -79,7 +83,7 @@
 * `# === WEB SERVER START ===`
 * `# === BOT START POLLING ===`
 * `# === ENTRY POINT ===`
-> Main entry point for initializing the database, configuring the bot, registering routers, starting background tasks, and launching the web server.
+> Main entry point for initializing the database, configuring the bot, registering routers, starting background tasks, and launching the web server. Refactored to use absolute imports targeting the root (e.g., `from bot.routers`) to prevent `ImportError`.
 
 ### `bot/states.py`
 * `# === IMPORTS ===`
@@ -96,7 +100,7 @@
 * `# === IMPORTS ===`
 * `# === ADMIN FILTER ===`
 * `# === ROUTER: ADMIN PANEL ===`
-> Streamlined entry point for Telegram Administrators. The `/admin` command serves the master inline keyboard pointing to Users, Finance, Settings, and Shop. Banned legacy features (e.g., Fast Pricing, Manual Renewals) have been purged.
+> Streamlined entry point for Telegram Administrators. The `/admin` command serves the master inline keyboard pointing to Users, Finance, Settings, and Shop. Banned legacy features (e.g., Fast Pricing, Manual Renewals) have been purged. Fixed module import paths to use absolute imports (e.g., `bot.config`).
 
 ### `bot/routers/admin_settings.py`
 * `# === IMPORTS ===`

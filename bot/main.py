@@ -1,4 +1,4 @@
-﻿# === IMPORTS ===
+# === IMPORTS ===
 import asyncio
 import logging
 from aiogram import Bot, Dispatcher
@@ -7,9 +7,9 @@ from aiogram.enums import ParseMode
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
 
-from .config import BOT_TOKEN, WEB_HOST, WEB_PORT, WEBHOOK_DOMAIN
+from bot.config import BOT_TOKEN, WEB_HOST, WEB_PORT, WEBHOOK_DOMAIN
 from database.db_manager import init_db
-from .routers import checkout_router, admin_router, user_router, support_router
+from bot.routers import checkout_router, admin_router, user_router, support_router
 from web.panel_api import init_web_app
 from cron.tasks import setup_cron_tasks
 
@@ -44,7 +44,7 @@ async def main():
     dp.shutdown.register(on_shutdown)
 
     # === ROUTER REGISTRATION ===
-    from .routers import (
+    from bot.routers import (
         admin_router, 
         admin_settings_router,
         admin_finance_router,
@@ -91,8 +91,14 @@ async def main():
     await site.start()
     logging.info(f"Web API & Webhook running on http://{WEB_HOST}:{WEB_PORT}")
     
+    # Set Telegram Webhook
+    await on_startup(bot)
+
     # Keep the event loop running
-    await asyncio.Event().wait()
+    try:
+        await asyncio.Event().wait()
+    finally:
+        await on_shutdown(bot)
 
 # === ENTRY POINT ===
 if __name__ == "__main__":

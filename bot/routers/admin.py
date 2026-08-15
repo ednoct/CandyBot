@@ -2,7 +2,7 @@
 from aiogram import Router, F, types
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from .config import ADMIN_IDS
+from bot.config import ADMIN_IDS # Fixed relative import for config to resolve startup crash
 
 admin_router = Router()
 

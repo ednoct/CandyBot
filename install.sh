@@ -171,7 +171,7 @@ After=network.target
 User=root
 WorkingDirectory=$BOT_DIR
 Environment="PATH=$BOT_DIR/venv/bin"
-ExecStart=$BOT_DIR/venv/bin/python -m bot.main
+ExecStart=$BOT_DIR/venv/bin/python run.py
 Restart=always
 RestartSec=5
 
@@ -182,6 +182,9 @@ EOF
 
     # Firewall
     run_step "Configuring Firewall (UFW)" "ufw allow 80/tcp && ufw allow 443/tcp >/dev/null 2>&1 || true"
+
+    # Telegram Webhook
+    run_step "Setting Telegram Webhook" "curl -s \"https://api.telegram.org/bot\$YOUR_TOKEN/setWebhook?url=https://\$YOUR_DOMAIN/webhook/main\" > /dev/null"
 
     clear
     banner
@@ -211,13 +214,13 @@ update_bot() {
     fi
 
     run_step "Stopping CandyBot service" "systemctl stop candybot"
-    run_step "Pulling latest code from GitHub" "cd $BOT_DIR && git pull origin main"
+    run_step "Pulling latest code from GitHub" "cd $BOT_DIR && git fetch origin main && git reset --hard origin/main"
     run_step "Updating Python requirements" "$BOT_DIR/venv/bin/pip install -r $BOT_DIR/requirements.txt"
     
     # Run any new DB migrations if applicable
     run_step "Applying database migrations" "cd $BOT_DIR && PYTHONPATH=$BOT_DIR $BOT_DIR/venv/bin/python -c 'import asyncio; from database.db_manager import init_db; asyncio.run(init_db())' 2>/dev/null || true"
     
-    run_step "Starting CandyBot service" "systemctl start candybot"
+    run_step "Restarting CandyBot service" "systemctl restart candybot"
 
     echo -e "\n  ${C_OK}✔${CR} ${C_OK}Bot updated successfully.${CR}\n"
     read -p "  ❯ Press Enter to return to menu..." _ < /dev/tty

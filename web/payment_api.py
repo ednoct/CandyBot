@@ -1,4 +1,4 @@
-﻿"""
+"""
 This module corresponds to the 'web/payment_api.py' branch in the candy_architecture.md map.
 Provides web endpoints for payment initialization, actions, and webhooks (e.g., callback_tetra).
 """
@@ -188,5 +188,5 @@ def register_payment_routes(app: web.Application):
     app.router.add_get('/api/payment/status', api_payment_status)
     
     # Webhooks
-    app.router.add_post('/api/payment/webhook/card_sms', webhook_card_sms)
-    app.router.add_route('*', '/api/payment/webhook/tetra', callback_tetra)
+    app.router.add_get('/api/payment/webhook/tetra', callback_tetra)
+    app.router.add_post('/api/payment/webhook/tetra', callback_tetra)
