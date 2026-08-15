@@ -26,10 +26,40 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
     
     data = await state.get_data()
     if 'final_amount' not in data:
-        return await callback.answer("فاکتور شما یافت نشد. لطفا مجددا تلاش کنید.", show_alert=True)
+        return await callback.answer("⏳ زمان شما منقضی شده است. لطفا فرایند خرید یا شارژ را از ابتدا شروع کنید.", show_alert=True)
         
-    invoice_id = str(uuid.uuid4())[:8].upper()
     amount = data['final_amount']
+        
+    # Fetch settings for api keys and gateway validation
+    async with aiosqlite.connect(db_manager.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute('SELECT key, value FROM settings') as cursor:
+            settings_rows = await cursor.fetchall()
+            legacy_settings = {row['key']: row['value'] for row in settings_rows}
+
+    # Gateway early validation
+    if gateway_code == 'tetra':
+        tetra_api_key = legacy_settings.get('tetra_api_key', '')
+        if not tetra_api_key:
+            return await callback.answer("❌ درگاه کارت به کارت هوشمند (تترا) پیکربندی نشده است.", show_alert=True)
+            
+    if gateway_code == 'usdt':
+        arz_usdt_rate = await get_arz_usdt_rate()
+        if arz_usdt_rate is None:
+            return await callback.answer("خطا در دریافت قیمت لحظه ای تتر. لطفا مجددا تلاش کنید.", show_alert=True)
+        usdprice = round(amount / arz_usdt_rate, 2)
+        if usdprice <= 1:
+            return await callback.answer("❌ خطا: کمترین مبلغ برای پرداخت در این درگاه 2 دلار می باشد.", show_alert=True)
+
+    if gateway_code == 'gram':
+        gram_irt_price = await get_gram_irt_price()
+        if gram_irt_price is None:
+            return await callback.answer("خطا در دریافت قیمت لحظه ای گرام. لطفا مجددا تلاش کنید.", show_alert=True)
+        gram_amount = round(amount / gram_irt_price, 2)
+        if gram_amount <= 0.1:
+            return await callback.answer("❌ خطا: کمترین مبلغ برای پرداخت در این درگاه 0.1 گرام می باشد.", show_alert=True)
+
+    invoice_id = str(uuid.uuid4())[:8].upper()
     
     # Generate Invoice in DB
     async with aiosqlite.connect(db_manager.DB_PATH) as db:
@@ -47,17 +77,17 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
         if gateway_code in ['usdt', 'gram']:
             expires_at = int(time.time()) + (7200 if gateway_code == 'usdt' else 86400)
             method = f"{gateway_code} offline"
-            await db.execute('''
-                INSERT INTO payment_reports (id_user, id_order, time, price, payment_Status, Payment_Method, id_invoice, expires_at)
-                VALUES (?, ?, ?, ?, 'Unpaid', ?, ?, ?)
-            ''', (callback.from_user.id, invoice_id, time.strftime('%Y/%m/%d %H:%M:%S'), amount, method, invoice_id, expires_at))
+            try:
+                await db.execute('''
+                    INSERT INTO payment_reports (user_id, invoice_id, amount, payment_method, status)
+                    VALUES (?, ?, ?, ?, 'pending')
+                ''', (callback.from_user.id, invoice_id, amount, method))
+            except aiosqlite.OperationalError:
+                await db.execute('''
+                    INSERT INTO payment_reports (id_user, id_order, time, price, payment_Status, Payment_Method, id_invoice, expires_at)
+                    VALUES (?, ?, ?, ?, 'Unpaid', ?, ?, ?)
+                ''', (callback.from_user.id, invoice_id, time.strftime('%Y/%m/%d %H:%M:%S'), amount, method, invoice_id, expires_at))
 
-        # Fetch settings for api keys
-        db.row_factory = aiosqlite.Row
-        async with db.execute('SELECT key, value FROM settings') as cursor:
-            settings_rows = await cursor.fetchall()
-            legacy_settings = {row['key']: row['value'] for row in settings_rows}
-            
         await db.commit()
         
     await state.clear()
@@ -82,13 +112,6 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
 
     # 2. Handle USDT (Offline)
     if gateway_code == 'usdt':
-        arz_usdt_rate = await get_arz_usdt_rate()
-        if arz_usdt_rate is None:
-            return await callback.answer("خطا در دریافت قیمت لحظه ای تتر. لطفا مجددا تلاش کنید.", show_alert=True)
-            
-        usdprice = round(amount / arz_usdt_rate, 2)
-        if usdprice <= 1:
-            return await callback.answer("❌ خطا: کمترین مبلغ برای پرداخت در این درگاه 2 دلار می باشد.", show_alert=True)
 
         walletaddressusdt = legacy_settings.get('wallet_usdt', '')
         
@@ -124,13 +147,6 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
 
     # 3. Handle GRAM (Offline)
     if gateway_code == 'gram':
-        gram_irt_price = await get_gram_irt_price()
-        if gram_irt_price is None:
-            return await callback.answer("خطا در دریافت قیمت لحظه ای گرام. لطفا مجددا تلاش کنید.", show_alert=True)
-            
-        gram_amount = round(amount / gram_irt_price, 2)
-        if gram_amount <= 0.1:
-            return await callback.answer("❌ خطا: کمترین مبلغ برای پرداخت در این درگاه 0.1 گرام می باشد.", show_alert=True)
 
         walletaddressgram = legacy_settings.get('wallet_gram', '')
         memo_gram = legacy_settings.get('memo_gram', '')
@@ -179,9 +195,6 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
     # 4. Handle Tetra (Online)
     if gateway_code == 'tetra':
         from payment.gateways import TetraGateway
-        tetra_api_key = legacy_settings.get('tetra_api_key', '')
-        if not tetra_api_key:
-            return await callback.answer("❌ درگاه تتر فعال یا پیکربندی نشده است.", show_alert=True)
             
         gateway = TetraGateway(tetra_api_key)
         # We can hardcode the URL or get it from settings, usually the API domain is enough
