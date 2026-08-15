@@ -131,6 +131,12 @@ EOF
     # Initialize Database (SQLite)
     run_step "Initializing SQLite database" "cd $BOT_DIR && PYTHONPATH=$BOT_DIR $BOT_DIR/venv/bin/python -c 'import asyncio; from database.db_manager import init_db; asyncio.run(init_db())' 2>/dev/null || true"
 
+    # Generate and Inject Web Admin Credentials
+    WEB_ADMIN_USER="admin_$(cat /dev/urandom | tr -dc 'a-z0-9' | fold -w 4 | head -n 1)"
+    WEB_ADMIN_PASS="$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 10 | head -n 1)"
+    
+    run_step "Creating Web Admin User" "sqlite3 $BOT_DIR/candy.db \"INSERT INTO admins (username, password, role) VALUES ('$WEB_ADMIN_USER', '$WEB_ADMIN_PASS', 'admin');\""
+
     # Nginx Configuration
     local VHOST="/etc/nginx/sites-available/$YOUR_DOMAIN.conf"
     cat <<EOF > "$VHOST"
@@ -182,6 +188,12 @@ EOF
     _sec "Installation Complete"
     _kv "Bot Service" "${C_OK}Active (Systemd)${CR}"
     _kv "Web Panel URL" "${C_KEY}https://$YOUR_DOMAIN/admin/login${CR}"
+    
+    _sec "Web Panel Credentials"
+    _kv "Username" "${C_KEY}$WEB_ADMIN_USER${CR}"
+    _kv "Password" "${C_KEY}$WEB_ADMIN_PASS${CR}"
+    printf "    ${C_WARN}!${CR} ${C_DIM}Please save these credentials somewhere safe.${CR}\n"
+
     echo ""
     read -p "  ❯ Press Enter to return to menu..." _ < /dev/tty
     show_menu
