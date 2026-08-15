@@ -1,6 +1,6 @@
-# === IMPORTS ===
+﻿# === IMPORTS ===
 from aiohttp import web
-from ..database import db_manager
+from database import db_manager
 
 # === API ENDPOINTS: DISCOUNTS ===
 async def api_get_discounts(request):

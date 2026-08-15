@@ -1,4 +1,4 @@
-"""
+﻿"""
 This module corresponds to the 'cron/tasks.py' branch in the candy_architecture.md map.
 Contains async background loops for DB cleanup, broadcasting, and payment checks (including expiring USDT/GRAM invoices).
 """
@@ -6,8 +6,8 @@ Contains async background loops for DB cleanup, broadcasting, and payment checks
 import asyncio
 import logging
 import aiosqlite
-from ..database.db_manager import DB_PATH
-from ..bot.routers import checkout
+from database.db_manager import DB_PATH
+from bot.routers import checkout
 
 # === BACKGROUND TASK: PAYMENT CHECK ===
 async def cron_payment_check(bot=None):

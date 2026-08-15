@@ -1,6 +1,6 @@
-# === IMPORTS ===
+﻿# === IMPORTS ===
 from aiohttp import web
-from ..database import db_manager
+from database import db_manager
 
 # === API ENDPOINTS: SETTINGS ===
 async def api_keyboard_set(request):

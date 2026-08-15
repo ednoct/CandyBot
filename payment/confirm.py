@@ -1,8 +1,8 @@
-# === IMPORTS ===
+﻿# === IMPORTS ===
 import logging
 import aiosqlite
 from typing import Optional, Dict, Any
-from ..database import db_manager
+from database import db_manager
 
 # === PAYMENT CONFIRMATION LOGIC ===
 class PaymentConfirmationManager:

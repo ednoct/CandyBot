@@ -1,10 +1,10 @@
-"""
+﻿"""
 This module corresponds to the 'web/payment_api.py' branch in the candy_architecture.md map.
 Provides web endpoints for payment initialization, actions, and webhooks (e.g., callback_tetra).
 """
 # === IMPORTS ===
 from aiohttp import web
-from ..database import db_manager
+from database import db_manager
 
 # === API ENDPOINTS: PAYMENTS ===
 async def api_get_payments(request):
@@ -159,7 +159,7 @@ async def callback_tetra(request):
     authority = data.get('authority') or data.get('Authority')
     
     if str(status) == '100' and authority and hashid:
-        from ..payment.gateways import TetraGateway
+        from payment.gateways import TetraGateway
         # Get settings to construct TetraGateway
         settings = {}
         async with db_manager.db_execute("SELECT key, value FROM settings WHERE key='tetra_api_key'") as cursor:
@@ -172,7 +172,7 @@ async def callback_tetra(request):
             gateway = TetraGateway(api_key)
             is_verified = await gateway.verify_payment(authority, hashid)
             if is_verified:
-                from ..bot.managers.payment_manager import PaymentConfirmationManager
+                from bot.managers.payment_manager import PaymentConfirmationManager
                 await PaymentConfirmationManager.confirm_paid(hashid, method='tetra')
                 return web.Response(text="OK")
     return web.Response(text="FAILED", status=400)

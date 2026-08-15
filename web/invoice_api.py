@@ -1,6 +1,6 @@
-# === IMPORTS ===
+﻿# === IMPORTS ===
 from aiohttp import web
-from ..database import db_manager
+from database import db_manager
 
 # === API ENDPOINTS: INVOICES ===
 async def api_get_invoices(request):

@@ -1,7 +1,7 @@
-# === IMPORTS ===
+﻿# === IMPORTS ===
 import aiohttp
 import logging
-from ..database import db_manager
+from database import db_manager
 import aiosqlite
 
 # === PAYMENT VERIFIERS ===

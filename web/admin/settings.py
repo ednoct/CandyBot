@@ -1,9 +1,9 @@
-# === IMPORTS ===
+﻿# === IMPORTS ===
 import aiosqlite
 from aiohttp import web
 import aiohttp_jinja2
 import json
-from ...database import db_manager
+from database import db_manager
 
 # === SETTINGS HANDLERS ===
 async def settings_get(request):

@@ -1,7 +1,7 @@
-# === IMPORTS ===
+﻿# === IMPORTS ===
 import asyncio
 import logging
-from ...database import db_manager
+from database import db_manager
 
 # === BROADCAST SERVICE ===
 class BroadcastService:

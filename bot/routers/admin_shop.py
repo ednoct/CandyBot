@@ -1,8 +1,8 @@
-# === IMPORTS ===
+﻿# === IMPORTS ===
 from aiogram import Router, F, types
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from .admin import is_admin
-from ...database import db_manager
+from database import db_manager
 
 admin_shop_router = Router()
 

@@ -1,4 +1,4 @@
-# === IMPORTS ===
+﻿# === IMPORTS ===
 from aiogram import Router, F, types
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from datetime import datetime, timedelta
@@ -6,7 +6,7 @@ import aiosqlite
 import csv
 import io
 from .admin import is_admin
-from ...database import db_manager
+from database import db_manager
 
 admin_reports_router = Router()
 
@@ -92,7 +92,7 @@ async def export_data(callback: types.CallbackQuery):
         
     await callback.answer("در حال ساخت فایل خروجی...", show_alert=False)
     
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     async with aiosqlite.connect(DB_PATH) as db:
         # Check if table exists
         async with db.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table}'") as cursor:

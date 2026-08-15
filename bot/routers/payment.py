@@ -1,4 +1,4 @@
-"""
+﻿"""
 This module corresponds to the 'bot/routers/payment.py' branch in the candy_architecture.md map.
 It acts as the UNIFIED PAYMENT HANDLER, routing 'pay_*' callbacks triggered from checkout,
 and integrating both online (Tetra) and offline (USDT, GRAM) gateways.
@@ -11,8 +11,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 import uuid
 import aiosqlite
 import time
-from ...database import db_manager
-from ...utils.exchange import get_arz_usdt_rate, get_gram_irt_price
+from database import db_manager
+from utils.exchange import get_arz_usdt_rate, get_gram_irt_price
 
 payment_router = Router()
 

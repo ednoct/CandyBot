@@ -1,8 +1,8 @@
-# === IMPORTS ===
+﻿# === IMPORTS ===
 from aiogram import Router, F, types
 from aiogram.filters import CommandStart
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from ...database import db_manager
+from database import db_manager
 
 user_router = Router()
 
@@ -116,7 +116,7 @@ import aiosqlite
 # === NEW HANDLERS FOR USER ROUTER ===
 @user_router.callback_query(F.data == "my_services")
 async def my_services(callback: types.CallbackQuery):
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT * FROM invoices WHERE user_id = ? AND status = 'paid' ORDER BY created_at DESC LIMIT 10", (callback.from_user.id,)) as cursor:
@@ -175,7 +175,7 @@ async def process_wallet_charge(message: types.Message, state: FSMContext):
     await state.set_state(None)
     
     # We create a pseudo-invoice for Wallet Charge and redirect to checkout
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     import uuid
     inv_id = str(uuid.uuid4())[:8].upper()
     

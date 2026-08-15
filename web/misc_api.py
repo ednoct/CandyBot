@@ -1,6 +1,6 @@
-# === IMPORTS ===
+﻿# === IMPORTS ===
 from aiohttp import web
-from ..database import db_manager
+from database import db_manager
 
 # === API ENDPOINTS: UTILITIES ===
 async def api_qr_generate(request):
@@ -17,7 +17,7 @@ async def api_qr_generate(request):
 
 async def api_diag(request):
     import time
-    from ..database import db_manager
+    from database import db_manager
     try:
         # Basic health check: test DB connection
         count = await db_manager.get_user_count()

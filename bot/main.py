@@ -1,4 +1,4 @@
-# === IMPORTS ===
+﻿# === IMPORTS ===
 import asyncio
 import logging
 from aiogram import Bot, Dispatcher
@@ -8,10 +8,10 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_applicati
 from aiohttp import web
 
 from .config import BOT_TOKEN, WEB_HOST, WEB_PORT, WEBHOOK_DOMAIN
-from ..database.db_manager import init_db
+from database.db_manager import init_db
 from .routers import checkout_router, admin_router, user_router, support_router
-from ..web.panel_api import init_web_app
-from ..cron.tasks import setup_cron_tasks
+from web.panel_api import init_web_app
+from cron.tasks import setup_cron_tasks
 
 # === LOGGING CONFIG ===
 logging.basicConfig(level=logging.INFO)

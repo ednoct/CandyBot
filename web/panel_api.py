@@ -1,8 +1,11 @@
-# === IMPORTS ===
+﻿# === IMPORTS ===
+import os
 import aiohttp_cors
+import aiohttp_jinja2
+import jinja2
 from aiohttp import web
-from ..database import db_manager
-from ..utils.error_handler import error_middleware
+from database import db_manager
+from utils.error_handler import error_middleware
 from .users_api import register_users_routes
 from .invoice_api import register_invoice_routes
 from .discount_api import register_discount_routes
@@ -19,6 +22,14 @@ async def get_plans_api(request):
 # === WEB APP INITIALIZATION ===
 async def init_web_app():
     app = web.Application(middlewares=[error_middleware])
+    
+    # 1. Setup Jinja2 Template Engine
+    template_path = os.path.join(os.path.dirname(__file__), 'templates')
+    aiohttp_jinja2.setup(app, loader=jinja2.FileSystemLoader(template_path))
+    
+    # 2. Setup Static Files (CSS/JS)
+    static_path = os.path.join(os.path.dirname(__file__), 'static')
+    app.router.add_static('/static/', path=static_path, name='static')
     
     # Add routes
     app.router.add_get('/api/plans', get_plans_api)

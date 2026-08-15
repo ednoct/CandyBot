@@ -1,8 +1,8 @@
-# === IMPORTS ===
+﻿# === IMPORTS ===
 import aiosqlite
 from aiohttp import web
 import aiohttp_jinja2
-from ...database import db_manager
+from database import db_manager
 
 # === PLANS HANDLERS ===
 async def plans_get(request):

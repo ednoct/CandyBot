@@ -1,10 +1,10 @@
-# === IMPORTS ===
+﻿# === IMPORTS ===
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from .admin import is_admin
 from ..states import AdminStates
-from ...database import db_manager
+from database import db_manager
 import aiosqlite
 
 admin_plans_router = Router()
@@ -45,7 +45,7 @@ async def add_plan_desc(message: types.Message, state: FSMContext):
     if not is_admin(message): return
     data = await state.get_data()
     
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute('INSERT INTO plans (name, admin_description) VALUES (?, ?)', (data['plan_name'], message.text))
         await db.commit()
@@ -101,7 +101,7 @@ async def fast_price_save(message: types.Message, state: FSMContext):
         data = await state.get_data()
         plan_id = data['fast_price_plan_id']
         
-        from ...database.db_manager import DB_PATH
+        from database.db_manager import DB_PATH
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute('UPDATE plans SET price_per_day = ?, price_per_gb = ? WHERE id = ?', (day_price, gb_price, plan_id))
             await db.commit()
@@ -152,7 +152,7 @@ async def cargo_stock_prompt(callback: types.CallbackQuery, state: FSMContext):
     await state.update_data(cargo_traffic_id=traffic_id)
     data = await state.get_data()
     
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute('SELECT COUNT(*) FROM licenses_cargo WHERE plan_id=? AND time_package_id=? AND traffic_package_id=?', 
             (data['cargo_plan_id'], data['cargo_time_id'], traffic_id)) as cursor:
@@ -167,7 +167,7 @@ async def cargo_stock_save(message: types.Message, state: FSMContext):
     lines = [line.strip() for line in message.text.split('\n') if line.strip()]
     data = await state.get_data()
     
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     async with aiosqlite.connect(DB_PATH) as db:
         if data.get('cargo_free_test', False):
             for line in lines:
@@ -184,7 +184,7 @@ async def cargo_stock_save(message: types.Message, state: FSMContext):
 @admin_plans_router.callback_query(F.data == "cargo_free_test")
 async def cargo_free_test_prompt(callback: types.CallbackQuery, state: FSMContext):
     await state.update_data(cargo_free_test=True)
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute('SELECT COUNT(*) FROM licenses_cargo WHERE is_free_test=1') as cursor:
             count = (await cursor.fetchone())[0]

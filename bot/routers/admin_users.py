@@ -1,10 +1,10 @@
-# === IMPORTS ===
+﻿# === IMPORTS ===
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from .admin import is_admin
 from ..states import AdminStates
-from ...database import db_manager
+from database import db_manager
 import aiosqlite
 
 admin_users_router = Router()
@@ -83,7 +83,7 @@ async def process_wallet_add(message: types.Message, state: FSMContext):
     data = await state.get_data()
     target_id = data['target_user_id']
     
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute('UPDATE users SET balance = balance + ? WHERE id = ?', (amount, target_id))
         await db.commit()
@@ -112,7 +112,7 @@ async def process_wallet_reduce(message: types.Message, state: FSMContext):
     data = await state.get_data()
     target_id = data['target_user_id']
     
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute('UPDATE users SET balance = balance - ? WHERE id = ?', (amount, target_id))
         await db.commit()
@@ -129,7 +129,7 @@ async def user_ban(callback: types.CallbackQuery):
     if not is_admin(callback.message): return
     target_id = callback.data.split("_")[2]
     
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute('UPDATE users SET status = ? WHERE id = ?', ('banned', target_id))
         await db.commit()
@@ -141,7 +141,7 @@ async def user_unban(callback: types.CallbackQuery):
     if not is_admin(callback.message): return
     target_id = callback.data.split("_")[2]
     
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute('UPDATE users SET status = ? WHERE id = ?', ('active', target_id))
         await db.commit()
@@ -166,7 +166,7 @@ async def wallet_zero(callback: types.CallbackQuery):
     if not is_admin(callback.message): return
     target_id = callback.data.split("_")[2]
     
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     import aiosqlite
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute('UPDATE users SET balance = 0 WHERE id = ?', (target_id,))
@@ -180,7 +180,7 @@ async def user_bypass(callback: types.CallbackQuery):
     target_id = callback.data.split("_")[2]
     
     # In legacy this was `joinchannel` = "active"
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     import aiosqlite
     async with aiosqlite.connect(DB_PATH) as db:
         # Assuming we add a `bypass_channel` column or similar, for now we will just use `status` or a custom column.
@@ -217,7 +217,7 @@ async def user_transfer_process(message: types.Message, state: FSMContext):
     if str(to_id) == str(from_id):
         return await message.answer("❌ مبدا و مقصد نمی‌توانند یکسان باشند.")
         
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     import aiosqlite
     async with aiosqlite.connect(DB_PATH) as db:
         # Update logic: changing owner ID on invoices, payments, etc.

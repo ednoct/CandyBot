@@ -1,10 +1,10 @@
-# === IMPORTS ===
+﻿# === IMPORTS ===
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from .admin import is_admin
 from ..states import AdminStates
-from ...database import db_manager
+from database import db_manager
 import aiosqlite
 
 admin_settings_router = Router()
@@ -91,7 +91,7 @@ async def add_channel_url(message: types.Message, state: FSMContext):
         return await message.answer("❌ لینک نامعتبر است.")
         
     data = await state.get_data()
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("INSERT INTO channels (remark, linkjoin, link) VALUES (?, ?, ?)", (data['channel_remark'], url, url))
         await db.commit()
@@ -121,7 +121,7 @@ async def add_admin_save(message: types.Message, state: FSMContext):
         
     # Ideally this would add to `admins` table. The DB schema provided has an `admins` table with username, password, role.
     # The legacy code saved 'id_admin' in an 'admin' table, but our new DB uses 'admins'.
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("INSERT INTO admins (id, role) VALUES (?, 'admin')", (new_admin_id,))
         await db.commit()
@@ -168,7 +168,7 @@ async def add_app_url(message: types.Message, state: FSMContext):
         return await message.answer("❌ لینک نامعتبر است.")
         
     data = await state.get_data()
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("INSERT INTO app (name, link) VALUES (?, ?)", (data['app_name'], url))
         await db.commit()
@@ -182,7 +182,7 @@ async def add_app_url(message: types.Message, state: FSMContext):
 async def del_app_start(callback: types.CallbackQuery):
     if not is_admin(callback.message): return
     
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT id, name FROM app") as cursor:
@@ -204,7 +204,7 @@ async def del_app_process(callback: types.CallbackQuery):
     if not is_admin(callback.message): return
     app_id = int(callback.data.split("_")[2])
     
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("DELETE FROM app WHERE id = ?", (app_id,))
         await db.commit()
@@ -274,7 +274,7 @@ async def set_tutorial_process(message: types.Message, state: FSMContext):
     else:
         return await message.answer("❌ محتوای ارسال نامعتبر است.")
         
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     import aiosqlite
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (f"help_{gateway}", tut_data))
@@ -324,7 +324,7 @@ async def set_lottery_process(message: types.Message, state: FSMContext):
     data = await state.get_data()
     lot_type = data['lot_type']
     
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     import json
     import aiosqlite
     async with aiosqlite.connect(DB_PATH) as db:

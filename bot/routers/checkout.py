@@ -1,9 +1,9 @@
-# === IMPORTS ===
+﻿# === IMPORTS ===
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from ..states import CheckoutStates
-from ...database import db_manager
+from database import db_manager
 import uuid
 
 checkout_router = Router()
@@ -215,7 +215,7 @@ async def prepare_and_send_invoice(message: types.Message, user_id: int, data: d
     if final_amount > 0:
         # Show gateways
         import aiosqlite
-        from ...database.db_manager import DB_PATH
+        from database.db_manager import DB_PATH
         
         available_gateways = [
             ('کارت به کارت', 'cart', 'pay_card')
@@ -319,8 +319,8 @@ async def pay_free(callback: types.CallbackQuery, state: FSMContext):
         
     await state.clear()
     
-    from ...payment.confirm import PaymentConfirmationManager
-    from ...bot import bot
+    from payment.confirm import PaymentConfirmationManager
+    from bot import bot
     pcm = PaymentConfirmationManager(bot)
     await pcm.confirm_paid(invoice_id, 0, 'free_discount')
     

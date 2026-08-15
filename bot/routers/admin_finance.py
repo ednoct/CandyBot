@@ -1,4 +1,4 @@
-"""
+﻿"""
 This module corresponds to the 'bot/routers/admin_finance.py' branch in the candy_architecture.md map.
 Manages the Telegram Admin Finance menu, including gateway toggles and crypto wallet settings.
 """
@@ -8,7 +8,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from .admin import is_admin
 from ..states import AdminStates
-from ...database import db_manager
+from database import db_manager
 import aiosqlite
 
 admin_finance_router = Router()
@@ -23,7 +23,7 @@ class FinanceStates(StatesGroup):
 async def finance_menu(callback: types.CallbackQuery):
     if not is_admin(callback.message): return
     
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     import aiosqlite
     
     async with aiosqlite.connect(DB_PATH) as db:
@@ -87,7 +87,7 @@ async def set_card_number_process(message: types.Message, state: FSMContext):
     if not card_number.isdigit() or len(card_number) != 16:
         return await message.answer("❌ شماره کارت نامعتبر است. باید دقیقا ۱۶ رقم باشد.")
         
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ('card_number', card_number))
         await db.commit()
@@ -104,7 +104,7 @@ async def handle_finance_toggles(callback: types.CallbackQuery):
     if callback.data == 'toggle_fin_auto_confirm': return # Handled below
     
     code = callback.data.split('_')[2]
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     import aiosqlite
     
     async with aiosqlite.connect(DB_PATH) as db:
@@ -152,7 +152,7 @@ async def set_crypto_wallet_process(message: types.Message, state: FSMContext):
     key_name = data.get('setting_key')
     new_value = message.text.strip()
     
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     import aiosqlite
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', (key_name, new_value))
@@ -195,7 +195,7 @@ async def add_exception_process(message: types.Message, state: FSMContext):
     except ValueError:
         return await message.answer("❌ لطفا فقط آیدی عددی وارد کنید.")
         
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     import json
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute("SELECT value FROM settings WHERE key = 'auto_confirm_exceptions'") as cursor:
@@ -233,7 +233,7 @@ async def del_exception_process(message: types.Message, state: FSMContext):
     except ValueError:
         return await message.answer("❌ لطفا فقط آیدی عددی وارد کنید.")
         
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     import json
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute("SELECT value FROM settings WHERE key = 'auto_confirm_exceptions'") as cursor:
@@ -257,7 +257,7 @@ async def del_exception_process(message: types.Message, state: FSMContext):
 async def view_exceptions_process(callback: types.CallbackQuery):
     if not is_admin(callback.message): return
     
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     import json
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute("SELECT value FROM settings WHERE key = 'auto_confirm_exceptions'") as cursor:
@@ -278,7 +278,7 @@ async def view_exceptions_process(callback: types.CallbackQuery):
 @admin_finance_router.callback_query(F.data == 'toggle_fin_auto_confirm')
 async def toggle_auto_confirm(callback: types.CallbackQuery):
     if not is_admin(callback.message): return
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     import aiosqlite
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute("SELECT value FROM settings WHERE key = 'global_auto_confirm'") as cursor:
@@ -298,7 +298,7 @@ async def toggle_auto_confirm(callback: types.CallbackQuery):
 async def pending_receipts_menu(callback: types.CallbackQuery):
     if not is_admin(callback.message): return
     
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     import aiosqlite
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     
@@ -367,7 +367,7 @@ async def set_limit_process(message: types.Message, state: FSMContext):
     data = await state.get_data()
     key = f"{data['limit_type']}_limit_{data['gateway']}"
     
-    from ...database.db_manager import DB_PATH
+    from database.db_manager import DB_PATH
     import aiosqlite
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, str(amount)))
