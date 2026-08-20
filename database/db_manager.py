@@ -37,6 +37,7 @@ async def init_db():
             "ALTER TABLE invoices ADD COLUMN license_note TEXT",
             "ALTER TABLE invoices ADD COLUMN panel_id INTEGER",
             "ALTER TABLE invoices ADD COLUMN renew_license_id INTEGER",
+            "ALTER TABLE invoices ADD COLUMN last_error TEXT",
             # Referral & CRM columns
             "ALTER TABLE users ADD COLUMN referred_by INTEGER",
             "ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1",

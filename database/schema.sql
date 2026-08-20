@@ -100,6 +100,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     license_note TEXT,
     status TEXT DEFAULT 'pending',
     renew_license_id INTEGER,
+    last_error TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
