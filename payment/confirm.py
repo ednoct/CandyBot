@@ -222,7 +222,7 @@ class PaymentConfirmationManager:
             # Re-fetch the full invoice with new license_note column
             full_invoice = await db_manager.get_invoice_by_id(invoice_id)
             
-            renew_lic_id = full_invoice.get('renew_license_id') if 'renew_license_id' in full_invoice.keys() else None
+            renew_lic_id = full_invoice['renew_license_id'] if 'renew_license_id' in full_invoice.keys() else None
             is_renewal = bool(renew_lic_id)
             
             if is_renewal:
