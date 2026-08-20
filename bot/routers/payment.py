@@ -77,7 +77,7 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
               amount, license_note, data.get('renew_license_id')))
               
         # Also create a legacy payment_report if offline
-        if gateway_code in ['usdt', 'gram']:
+        if gateway_code in ['usdt', 'gram', 'card']:
             expires_at = int(time.time()) + (7200 if gateway_code == 'usdt' else 86400)
             method = f"{gateway_code} offline"
             try:
@@ -93,23 +93,27 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
 
         await db.commit()
         
-    await state.clear()
+    # Store gateway_code in state so receipt handler knows which type
+    await state.update_data(last_gateway=gateway_code)
     
     # 1. Handle Card to Card (Offline)
     if gateway_code == 'card':
         # Default card number fallback
         card_number = legacy_settings.get('card_number', "1234-5678-9012-3456")
+        card_holder = legacy_settings.get('card_holder', '')
         builder = InlineKeyboardBuilder()
-        builder.row(types.InlineKeyboardButton(text="ارسال رسید تراکنش", callback_data=f"sendtxid_{invoice_id}"))
+        builder.row(types.InlineKeyboardButton(text="📎 ارسال رسید / کد پیگیری", callback_data=f"sendtxid_{invoice_id}_card"))
         
+        holder_line = f"💁 به نام: <b>{card_holder}</b>\n" if card_holder else ""
         await callback.message.edit_text(
-            f"💳 **پرداخت کارت به کارت**\n\n"
-            f"کد فاکتور شما: `{invoice_id}`\n"
-            f"مبلغ قابل پرداخت: {amount:,} تومان\n\n"
-            f"شماره کارت: `{card_number}`\n\n"
-            f"پس از واریز، رسید خود را به پشتیبانی ارسال کنید یا از دکمه زیر جهت ارسال رسید استفاده نمایید.",
+            f"💳 <b>پرداخت کارت به کارت</b>\n\n"
+            f"🛒 کد فاکتور: <code>{invoice_id}</code>\n"
+            f"💰 مبلغ قابل پرداخت: <b>{amount:,} تومان</b>\n\n"
+            f"💳 شماره کارت:\n<code>{card_number}</code>\n"
+            f"{holder_line}\n"
+            f"پس از واریز، از دکمه زیر <b>تصویر رسید</b> یا <b>کد پیگیری</b> تراکنش را ارسال کنید.",
             reply_markup=builder.as_markup(),
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
         return
 
@@ -124,7 +128,7 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
             types.InlineKeyboardButton(text="کپی آدرس", copy_text=types.CopyTextButton(text=str(walletaddressusdt)))
         )
         builder.row(
-            types.InlineKeyboardButton(text="ارسال رسید تراکنش", callback_data=f"sendtxid_{invoice_id}")
+            types.InlineKeyboardButton(text="📎 ارسال رسید / TxID", callback_data=f"sendtxid_{invoice_id}_usdt")
         )
         
         text = (
@@ -168,7 +172,7 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
         builder.row(*row2)
 
         builder.row(
-            types.InlineKeyboardButton(text="ارسال رسید تراکنش", callback_data=f"sendtxid_{invoice_id}")
+            types.InlineKeyboardButton(text="📎 ارسال رسید / TxID", callback_data=f"sendtxid_{invoice_id}_gram")
         )
 
         text = (
@@ -197,6 +201,7 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
 
     # 4. Handle Tetra (Online)
     if gateway_code == 'tetra':
+        await state.clear()  # Online gateway - no receipt submission needed
         from payment.gateways import TetraGateway
             
         gateway = TetraGateway(tetra_api_key)
@@ -226,16 +231,37 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
 
 @payment_router.callback_query(F.data.startswith("sendtxid_"))
 async def prompt_txid(callback: types.CallbackQuery, state: FSMContext):
-    """Handles prompt txid."""
-    invoice_id = callback.data.split('_')[1]
-    await state.update_data(txid_invoice_id=invoice_id)
+    """Handles prompt txid. Format: sendtxid_{invoice_id}_{gateway}"""
+    parts = callback.data.split('_')
+    invoice_id = parts[1]
+    gateway = parts[2] if len(parts) > 2 else 'usdt'
+    
+    await state.update_data(txid_invoice_id=invoice_id, txid_gateway=gateway)
     await state.set_state(PaymentState.waiting_for_txid)
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="انصراف", callback_data="cancel_txid")
-    await callback.message.edit_text(
-        "لطفا هش (TxID) تراکنش خود را ارسال کنید:", 
-        reply_markup=builder.as_markup()
+    builder.button(text="❌ انصراف", callback_data="cancel_txid")
+    
+    if gateway == 'card':
+        prompt_text = (
+            "📎 <b>ارسال رسید پرداخت</b>\n\n"
+            "لطفاً <b>تصویر رسید</b> تراکنش یا <b>کد پیگیری</b> بانکی را ارسال کنید:\n\n"
+            "🖼 <i>میتوانید عکس رسید را مستقیماً ارسال کنید</i>\n"
+            "🔢 <i>یا کد پیگیری را به صورت متن تایپ کنید</i>"
+        )
+    else:
+        prompt_text = (
+            "📎 <b>ارسال رسید پرداخت</b>\n\n"
+            "لطفاً <b>هش تراکنش (TxID)</b> یا <b>تصویر رسید</b> را ارسال کنید:\n\n"
+            "🖼 <i>میتوانید اسکرین‌شات رسید کیف پول را ارسال کنید</i>\n"
+            "🔢 <i>یا TxID (هش تراکنش) را به صورت متن paste کنید</i>"
+        )
+    
+    await callback.answer()
+    await callback.message.answer(
+        prompt_text,
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
     )
 
 @payment_router.callback_query(F.data == "cancel_txid")
@@ -247,28 +273,42 @@ async def cancel_txid(callback: types.CallbackQuery, state: FSMContext):
 
 @payment_router.message(PaymentState.waiting_for_txid)
 async def process_txid(message: types.Message, state: FSMContext):
-    """Handles process txid."""
-    if message.photo:
-        txid = message.photo[-1].file_id
-    else:
-        txid = message.text or message.caption
-        
-    if not txid:
-        return await message.answer("❌ لطفا هش تراکنش (متن) یا تصویر رسید را ارسال کنید.")
+    """Handles process txid — accepts both image and text."""
+    has_photo = bool(message.photo)
+    txid_text = message.text or message.caption or ''
+    
+    if not has_photo and not txid_text.strip():
+        return await message.answer(
+            "❌ لطفا تصویر رسید یا کد پیگیری / هش تراکنش را ارسال کنید.",
+            parse_mode="HTML"
+        )
         
     data = await state.get_data()
     invoice_id = data.get('txid_invoice_id')
+    gateway = data.get('txid_gateway', 'usdt')
+    
+    # Store: for image receipts store the file_id in crypto_hash, text goes in crypto_hash too
+    stored_value = message.photo[-1].file_id if has_photo else txid_text.strip()
     
     async with aiosqlite.connect(db_manager.DB_PATH) as db:
-        await db.execute('''
-            UPDATE payment_reports 
-            SET status = 'pending_receipt', tracking_code = ? 
-            WHERE id_order = ?
-        ''', (txid, invoice_id))
+        # Try new schema column name first
+        try:
+            await db.execute('''
+                UPDATE payment_reports 
+                SET status = 'pending_receipt', crypto_hash = ? 
+                WHERE invoice_id = ?
+            ''', (stored_value, invoice_id))
+        except aiosqlite.OperationalError:
+            # Fallback for legacy schema
+            await db.execute('''
+                UPDATE payment_reports 
+                SET payment_Status = 'pending_receipt'
+                WHERE id_invoice = ?
+            ''', (invoice_id,))
         await db.commit()
         
     await state.clear()
-    await message.reply(f"✅ رسید شما جهت بررسی ثبت شد. پس از تایید مدیر، حساب شما شارژ خواهد شد.", parse_mode="Markdown")
+    await message.reply("✅ رسید شما جهت بررسی ثبت شد. پس از تایید مدیر، حساب شما شارژ خواهد شد.")
     
     # Forward receipt to admins with inline buttons
     from bot.config import ADMIN_IDS
@@ -278,11 +318,13 @@ async def process_txid(message: types.Message, state: FSMContext):
     admin_builder.button(text="✅ تایید", callback_data=f"confirm_receipt_{invoice_id}")
     admin_builder.button(text="❌ رد", callback_data=f"reject_receipt_{invoice_id}")
     
+    gateway_label = {'card': 'کارت به کارت', 'usdt': 'تتر (USDT)', 'gram': 'گرام (TON)'}.get(gateway, gateway)
     caption_text = (
         f"📩 <b>رسید جدید</b>\n\n"
         f"👤 کاربر: <code>{message.from_user.id}</code>\n"
         f"🛒 فاکتور: <code>{invoice_id}</code>\n"
-        f"📝 متن/هش: {message.text or message.caption or 'تصویر'}"
+        f"💳 درگاه: {gateway_label}\n"
+        f"📝 {'تصویر رسید' if has_photo else 'متن/هش'}: {'' if has_photo else (message.text or message.caption or '-')}"
     )
 
     for admin_id in ADMIN_IDS:
