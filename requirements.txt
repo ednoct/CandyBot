@@ -5,3 +5,5 @@ aiohttp-cors
 python-dotenv
 jinja2
 aiohttp_jinja2
+httpx
+qrcode[pil]

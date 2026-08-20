@@ -1,3 +1,8 @@
+"""
+admin_shop.py
+-------------
+Module containing functionalities for admin_shop.
+"""
 # === IMPORTS ===
 from aiogram import Router, F, types
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -9,6 +14,7 @@ admin_shop_router = Router()
 # === ROUTER: SHOP MENU ===
 @admin_shop_router.callback_query(F.data == "admin_shop")
 async def shop_menu(callback: types.CallbackQuery):
+    """Handles shop menu."""
     if not is_admin(callback.message): return
     
     status_on = "✅"
@@ -33,6 +39,7 @@ async def shop_menu(callback: types.CallbackQuery):
 
 @admin_shop_router.callback_query(F.data.in_({"toggle_bulk_buy", "toggle_copy_cart", "toggle_debt"}))
 async def handle_shop_toggles(callback: types.CallbackQuery):
+    """Handles handle shop toggles."""
     if not is_admin(callback.message): return
     # Skip if it is a finance toggle
     if "fin_" in callback.data: return

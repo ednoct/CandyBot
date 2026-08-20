@@ -1,3 +1,9 @@
+# === IMPORTS ===
+"""
+logger.py
+---------
+Module containing functionalities for logger.
+"""
 import os
 import json
 import logging
@@ -5,6 +11,7 @@ import traceback
 from datetime import datetime
 
 class CandyLogger:
+    """Class representing CandyLogger."""
     DEBUG = logging.DEBUG
     INFO = logging.INFO
     WARN = logging.WARNING
@@ -16,6 +23,7 @@ class CandyLogger:
     
     @classmethod
     def init(cls, log_dir=None):
+        """Handles init."""
         if log_dir is None:
             base_dir = os.path.dirname(os.path.dirname(__file__))
             cls._log_dir = os.path.join(base_dir, 'logs')
@@ -31,12 +39,14 @@ class CandyLogger:
         
     @classmethod
     def set_min_level(cls, level: str):
+        """Handles set min level."""
         levels = {'debug': cls.DEBUG, 'info': cls.INFO, 'warning': cls.WARN, 'error': cls.ERROR, 'critical': cls.CRITICAL}
         if level.lower() in levels:
             cls._min_level = levels[level.lower()]
             
     @classmethod
     def log(cls, level: int, message: str, context: dict = None):
+        """Handles log."""
         if cls._log_dir is None:
             cls.init()
             
@@ -83,6 +93,7 @@ class CandyLogger:
     
     @classmethod
     def exception(cls, e: Exception, note: str = '', ctx: dict = None):
+        """Handles exception."""
         if ctx is None: ctx = {}
         ctx['exception'] = e.__class__.__name__
         ctx['trace'] = cls._short_trace(e)
@@ -91,6 +102,7 @@ class CandyLogger:
         
     @classmethod
     def _short_trace(cls, e: Exception) -> str:
+        """Handles  short trace."""
         tb = traceback.extract_tb(e.__traceback__)
         frames = []
         for i, frame in enumerate(tb[:6]):
@@ -101,6 +113,7 @@ class CandyLogger:
         
     @classmethod
     def _sanitise_context(cls, ctx: dict) -> dict:
+        """Handles  sanitise context."""
         blocked = ['password', 'passwd', 'token', 'apikey', 'api_key', 'secret', 'authorization']
         sanitized = {}
         for k, v in ctx.items():

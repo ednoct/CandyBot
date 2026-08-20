@@ -1,3 +1,8 @@
+"""
+date_formatter.py
+-----------------
+Module containing functionalities for date_formatter.
+"""
 # === IMPORTS ===
 import datetime
 try:

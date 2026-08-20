@@ -1,4 +1,9 @@
-﻿# === IMPORTS ===
+"""
+admin_users.py
+--------------
+Module containing functionalities for admin_users.
+"""
+# === IMPORTS ===
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder

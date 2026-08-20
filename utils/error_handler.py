@@ -1,8 +1,15 @@
+# === IMPORTS ===
+"""
+error_handler.py
+----------------
+Module containing functionalities for error_handler.
+"""
 from aiohttp import web
 from .logger import CandyLogger
 
 @web.middleware
 async def error_middleware(request, handler):
+    """Handles error middleware."""
     try:
         response = await handler(request)
         return response

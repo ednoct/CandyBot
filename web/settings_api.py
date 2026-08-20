@@ -1,4 +1,9 @@
-﻿# === IMPORTS ===
+"""
+settings_api.py
+---------------
+Module containing functionalities for settings_api.
+"""
+# === IMPORTS ===
 from aiohttp import web
 from database import db_manager
 

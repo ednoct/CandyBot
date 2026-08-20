@@ -1,4 +1,9 @@
-﻿# === IMPORTS ===
+"""
+plans.py
+--------
+Module containing functionalities for plans.
+"""
+# === IMPORTS ===
 import aiosqlite
 from aiohttp import web
 import aiohttp_jinja2

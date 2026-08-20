@@ -1,4 +1,9 @@
-﻿# === IMPORTS ===
+"""
+users.py
+--------
+Module containing functionalities for users.
+"""
+# === IMPORTS ===
 import aiosqlite
 from aiohttp import web
 import aiohttp_jinja2

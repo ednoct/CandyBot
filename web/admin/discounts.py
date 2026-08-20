@@ -1,4 +1,9 @@
-﻿# === IMPORTS ===
+"""
+discounts.py
+------------
+Module containing functionalities for discounts.
+"""
+# === IMPORTS ===
 import aiosqlite
 from aiohttp import web
 import aiohttp_jinja2

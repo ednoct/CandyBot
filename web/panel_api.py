@@ -1,4 +1,9 @@
-﻿# === IMPORTS ===
+"""
+panel_api.py
+------------
+Module containing functionalities for panel_api.
+"""
+# === IMPORTS ===
 import os
 import aiohttp_cors
 import aiohttp_jinja2

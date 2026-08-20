@@ -1,4 +1,9 @@
-﻿# === IMPORTS ===
+"""
+licenses.py
+-----------
+Module containing functionalities for licenses.
+"""
+# === IMPORTS ===
 import aiosqlite
 from aiohttp import web
 import aiohttp_jinja2

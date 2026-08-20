@@ -1,4 +1,9 @@
-﻿# === IMPORTS ===
+"""
+broadcast.py
+------------
+Module containing functionalities for broadcast.
+"""
+# === IMPORTS ===
 import asyncio
 import logging
 from database import db_manager

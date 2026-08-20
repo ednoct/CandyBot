@@ -1,8 +1,15 @@
+# === IMPORTS ===
+"""
+validator.py
+------------
+Module containing functionalities for validator.
+"""
 import json
 
 class CandyInput:
     @staticmethod
     async def payload(request) -> dict:
+        """Handles payload."""
         method = request.method
         payload = dict(request.query)
         
@@ -19,6 +26,7 @@ class CandyInput:
 
     @staticmethod
     def int(data: dict, key: str, default: int = 0) -> int:
+        """Handles int."""
         if key not in data: return default
         try:
             return int(data[key])
@@ -27,11 +35,13 @@ class CandyInput:
 
     @staticmethod
     def int_min(data: dict, key: str, min_val: int, default: int) -> int:
+        """Handles int min."""
         v = CandyInput.int(data, key, default)
         return default if v < min_val else v
 
     @staticmethod
     def int_range(data: dict, key: str, min_val: int, max_val: int, default: int) -> int:
+        """Handles int range."""
         v = CandyInput.int(data, key, default)
         if v < min_val: return default
         if v > max_val: return max_val
@@ -39,6 +49,7 @@ class CandyInput:
 
     @staticmethod
     def string(data: dict, key: str, default: str = "") -> str:
+        """Handles string."""
         if key not in data: return default
         v = data[key]
         if isinstance(v, (str, int, float)):
@@ -47,6 +58,7 @@ class CandyInput:
 
     @staticmethod
     def nullable_string(data: dict, key: str) -> str | None:
+        """Handles nullable string."""
         if key not in data: return None
         v = data[key]
         if not isinstance(v, (str, int, float)): return None
@@ -55,12 +67,14 @@ class CandyInput:
 
     @staticmethod
     def array(data: dict, key: str) -> list:
+        """Handles array."""
         if key not in data: return []
         v = data[key]
         return v if isinstance(v, list) else []
 
     @staticmethod
     def sanitise(data):
+        """Handles sanitise."""
         if isinstance(data, dict):
             return {k: CandyInput.sanitise(v) for k, v in data.items()}
         elif isinstance(data, list):

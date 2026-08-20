@@ -1,3 +1,9 @@
+# === IMPORTS ===
+"""
+run.py
+------
+Module containing functionalities for run.
+"""
 from bot.main import main
 import asyncio
 

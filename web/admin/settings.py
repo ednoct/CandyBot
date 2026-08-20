@@ -1,4 +1,9 @@
-﻿# === IMPORTS ===
+"""
+settings.py
+-----------
+Module containing functionalities for settings.
+"""
+# === IMPORTS ===
 import aiosqlite
 from aiohttp import web
 import aiohttp_jinja2

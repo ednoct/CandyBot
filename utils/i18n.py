@@ -1,3 +1,8 @@
+"""
+i18n.py
+-------
+Module containing functionalities for i18n.
+"""
 # === IMPORTS ===
 import json
 import os
@@ -5,7 +10,9 @@ from pathlib import Path
 
 # === LOCALIZATION (I18N) MANAGER ===
 class I18nManager:
+    """Class representing I18nManager."""
     def __init__(self, file_path: str = None):
+        """Handles   init  ."""
         if not file_path:
             # Default to locales_fa.json in the project root
             base_dir = Path(__file__).parent.parent

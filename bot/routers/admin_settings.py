@@ -1,3 +1,8 @@
+"""
+admin_settings.py
+-----------------
+Module containing functionalities for admin_settings.
+"""
 # === IMPORTS ===
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
@@ -12,26 +17,35 @@ admin_settings_router = Router()
 # === ROUTER: SETTINGS MENU ===
 @admin_settings_router.callback_query(F.data == "admin_settings")
 async def settings_menu(callback: types.CallbackQuery):
+    """Handles settings menu."""
     if not is_admin(callback.message): return
     
-    # In a real app we'd fetch this from db_manager.get_settings()
-    # Mocking standard toggles for parity
+    op_mode = await db_manager.get_operating_mode()
+    fb_enabled = await db_manager.get_setting('feedback_enabled', '1')
+    acq_enabled = await db_manager.get_setting('acquisition_survey_enabled', '0')
+    
     status_on = "✅"
     status_off = "❌"
     
+    op_mode_text = {
+        "NORMAL": "🟢 عادی",
+        "SALES_PAUSED": "🟡 توقف فروش",
+        "MAINTENANCE": "🔴 تعمیرات"
+    }.get(op_mode, "🟢 عادی")
+    
     builder = InlineKeyboardBuilder()
     
-    # Bot Status
+    # Operating Mode
     builder.button(text="وضعیت ربات:", callback_data="none")
-    builder.button(text=status_on, callback_data="toggle_bot_status")
+    builder.button(text=op_mode_text, callback_data="toggle_op_mode")
     
-    # Auth Mode
-    builder.button(text="تایید شماره موبایل:", callback_data="none")
-    builder.button(text=status_off, callback_data="toggle_phone_auth")
+    # Feedback
+    builder.button(text="نظرسنجی خرید:", callback_data="none")
+    builder.button(text=status_on if fb_enabled == '1' else status_off, callback_data="toggle_feedback")
     
-    # Test Accounts Limit
-    builder.button(text="اکانت تست:", callback_data="none")
-    builder.button(text=status_off, callback_data="toggle_test_acc")
+    # Acquisition Survey
+    builder.button(text="نظرسنجی آشنایی:", callback_data="none")
+    builder.button(text=status_on if acq_enabled == '1' else status_off, callback_data="toggle_acquisition")
     
     # Channels & Admins
     builder.button(text="📯 مدیریت کانال‌ها", callback_data="admin_manage_channels")
@@ -41,26 +55,47 @@ async def settings_menu(callback: types.CallbackQuery):
     builder.button(text="📱 مدیریت برنامه‌ها", callback_data="admin_manage_apps")
     
     # New Utilities
-    builder.button(text="📚 مدیریت آموزش‌ها", callback_data="admin_manage_tutorials")
-    builder.button(text="🎰 تنظیمات قرعه‌کشی", callback_data="admin_manage_lottery")
     builder.button(text="🖼 پس زمینه کیوآرکد", callback_data="admin_manage_qr")
     
     # Back
     builder.button(text="🔙 بازگشت", callback_data="admin_back")
     
-    builder.adjust(2, 2, 2, 2, 1, 1, 1, 1, 1)
+    builder.adjust(2, 2, 2, 2, 1, 1, 1, 1)
     
     await callback.message.edit_text("⚙️ **تنظیمات عمومی ربات**", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
-@admin_settings_router.callback_query(F.data.in_({"toggle_bot_status", "toggle_phone_auth", "toggle_test_acc"}))
+@admin_settings_router.callback_query(F.data.in_({"toggle_op_mode", "toggle_feedback", "toggle_acquisition"}))
 async def handle_toggles(callback: types.CallbackQuery):
+    """Handles handle toggles."""
     if not is_admin(callback.message): return
-    await callback.answer("⚙️ تنظیم تغییر کرد (Mock).", show_alert=True)
+    
+    if callback.data == "toggle_op_mode":
+        current = await db_manager.get_operating_mode()
+        next_mode = {"NORMAL": "SALES_PAUSED", "SALES_PAUSED": "MAINTENANCE", "MAINTENANCE": "NORMAL"}[current]
+        async with aiosqlite.connect(db_manager.DB_PATH) as db:
+            await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('operating_mode', ?)", (next_mode,))
+            await db.commit()
+            
+    elif callback.data == "toggle_feedback":
+        current = await db_manager.get_setting('feedback_enabled', '1')
+        next_val = '0' if current == '1' else '1'
+        async with aiosqlite.connect(db_manager.DB_PATH) as db:
+            await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('feedback_enabled', ?)", (next_val,))
+            await db.commit()
+            
+    elif callback.data == "toggle_acquisition":
+        current = await db_manager.get_setting('acquisition_survey_enabled', '0')
+        next_val = '0' if current == '1' else '1'
+        async with aiosqlite.connect(db_manager.DB_PATH) as db:
+            await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('acquisition_survey_enabled', ?)", (next_val,))
+            await db.commit()
+            
     await settings_menu(callback)
 
 # === ROUTER: CHANNELS MANAGEMENT ===
 @admin_settings_router.callback_query(F.data == "admin_manage_channels")
 async def manage_channels(callback: types.CallbackQuery):
+    """Handles manage channels."""
     if not is_admin(callback.message): return
     
     builder = InlineKeyboardBuilder()
@@ -73,11 +108,13 @@ async def manage_channels(callback: types.CallbackQuery):
 
 @admin_settings_router.callback_query(F.data == "add_channel")
 async def add_channel_start(callback: types.CallbackQuery, state: FSMContext):
+    """Handles add channel start."""
     await state.set_state(AdminStates.waiting_for_channel_remark)
     await callback.message.edit_text("📌 یک نام برای دکمه عضویت چنل انتخاب نمایید (مثلا: کانال پشتیبانی):")
 
 @admin_settings_router.message(AdminStates.waiting_for_channel_remark)
 async def add_channel_remark(message: types.Message, state: FSMContext):
+    """Handles add channel remark."""
     if not is_admin(message): return
     await state.update_data(channel_remark=message.text)
     await state.set_state(AdminStates.waiting_for_channel_url)
@@ -85,6 +122,7 @@ async def add_channel_remark(message: types.Message, state: FSMContext):
 
 @admin_settings_router.message(AdminStates.waiting_for_channel_url)
 async def add_channel_url(message: types.Message, state: FSMContext):
+    """Handles add channel url."""
     if not is_admin(message): return
     url = message.text
     if not url.startswith("http"):
@@ -104,6 +142,7 @@ async def add_channel_url(message: types.Message, state: FSMContext):
 # === ROUTER: ADMIN MANAGEMENT ===
 @admin_settings_router.callback_query(F.data == "admin_manage_admins")
 async def manage_admins(callback: types.CallbackQuery, state: FSMContext):
+    """Handles manage admins."""
     if not is_admin(callback.message): return
     await state.set_state(AdminStates.waiting_for_admin_id)
     
@@ -113,6 +152,7 @@ async def manage_admins(callback: types.CallbackQuery, state: FSMContext):
 
 @admin_settings_router.message(AdminStates.waiting_for_admin_id)
 async def add_admin_save(message: types.Message, state: FSMContext):
+    """Handles add admin save."""
     if not is_admin(message): return
     try:
         new_admin_id = int(message.text)
@@ -134,6 +174,7 @@ async def add_admin_save(message: types.Message, state: FSMContext):
 # === ROUTER: MANAGE APPS ===
 @admin_settings_router.callback_query(F.data == "admin_manage_apps")
 async def manage_apps(callback: types.CallbackQuery):
+    """Handles manage apps."""
     if not is_admin(callback.message): return
     
     builder = InlineKeyboardBuilder()
@@ -146,12 +187,14 @@ async def manage_apps(callback: types.CallbackQuery):
 
 @admin_settings_router.callback_query(F.data == "add_app")
 async def add_app_start(callback: types.CallbackQuery, state: FSMContext):
+    """Handles add app start."""
     if not is_admin(callback.message): return
     await state.set_state(AdminStates.waiting_for_app_name)
     await callback.message.edit_text("📌 جهت اضافه کردن لینک دانلود برنامه نام اپ یا نام دکمه را ارسال نمایید (مثلا: دانلود Candy Connect):")
 
 @admin_settings_router.message(AdminStates.waiting_for_app_name)
 async def add_app_name(message: types.Message, state: FSMContext):
+    """Handles add app name."""
     if not is_admin(message): return
     if len(message.text) > 200:
         return await message.answer("📌 نام باید کمتر از ۲۰۰ کاراکتر باشد.")
@@ -162,6 +205,7 @@ async def add_app_name(message: types.Message, state: FSMContext):
 
 @admin_settings_router.message(AdminStates.waiting_for_app_url)
 async def add_app_url(message: types.Message, state: FSMContext):
+    """Handles add app url."""
     if not is_admin(message): return
     url = message.text
     if not url.startswith("http"):
@@ -180,6 +224,7 @@ async def add_app_url(message: types.Message, state: FSMContext):
 
 @admin_settings_router.callback_query(F.data == "del_app")
 async def del_app_start(callback: types.CallbackQuery):
+    """Handles del app start."""
     if not is_admin(callback.message): return
     
     from database.db_manager import DB_PATH
@@ -201,6 +246,7 @@ async def del_app_start(callback: types.CallbackQuery):
 
 @admin_settings_router.callback_query(F.data.startswith("remove_app_"))
 async def del_app_process(callback: types.CallbackQuery):
+    """Handles del app process."""
     if not is_admin(callback.message): return
     app_id = int(callback.data.split("_")[2])
     
@@ -212,143 +258,11 @@ async def del_app_process(callback: types.CallbackQuery):
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 مدیریت برنامه‌ها", callback_data="admin_manage_apps")
     await callback.message.edit_text("✅ برنامه با موفقیت حذف گردید.", reply_markup=builder.as_markup())
-# === ROUTER: MANAGE TUTORIALS ===
-@admin_settings_router.callback_query(F.data == "admin_manage_tutorials")
-async def manage_tutorials_menu(callback: types.CallbackQuery):
-    if not is_admin(callback.message): return
-    
-    from aiogram.utils.keyboard import InlineKeyboardBuilder
-    builder = InlineKeyboardBuilder()
-    
-    gateways = [
-        ('کارت به کارت', 'cart'), 
-        ('NowPayments', 'nowpayment'), 
-        ('پرفکت‌مانی', 'perfectmony'), 
-        ('Plisio', 'plisio'), 
-        ('آقای پرداخت', 'aqayepardakht'), 
-        ('زرین‌پال', 'zarinpal'), 
-        ('آفلاین', 'offline')
-    ]
-    
-    for name, code in gateways:
-        builder.button(text=f"📚 {name}", callback_data=f"set_tut_{code}")
-        
-    builder.button(text="🔙 بازگشت", callback_data="admin_settings")
-    builder.adjust(2)
-    
-    await callback.message.edit_text("📚 **مدیریت آموزش‌ها**\nدرگاه مورد نظر را جهت تنظیم آموزش (متن/عکس/ویدیو) انتخاب کنید:", reply_markup=builder.as_markup(), parse_mode="Markdown")
-
-@admin_settings_router.callback_query(F.data.startswith("set_tut_"))
-async def set_tutorial_prompt(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
-    gateway = callback.data.split('_')[2]
-    
-    await state.update_data(tut_gateway=gateway)
-    await state.set_state(AdminStates.waiting_for_tutorial_content)
-    
-    from aiogram.utils.keyboard import InlineKeyboardBuilder
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 لغو", callback_data="admin_manage_tutorials")
-    
-    msg = f"📌 آموزش خود را برای درگاه {gateway} ارسال نمایید.\n- برای غیرفعال‌سازی عدد 2 را بفرستید.\n- می‌توانید متن، عکس، یا ویدیو ارسال کنید."
-    await callback.message.edit_text(msg, reply_markup=builder.as_markup())
-
-@admin_settings_router.message(AdminStates.waiting_for_tutorial_content)
-async def set_tutorial_process(message: types.Message, state: FSMContext):
-    if not is_admin(message): return
-    data = await state.get_data()
-    gateway = data['tut_gateway']
-    
-    import json
-    tut_data = {}
-    
-    if message.text:
-        if message.text.strip() == '2':
-            tut_data = "2"
-        else:
-            tut_data = json.dumps({"type": "text", "text": message.text})
-    elif message.photo:
-        tut_data = json.dumps({"type": "photo", "text": message.caption or "", "photoid": message.photo[-1].file_id})
-    elif message.video:
-        tut_data = json.dumps({"type": "video", "text": message.caption or "", "videoid": message.video.file_id})
-    else:
-        return await message.answer("❌ محتوای ارسال نامعتبر است.")
-        
-    from database.db_manager import DB_PATH
-    import aiosqlite
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (f"help_{gateway}", tut_data))
-        await db.commit()
-        
-    await state.set_state(None)
-    from aiogram.utils.keyboard import InlineKeyboardBuilder
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 آموزش‌ها", callback_data="admin_manage_tutorials")
-    await message.answer("✅ آموزش با موفقیت ذخیره گردید.", reply_markup=builder.as_markup())
-
-# === ROUTER: LOTTERY ===
-@admin_settings_router.callback_query(F.data == "admin_manage_lottery")
-async def manage_lottery_menu(callback: types.CallbackQuery):
-    if not is_admin(callback.message): return
-    
-    from aiogram.utils.keyboard import InlineKeyboardBuilder
-    builder = InlineKeyboardBuilder()
-    builder.button(text="1️⃣ جایزه نفر اول", callback_data="set_lot_1")
-    builder.button(text="2️⃣ جایزه نفر دوم", callback_data="set_lot_2")
-    builder.button(text="3️⃣ جایزه نفر سوم", callback_data="set_lot_3")
-    builder.button(text="🎲 مبلغ برنده شدن در گردونه", callback_data="set_lot_wheel")
-    builder.button(text="🔙 بازگشت", callback_data="admin_settings")
-    builder.adjust(1)
-    
-    await callback.message.edit_text("🎰 **تنظیمات قرعه‌کشی و گردونه شانس**", reply_markup=builder.as_markup(), parse_mode="Markdown")
-
-@admin_settings_router.callback_query(F.data.startswith("set_lot_"))
-async def set_lottery_prompt(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
-    lot_type = callback.data.split('_')[2]
-    
-    await state.update_data(lot_type=lot_type)
-    await state.set_state(AdminStates.waiting_for_lottery_prize)
-    
-    from aiogram.utils.keyboard import InlineKeyboardBuilder
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 لغو", callback_data="admin_manage_lottery")
-    await callback.message.edit_text("📌 مقدار مبلغی که می‌خواهید حساب کاربر شارژ شود را ارسال نمایید:", reply_markup=builder.as_markup())
-
-@admin_settings_router.message(AdminStates.waiting_for_lottery_prize)
-async def set_lottery_process(message: types.Message, state: FSMContext):
-    if not is_admin(message): return
-    if not message.text.isdigit():
-        return await message.answer("❌ مبلغ نامعتبر است.")
-        
-    data = await state.get_data()
-    lot_type = data['lot_type']
-    
-    from database.db_manager import DB_PATH
-    import json
-    import aiosqlite
-    async with aiosqlite.connect(DB_PATH) as db:
-        if lot_type == 'wheel':
-            await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('wheel_luck_price', ?)", (message.text,))
-        else:
-            async with db.execute("SELECT value FROM settings WHERE key = 'Lottery_prize'") as cursor:
-                row = await cursor.fetchone()
-            prizes = json.loads(row[0]) if row else {}
-            
-            prizes[lot_type] = message.text
-            await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('Lottery_prize', ?)", (json.dumps(prizes),))
-            
-        await db.commit()
-        
-    await state.set_state(None)
-    from aiogram.utils.keyboard import InlineKeyboardBuilder
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 قرعه‌کشی", callback_data="admin_manage_lottery")
-    await message.answer("✅ مبلغ جایزه با موفقیت تنظیم شد.", reply_markup=builder.as_markup())
 
 # === ROUTER: QR BACKGROUND ===
 @admin_settings_router.callback_query(F.data == "admin_manage_qr")
 async def manage_qr_prompt(callback: types.CallbackQuery, state: FSMContext):
+    """Handles manage qr prompt."""
     if not is_admin(callback.message): return
     await state.set_state(AdminStates.waiting_for_qr_background)
     
@@ -359,6 +273,7 @@ async def manage_qr_prompt(callback: types.CallbackQuery, state: FSMContext):
 
 @admin_settings_router.message(AdminStates.waiting_for_qr_background)
 async def manage_qr_process(message: types.Message, state: FSMContext):
+    """Handles manage qr process."""
     if not is_admin(message): return
     if not message.photo:
         return await message.answer("❌ لطفاً یک تصویر ارسال کنید.")

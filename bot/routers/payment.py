@@ -17,11 +17,13 @@ from utils.exchange import get_arz_usdt_rate, get_gram_irt_price
 payment_router = Router()
 
 class PaymentState(StatesGroup):
+    """Class representing PaymentState."""
     waiting_for_txid = State()
 
 # === ROUTER: UNIFIED PAYMENT HANDLER ===
 @payment_router.callback_query(F.data.startswith("pay_"))
 async def process_payment(callback: types.CallbackQuery, state: FSMContext):
+    """Handles process payment."""
     gateway_code = callback.data.split('_')[1] # e.g. 'card', 'zarinpal', 'aqaye', 'trx', 'usdt', 'gram', 'tetra'
     
     data = await state.get_data()
@@ -64,14 +66,15 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
     # Generate Invoice in DB
     async with aiosqlite.connect(db_manager.DB_PATH) as db:
         # First save to standard invoices for products
+        config_note = data.get('config_note', '')
         await db.execute('''
             INSERT INTO invoices (id, user_id, plan_id, days, gb, base_price, wallet_deduction, 
-            discount_code, discount_deduction, gift_code, gift_deduction, final_amount, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+            discount_code, discount_deduction, gift_code, gift_deduction, final_amount, config_note, status, renew_license_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
         ''', (invoice_id, callback.from_user.id, data.get('plan_id'), data.get('days'), data.get('gb'),
               data.get('base_price'), data.get('wallet_deduction'), data.get('discount_code'), 
               data.get('discount_amount', 0), data.get('gift_code'), data.get('gift_amount', 0), 
-              amount))
+              amount, config_note, data.get('renew_license_id')))
               
         # Also create a legacy payment_report if offline
         if gateway_code in ['usdt', 'gram']:
@@ -198,7 +201,7 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
             
         gateway = TetraGateway(tetra_api_key)
         # We can hardcode the URL or get it from settings, usually the API domain is enough
-        domain = legacy_settings.get('web_domain', 'https://candy.candyconnect.online')
+        domain = legacy_settings.get('web_domain', 'https://tetra98.com')
         callback_url = f"{domain}/api/payment/webhook/tetra"
         
         # TetraGateway expects (invoice_id, amount_toman, callback_url)
@@ -223,6 +226,7 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
 
 @payment_router.callback_query(F.data.startswith("sendtxid_"))
 async def prompt_txid(callback: types.CallbackQuery, state: FSMContext):
+    """Handles prompt txid."""
     invoice_id = callback.data.split('_')[1]
     await state.update_data(txid_invoice_id=invoice_id)
     await state.set_state(PaymentState.waiting_for_txid)
@@ -236,12 +240,14 @@ async def prompt_txid(callback: types.CallbackQuery, state: FSMContext):
 
 @payment_router.callback_query(F.data == "cancel_txid")
 async def cancel_txid(callback: types.CallbackQuery, state: FSMContext):
+    """Handles cancel txid."""
     await state.clear()
     await callback.message.delete()
     await callback.answer("عملیات لغو شد.")
 
 @payment_router.message(PaymentState.waiting_for_txid)
 async def process_txid(message: types.Message, state: FSMContext):
+    """Handles process txid."""
     if message.photo:
         txid = message.photo[-1].file_id
     else:
@@ -264,11 +270,114 @@ async def process_txid(message: types.Message, state: FSMContext):
     await state.clear()
     await message.reply(f"✅ رسید شما جهت بررسی ثبت شد. پس از تایید مدیر، حساب شما شارژ خواهد شد.", parse_mode="Markdown")
     
-    # Forward receipt to admins
+    # Forward receipt to admins with inline buttons
     from bot.config import ADMIN_IDS
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    
+    admin_builder = InlineKeyboardBuilder()
+    admin_builder.button(text="✅ تایید", callback_data=f"confirm_receipt_{invoice_id}")
+    admin_builder.button(text="❌ رد", callback_data=f"reject_receipt_{invoice_id}")
+    
+    caption_text = (
+        f"📩 <b>رسید جدید</b>\n\n"
+        f"👤 کاربر: <code>{message.from_user.id}</code>\n"
+        f"🛒 فاکتور: <code>{invoice_id}</code>\n"
+        f"📝 متن/هش: {message.text or message.caption or 'تصویر'}"
+    )
+
     for admin_id in ADMIN_IDS:
         try:
-            await message.forward(chat_id=admin_id)
-            await message.bot.send_message(chat_id=admin_id, text=f"رسید جدید برای فاکتور `{invoice_id}` ارسال شد.\nلطفا از بخش رسیدهای تایید نشده بررسی کنید.", parse_mode="Markdown")
-        except:
+            if message.photo:
+                await message.bot.send_photo(
+                    chat_id=admin_id,
+                    photo=message.photo[-1].file_id,
+                    caption=caption_text,
+                    parse_mode="HTML",
+                    reply_markup=admin_builder.as_markup()
+                )
+            else:
+                await message.bot.send_message(
+                    chat_id=admin_id, 
+                    text=caption_text,
+                    parse_mode="HTML",
+                    reply_markup=admin_builder.as_markup()
+                )
+        except Exception:
             pass
+
+# === ROUTER: ADMIN RECEIPT APPROVAL ===
+
+@payment_router.callback_query(F.data.startswith("confirm_receipt_"))
+async def admin_confirm_receipt(callback: types.CallbackQuery):
+    """Handles admin confirm receipt."""
+    from bot.config import ADMIN_IDS
+    if callback.from_user.id not in ADMIN_IDS:
+        return await callback.answer("❌ دسترسی غیرمجاز.", show_alert=True)
+        
+    invoice_id = callback.data.split('_')[2]
+    
+    # Check if already processed
+    async with aiosqlite.connect(db_manager.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT status FROM invoices WHERE id = ?", (invoice_id,)) as cur:
+            inv = await cur.fetchone()
+            
+    if not inv or inv['status'] != 'pending':
+        return await callback.answer("این فاکتور قبلا پردازش شده است.", show_alert=True)
+        
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.message.reply(f"⏳ در حال صدور لایسنس برای فاکتور {invoice_id}...")
+    
+    # Delegate to PaymentConfirmationManager
+    from payment.confirm import PaymentConfirmationManager
+    pcm = PaymentConfirmationManager(callback.bot)
+    success = await pcm.confirm_paid(invoice_id, method="offline_receipt")
+    
+    if success:
+        await callback.answer("✅ تایید شد.", show_alert=True)
+    else:
+        await callback.answer("❌ خطا در فرآیند تایید.", show_alert=True)
+
+@payment_router.callback_query(F.data.startswith("reject_receipt_"))
+async def admin_reject_receipt(callback: types.CallbackQuery, state: FSMContext):
+    """Handles admin reject receipt."""
+    from bot.config import ADMIN_IDS
+    if callback.from_user.id not in ADMIN_IDS:
+        return await callback.answer("❌ دسترسی غیرمجاز.", show_alert=True)
+        
+    invoice_id = callback.data.split('_')[2]
+    
+    await callback.message.edit_reply_markup(reply_markup=None)
+    
+    # Notify failure
+    from payment.confirm import PaymentConfirmationManager
+    pcm = PaymentConfirmationManager(callback.bot)
+    await pcm.notify_failed(invoice_id, reason="رسید ارسالی مورد تایید مدیریت قرار نگرفت.")
+    
+    await callback.answer("❌ رسید رد شد.", show_alert=True)
+    await callback.message.reply(f"فاکتور {invoice_id} رد شد.")
+
+@payment_router.callback_query(F.data.startswith("retry_provision_"))
+async def admin_retry_provision(callback: types.CallbackQuery):
+    """Handles admin retry provision."""
+    from bot.config import ADMIN_IDS
+    if callback.from_user.id not in ADMIN_IDS:
+        return await callback.answer("❌ دسترسی غیرمجاز.", show_alert=True)
+        
+    invoice_id = callback.data.split('_')[2]
+    
+    async with aiosqlite.connect(db_manager.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)) as cur:
+            inv = await cur.fetchone()
+            
+    if not inv or inv['status'] != 'issue':
+        return await callback.answer("فقط فاکتورهای دارای خطا قابل تلاش مجدد هستند.", show_alert=True)
+        
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.answer("در حال تلاش مجدد...")
+    
+    # Re-run provision and deliver
+    from payment.confirm import PaymentConfirmationManager
+    pcm = PaymentConfirmationManager(callback.bot)
+    await pcm._provision_and_deliver(invoice_id, inv['user_id'], inv)

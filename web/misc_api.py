@@ -1,4 +1,9 @@
-﻿# === IMPORTS ===
+"""
+misc_api.py
+-----------
+Module containing functionalities for misc_api.
+"""
+# === IMPORTS ===
 from aiohttp import web
 from database import db_manager
 

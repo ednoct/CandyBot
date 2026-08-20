@@ -1,3 +1,8 @@
+"""
+__init__.py
+-----------
+Module containing functionalities for __init__.
+"""
 # === IMPORTS ===
 from aiohttp import web
 

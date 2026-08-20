@@ -1,4 +1,9 @@
-﻿# === IMPORTS ===
+"""
+broadcast.py
+------------
+Module containing functionalities for broadcast.
+"""
+# === IMPORTS ===
 import aiosqlite
 from aiohttp import web
 import aiohttp_jinja2

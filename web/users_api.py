@@ -1,9 +1,15 @@
+"""
+users_api.py
+------------
+Module containing functionalities for users_api.
+"""
 # === IMPORTS ===
 from aiohttp import web
 from database import db_manager
 
 # === API ENDPOINTS: USERS ===
 async def api_get_users(request):
+    """Handles api get users."""
     try:
         limit = int(request.query.get('limit', 50))
         page = int(request.query.get('page', 1))
@@ -28,6 +34,7 @@ async def api_get_users(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_get_user(request):
+    """Handles api get user."""
     try:
         data = await request.json()
         chat_id = data.get('chat_id')
@@ -43,6 +50,7 @@ async def api_get_user(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_block_user(request):
+    """Handles api block user."""
     try:
         data = await request.json()
         chat_id = data.get('chat_id')
@@ -59,6 +67,7 @@ async def api_block_user(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_add_balance(request):
+    """Handles api add balance."""
     try:
         data = await request.json()
         chat_id = data.get('chat_id')
@@ -73,6 +82,7 @@ async def api_add_balance(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_withdrawal(request):
+    """Handles api withdrawal."""
     try:
         data = await request.json()
         chat_id = data.get('chat_id')
@@ -88,6 +98,7 @@ async def api_withdrawal(request):
 
 # === API ENDPOINTS: OTHERS ===
 async def api_verify_user(request):
+    """Handles api verify user."""
     try:
         data = await request.json()
         chat_id = data.get('chat_id')
@@ -103,6 +114,7 @@ async def api_verify_user(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_zero_balance(request):
+    """Handles api zero balance."""
     try:
         data = await request.json()
         chat_id = data.get('chat_id')
@@ -115,6 +127,7 @@ async def api_zero_balance(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_change_status_user(request):
+    """Handles api change status user."""
     try:
         data = await request.json()
         chat_id = data.get('chat_id')
@@ -126,6 +139,7 @@ async def api_change_status_user(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_send_message(request):
+    """Handles api send message."""
     try:
         data = await request.json()
         chat_id = data.get('chat_id')
@@ -137,6 +151,7 @@ async def api_send_message(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_set_limit_test(request):
+    """Handles api set limit test."""
     try:
         data = await request.json()
         limit = data.get('Limit')
@@ -147,6 +162,7 @@ async def api_set_limit_test(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_user_add(request):
+    """Handles api user add."""
     try:
         data = await request.json()
         chat_id = data.get('chat_id')
@@ -159,6 +175,7 @@ async def api_user_add(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_delete_user(request):
+    """Handles api delete user."""
     try:
         data = await request.json()
         chat_id = data.get('chat_id')
@@ -170,6 +187,7 @@ async def api_delete_user(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_accept_number(request):
+    """Handles api accept number."""
     try:
         data = await request.json()
         chat_id = data.get('chat_id')
@@ -180,6 +198,7 @@ async def api_accept_number(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_transfer_account(request):
+    """Handles api transfer account."""
     try:
         data = await request.json()
         chat_id = data.get('chat_id')
@@ -194,6 +213,7 @@ async def api_transfer_account(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_join_channel_exception(request):
+    """Handles api join channel exception."""
     try:
         data = await request.json()
         chat_id = data.get('chat_id')
@@ -204,6 +224,7 @@ async def api_join_channel_exception(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_cron_notif(request):
+    """Handles api cron notif."""
     try:
         data = await request.json()
         chat_id = data.get('chat_id')
@@ -215,6 +236,7 @@ async def api_cron_notif(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_manage_show_cart(request):
+    """Handles api manage show cart."""
     try:
         data = await request.json()
         chat_id = data.get('chat_id')
@@ -226,6 +248,7 @@ async def api_manage_show_cart(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_affiliates_users(request):
+    """Handles api affiliates users."""
     try:
         chat_id = request.query.get('chat_id') or (await request.json()).get('chat_id')
         if not chat_id: return web.json_response({'status': False, 'msg': 'user-id empty'})
@@ -235,6 +258,7 @@ async def api_affiliates_users(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_remove_affiliates(request):
+    """Handles api remove affiliates."""
     try:
         data = await request.json()
         chat_id = data.get('chat_id')
@@ -245,6 +269,7 @@ async def api_remove_affiliates(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_remove_affiliate_user(request):
+    """Handles api remove affiliate user."""
     try:
         data = await request.json()
         chat_id = data.get('chat_id')
@@ -255,6 +280,7 @@ async def api_remove_affiliate_user(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_set_agent(request):
+    """Handles api set agent."""
     try:
         data = await request.json()
         chat_id = data.get('chat_id')
@@ -265,6 +291,7 @@ async def api_set_agent(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_set_expire_agent(request):
+    """Handles api set expire agent."""
     try:
         import time
         data = await request.json()
@@ -279,6 +306,7 @@ async def api_set_expire_agent(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_set_becoming_negative(request):
+    """Handles api set becoming negative."""
     try:
         data = await request.json()
         chat_id = data.get('chat_id')
@@ -291,6 +319,7 @@ async def api_set_becoming_negative(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_set_percentage_discount(request):
+    """Handles api set percentage discount."""
     try:
         data = await request.json()
         chat_id = data.get('chat_id')
@@ -303,6 +332,7 @@ async def api_set_percentage_discount(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_users_info(request):
+    """Handles api users info."""
     try:
         # Should be authenticated via telegram auth
         user_id = request.query.get('user_id')
@@ -328,6 +358,7 @@ async def api_users_info(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_users_verify_phone(request):
+    """Handles api users verify phone."""
     try:
         data = await request.json()
         phone = data.get('phone')
@@ -347,6 +378,7 @@ async def api_users_verify_phone(request):
 
 # === ROUTER REGISTRATION ===
 def register_users_routes(app: web.Application):
+    """Handles register users routes."""
     app.router.add_get('/api/users', api_get_users)
     app.router.add_get('/api/user', api_get_user)
     app.router.add_post('/api/user/add', api_user_add)

@@ -1,3 +1,9 @@
+# === IMPORTS ===
+"""
+auth.py
+-------
+Module containing functionalities for auth.
+"""
 import hmac
 import hashlib
 import urllib.parse
@@ -7,6 +13,7 @@ import time
 class CandyAuth:
     @staticmethod
     def validate_init_data(raw_data, bot_token: str) -> dict:
+        """Handles validate init data."""
         if isinstance(raw_data, str):
             raw_data = raw_data.strip()
             if not raw_data:
@@ -59,6 +66,7 @@ class CandyAuth:
 
     @staticmethod
     def validate_contact_response(raw_data, bot_token: str) -> dict:
+        """Handles validate contact response."""
         if not isinstance(raw_data, str):
             raise ValueError("Contact data is missing or invalid")
         raw_data = raw_data.strip()
@@ -119,6 +127,7 @@ class CandyAuth:
 
     @staticmethod
     def extract_bearer_token(request) -> str | None:
+        """Handles extract bearer token."""
         auth = request.headers.get('Authorization')
         if not auth:
             return None
@@ -128,6 +137,7 @@ class CandyAuth:
 
     @staticmethod
     def _normalize(value) -> str:
+        """Handles  normalize."""
         if isinstance(value, bool):
             return 'true' if value else 'false'
         if isinstance(value, (dict, list)):

@@ -1,3 +1,8 @@
+"""
+exchange.py
+-----------
+Module containing functionalities for exchange.
+"""
 # === IMPORTS ===
 import aiohttp
 import asyncio

@@ -1,3 +1,8 @@
+"""
+main.py
+-------
+Module containing functionalities for main.
+"""
 # === IMPORTS ===
 import asyncio
 import logging
@@ -22,19 +27,40 @@ WEBHOOK_URL = f"https://{WEBHOOK_DOMAIN}{WEBHOOK_PATH}"
 
 # === STARTUP / SHUTDOWN HANDLERS ===
 async def on_startup(bot: Bot):
+    """Handles on startup."""
     try:
         await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
         logging.info(f"Webhook set to {WEBHOOK_URL}")
     except Exception as e:
         logging.error(f"Failed to set webhook (might be rate-limited): {e}")
 
+    # Recover PROCESSING invoices
+    try:
+        from payment.confirm import PaymentConfirmationManager
+        import aiosqlite
+        from database.db_manager import DB_PATH
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT * FROM invoices WHERE status = 'processing'") as cursor:
+                invoices = await cursor.fetchall()
+        
+        pcm = PaymentConfirmationManager(bot)
+        for inv in invoices:
+            logging.info(f"Recovering PROCESSING invoice: {inv['id']}")
+            # Use loop.create_task to not block startup
+            asyncio.create_task(pcm._provision_and_deliver(inv['id'], inv['user_id'], inv))
+    except Exception as e:
+        logging.error(f"Failed to recover processing invoices: {e}")
+
 async def on_shutdown(bot: Bot):
+    """Handles on shutdown."""
     logging.info("Shutting down... deleting webhook.")
     await bot.delete_webhook()
 
 # === MAIN ASYNC INITIALIZATION ===
 async def main():
     # === INIT DATABASE ===
+    """Handles main."""
     await init_db()
     
     # === BOT SETUP ===
@@ -54,6 +80,7 @@ async def main():
         admin_shop_router,
         admin_plans_router,
         admin_reports_router,
+        admin_xui_router,
         checkout_router,
         payment_router,
         support_router, 
@@ -67,6 +94,7 @@ async def main():
     dp.include_router(admin_finance_router)
     dp.include_router(admin_users_router)
     dp.include_router(admin_shop_router)
+    dp.include_router(admin_xui_router)
     dp.include_router(admin_plans_router)
     dp.include_router(checkout_router)
     dp.include_router(payment_router)

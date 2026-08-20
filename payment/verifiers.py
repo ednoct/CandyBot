@@ -1,4 +1,9 @@
-﻿# === IMPORTS ===
+"""
+verifiers.py
+------------
+Module containing functionalities for verifiers.
+"""
+# === IMPORTS ===
 import aiohttp
 import logging
 from database import db_manager

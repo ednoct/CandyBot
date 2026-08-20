@@ -1,4 +1,9 @@
-﻿# === IMPORTS ===
+"""
+discount_api.py
+---------------
+Module containing functionalities for discount_api.
+"""
+# === IMPORTS ===
 from aiohttp import web
 from database import db_manager
 

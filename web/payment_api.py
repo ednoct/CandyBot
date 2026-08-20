@@ -8,6 +8,7 @@ from database import db_manager
 
 # === API ENDPOINTS: PAYMENTS ===
 async def api_get_payments(request):
+    """Handles api get payments."""
     try:
         limit = int(request.query.get('limit', 50))
         page = int(request.query.get('page', 1))
@@ -32,6 +33,7 @@ async def api_get_payments(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_get_payment(request):
+    """Handles api get payment."""
     try:
         data = await request.json()
         id_order = data.get('id_order')
@@ -47,6 +49,7 @@ async def api_get_payment(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_payment_methods(request):
+    """Handles api payment methods."""
     try:
         # Mocking getting settings and calculating limits
         return web.json_response({
@@ -63,6 +66,7 @@ async def api_payment_methods(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_payment_init(request):
+    """Handles api payment init."""
     try:
         data = await request.json()
         method = data.get('method')
@@ -86,6 +90,7 @@ async def api_payment_init(request):
 
 # === API ENDPOINTS: PAYMENT ACTIONS ===
 async def api_pending_payments(request):
+    """Handles api pending payments."""
     try:
         # Mock pending payments
         return web.json_response({
@@ -96,6 +101,7 @@ async def api_pending_payments(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_payment_receipt(request):
+    """Handles api payment receipt."""
     try:
         reader = await request.multipart()
         field = await reader.next()
@@ -109,6 +115,7 @@ async def api_payment_receipt(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_payment_status(request):
+    """Handles api payment status."""
     try:
         order_id = request.query.get('order_id')
         if not order_id:
@@ -179,6 +186,7 @@ async def callback_tetra(request):
 
 # === ROUTER REGISTRATION ===
 def register_payment_routes(app: web.Application):
+    """Handles register payment routes."""
     app.router.add_get('/api/payments', api_get_payments)
     app.router.add_get('/api/payment', api_get_payment)
     app.router.add_get('/api/payment/methods', api_payment_methods)

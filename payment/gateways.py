@@ -10,17 +10,23 @@ import hmac
 
 # === BASE GATEWAY CLASS ===
 class PaymentGateway:
+    """Class representing PaymentGateway."""
     async def create_payment(self, amount: int, description: str, callback_url: str):
+        """Handles create payment."""
         raise NotImplementedError
         
     async def verify_payment(self, payment_id: str, amount: int, **kwargs):
+        """Handles verify payment."""
         raise NotImplementedError
 
 class TetraGateway(PaymentGateway):
+    """Class representing TetraGateway."""
     def __init__(self, api_key: str):
+        """Handles   init  ."""
         self.api_key = api_key
         
     async def create_payment(self, invoice_id: str, amount_toman: int, callback_url: str):
+        """Handles create payment."""
         url = "https://tetra98.com/api/create_order"
         amount_rial = amount_toman * 10
         payload = {
@@ -44,6 +50,7 @@ class TetraGateway(PaymentGateway):
                 return {'success': False, 'error': text}
                 
     async def verify_payment(self, authority: str, invoice_id: str):
+        """Handles verify payment."""
         url = "https://tetra98.com/api/verify"
         payload = {
             "ApiKey": self.api_key,

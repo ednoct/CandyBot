@@ -16,11 +16,13 @@ admin_finance_router = Router()
 from aiogram.fsm.state import State, StatesGroup
 
 class FinanceStates(StatesGroup):
+    """Class representing FinanceStates."""
     waiting_for_crypto_setting = State()
 
 # === ROUTER: FINANCE MENU ===
 @admin_finance_router.callback_query(F.data == "admin_finance")
 async def finance_menu(callback: types.CallbackQuery):
+    """Handles finance menu."""
     if not is_admin(callback.message): return
     
     from database.db_manager import DB_PATH
@@ -28,6 +30,7 @@ async def finance_menu(callback: types.CallbackQuery):
     
     async with aiosqlite.connect(DB_PATH) as db:
         async def get_status(code):
+            """Handles get status."""
             key = f"{code}_status" if code in ['tetra', 'usdt', 'gram'] else f"gateway_status_{code}"
             async with db.execute("SELECT value FROM settings WHERE key = ?", (key,)) as cursor:
                 row = await cursor.fetchone()
@@ -72,6 +75,7 @@ async def finance_menu(callback: types.CallbackQuery):
 
 @admin_finance_router.callback_query(F.data == "fin_set_card")
 async def set_card_number_prompt(callback: types.CallbackQuery, state: FSMContext):
+    """Handles set card number prompt."""
     if not is_admin(callback.message): return
     await state.set_state(AdminStates.waiting_for_card_number)
     
@@ -81,6 +85,7 @@ async def set_card_number_prompt(callback: types.CallbackQuery, state: FSMContex
 
 @admin_finance_router.message(AdminStates.waiting_for_card_number)
 async def set_card_number_process(message: types.Message, state: FSMContext):
+    """Handles set card number process."""
     if not is_admin(message): return
     
     card_number = message.text.strip()
@@ -100,6 +105,7 @@ async def set_card_number_process(message: types.Message, state: FSMContext):
 
 @admin_finance_router.callback_query(F.data.startswith("toggle_fin_"))
 async def handle_finance_toggles(callback: types.CallbackQuery):
+    """Handles handle finance toggles."""
     if not is_admin(callback.message): return
     
     code = callback.data.split('_')[2]
@@ -123,6 +129,7 @@ async def handle_finance_toggles(callback: types.CallbackQuery):
 # === ROUTER: CRYPTO WALLETS ===
 @admin_finance_router.callback_query(F.data == "fin_crypto_wallets")
 async def crypto_wallets_menu(callback: types.CallbackQuery):
+    """Handles crypto wallets menu."""
     if not is_admin(callback.message): return
     builder = InlineKeyboardBuilder()
     builder.button(text="تغییر آدرس USDT", callback_data="set_wallet_usdt")
@@ -136,6 +143,7 @@ async def crypto_wallets_menu(callback: types.CallbackQuery):
 
 @admin_finance_router.callback_query(F.data.in_(["set_wallet_usdt", "set_wallet_gram", "set_memo_gram", "set_exchanger_gram", "set_tetra_api_key"]))
 async def set_crypto_wallet_prompt(callback: types.CallbackQuery, state: FSMContext):
+    """Handles set crypto wallet prompt."""
     if not is_admin(callback.message): return
     key_name = callback.data.replace('set_', '')
     await state.update_data(setting_key=key_name)
@@ -147,6 +155,7 @@ async def set_crypto_wallet_prompt(callback: types.CallbackQuery, state: FSMCont
 
 @admin_finance_router.message(FinanceStates.waiting_for_crypto_setting)
 async def set_crypto_wallet_process(message: types.Message, state: FSMContext):
+    """Handles set crypto wallet process."""
     if not is_admin(message): return
     data = await state.get_data()
     key_name = data.get('setting_key')
@@ -166,6 +175,7 @@ async def set_crypto_wallet_process(message: types.Message, state: FSMContext):
 # === ROUTER: AUTO CONFIRM EXCEPTIONS ===
 @admin_finance_router.callback_query(F.data == "fin_auto_confirm_exceptions")
 async def auto_confirm_exceptions_menu(callback: types.CallbackQuery):
+    """Handles auto confirm exceptions menu."""
     if not is_admin(callback.message): return
     
     builder = InlineKeyboardBuilder()
@@ -179,6 +189,7 @@ async def auto_confirm_exceptions_menu(callback: types.CallbackQuery):
 
 @admin_finance_router.callback_query(F.data == "add_exception")
 async def add_exception_start(callback: types.CallbackQuery, state: FSMContext):
+    """Handles add exception start."""
     if not is_admin(callback.message): return
     await state.set_state(AdminStates.waiting_for_exclude_id)
     
@@ -188,6 +199,7 @@ async def add_exception_start(callback: types.CallbackQuery, state: FSMContext):
 
 @admin_finance_router.message(AdminStates.waiting_for_exclude_id)
 async def add_exception_process(message: types.Message, state: FSMContext):
+    """Handles add exception process."""
     if not is_admin(message): return
     
     try:
@@ -217,6 +229,7 @@ async def add_exception_process(message: types.Message, state: FSMContext):
 
 @admin_finance_router.callback_query(F.data == "del_exception")
 async def del_exception_start(callback: types.CallbackQuery, state: FSMContext):
+    """Handles del exception start."""
     if not is_admin(callback.message): return
     await state.set_state(AdminStates.waiting_for_remove_exclude_id)
     
@@ -226,6 +239,7 @@ async def del_exception_start(callback: types.CallbackQuery, state: FSMContext):
 
 @admin_finance_router.message(AdminStates.waiting_for_remove_exclude_id)
 async def del_exception_process(message: types.Message, state: FSMContext):
+    """Handles del exception process."""
     if not is_admin(message): return
     
     try:
@@ -255,6 +269,7 @@ async def del_exception_process(message: types.Message, state: FSMContext):
 
 @admin_finance_router.callback_query(F.data == "view_exceptions")
 async def view_exceptions_process(callback: types.CallbackQuery):
+    """Handles view exceptions process."""
     if not is_admin(callback.message): return
     
     from database.db_manager import DB_PATH
@@ -277,6 +292,7 @@ async def view_exceptions_process(callback: types.CallbackQuery):
 # === ROUTER: GLOBAL AUTO CONFIRM ===
 @admin_finance_router.callback_query(F.data == 'toggle_auto_confirm_global')
 async def toggle_auto_confirm(callback: types.CallbackQuery):
+    """Handles toggle auto confirm."""
     if not is_admin(callback.message): return
     from database.db_manager import DB_PATH
     import aiosqlite
@@ -296,6 +312,7 @@ async def toggle_auto_confirm(callback: types.CallbackQuery):
 # === ROUTER: PENDING RECEIPTS ===
 @admin_finance_router.callback_query(F.data == 'fin_pending_receipts')
 async def pending_receipts_menu(callback: types.CallbackQuery):
+    """Handles pending receipts menu."""
     if not is_admin(callback.message): return
     
     from database.db_manager import DB_PATH
@@ -327,6 +344,7 @@ async def pending_receipts_menu(callback: types.CallbackQuery):
 # === ROUTER: LIMITS MENU ===
 @admin_finance_router.callback_query(F.data == 'fin_limits_menu')
 async def limits_menu(callback: types.CallbackQuery):
+    """Handles limits menu."""
     if not is_admin(callback.message): return
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     builder = InlineKeyboardBuilder()
@@ -343,6 +361,7 @@ async def limits_menu(callback: types.CallbackQuery):
 
 @admin_finance_router.callback_query(F.data.startswith('lim_'))
 async def set_limit_prompt(callback: types.CallbackQuery, state: FSMContext):
+    """Handles set limit prompt."""
     if not is_admin(callback.message): return
     limit_type = callback.data.split('_')[1] # min or max
     gateway = callback.data.split('_')[2]
@@ -358,6 +377,7 @@ async def set_limit_prompt(callback: types.CallbackQuery, state: FSMContext):
 
 @admin_finance_router.message(AdminStates.waiting_for_min_max_limit)
 async def set_limit_process(message: types.Message, state: FSMContext):
+    """Handles set limit process."""
     if not is_admin(message): return
     try:
         amount = int(message.text)

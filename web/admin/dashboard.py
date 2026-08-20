@@ -1,4 +1,9 @@
-﻿# === IMPORTS ===
+"""
+dashboard.py
+------------
+Module containing functionalities for dashboard.
+"""
+# === IMPORTS ===
 import aiosqlite
 from aiohttp import web
 import aiohttp_jinja2

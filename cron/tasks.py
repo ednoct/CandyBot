@@ -1,6 +1,7 @@
 """
 This module corresponds to the 'cron/tasks.py' branch in the candy_architecture.md map.
 Contains async background loops for DB cleanup, broadcasting, and payment checks (including expiring USDT/GRAM invoices).
+Lottery feature removed.
 """
 # === IMPORTS ===
 import asyncio
@@ -105,48 +106,12 @@ async def cron_housekeeping():
             logging.error(f"Cron Housekeeping Error: {e}")
         await asyncio.sleep(3600)
 
-# === BACKGROUND TASK: LOTTERY ===
-async def cron_lottery():
-    """
-    Background loop to handle score-based lottery rewards.
-    Replaces lottery.php.
-    Runs daily.
-    """
-    while True:
-        try:
-            async with aiosqlite.connect(DB_PATH) as db:
-                db.row_factory = aiosqlite.Row
-                # Check if lottery is enabled in settings
-                async with db.execute("SELECT value FROM settings WHERE key = 'scorestatus'") as cursor:
-                    scorestatus = await cursor.fetchone()
-                
-                if scorestatus and int(scorestatus['value']) == 1:
-                    # Pick top 3 scorers
-                    async with db.execute("SELECT id, score FROM users WHERE score > 0 ORDER BY score DESC LIMIT 3") as cursor:
-                        winners = await cursor.fetchall()
-                    
-                    if winners:
-                        prize_amounts = [50000, 20000, 10000] # Example prizes for 1st, 2nd, 3rd
-                        for i, winner in enumerate(winners):
-                            prize = prize_amounts[i] if i < len(prize_amounts) else 0
-                            if prize > 0:
-                                await db.execute("UPDATE users SET balance = balance + ?, score = 0 WHERE id = ?", (prize, winner['id']))
-                        
-                        # Reset score status so it doesn't trigger repeatedly until admin enables it again
-                        await db.execute("UPDATE settings SET value = '0' WHERE key = 'scorestatus'")
-                        await db.execute("UPDATE users SET score = 0") # Reset everyone's score
-                        await db.commit()
-                        logging.info(f"Lottery ran successfully. Winners: {[w['id'] for w in winners]}")
-        except Exception as e:
-            logging.error(f"Cron Lottery Error: {e}")
-        await asyncio.sleep(86400)
-
 # === CRON SETUP ===
 def setup_cron_tasks(bot=None, loop=None):
+    """Handles setup cron tasks."""
     if loop is None:
         loop = asyncio.get_event_loop()
     loop.create_task(cron_payment_check(bot))
     loop.create_task(cron_database_cleanup())
     loop.create_task(cron_broadcast())
     loop.create_task(cron_housekeeping())
-    loop.create_task(cron_lottery())

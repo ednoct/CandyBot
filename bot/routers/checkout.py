@@ -1,3 +1,8 @@
+"""
+checkout.py
+-----------
+Module containing functionalities for checkout.
+"""
 # === IMPORTS ===
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
@@ -10,6 +15,7 @@ checkout_router = Router()
 
 # === HELPER: GENERATE INVOICE ===
 async def generate_invoice_text(plan_name, admin_description, days, gb, base_price, discount_code, discount_amount, gift_code, gift_amount, wallet_deduction, final_amount):
+    """Handles generate invoice text."""
     text = "پیش پرداخت شما به شرح زیر است:\n"
     text += "خرید اشتراک جدید\nنوع اشتراک: لاینس کندی کانکت\n"
     text += f"سطح: {plan_name}\n\n"
@@ -29,25 +35,77 @@ async def generate_invoice_text(plan_name, admin_description, days, gb, base_pri
     text += f"مبلغ نهایی قابل پرداخت: {final_amount:,} تومان\n"
     return text
 
-# === ROUTER: START CALCULATOR ===
+
+# ============================================================
+# === STEP 0: CONFIG NOTE PROMPT (before calculator) ===
+# ============================================================
+
+LICENSE_NOTE_TEXT = (
+    "📝 <b>نام / یادداشت لایسنس</b>\n\n"
+    "لطفاً یک نام برای لایسنس خود وارد کنید (مثلاً نام دستگاه یا شخص استفاده کننده).\n"
+    "این نام به شما کمک می‌کند لایسنس‌های خود را راحت‌تر مدیریت کنید."
+)
+
 @checkout_router.callback_query(F.data.startswith('checkout_plan_'))
-async def start_calculator(callback: types.CallbackQuery, state: FSMContext):
+async def prompt_license_note(callback: types.CallbackQuery, state: FSMContext):
+    """
+    Intercept plan selection. Before showing the calculator, ask the user for
+    a config note/remark (used as the 3x-UI client label and search identifier).
+    """
+    op_mode = await db_manager.get_operating_mode()
+    if op_mode == "MAINTENANCE":
+        return await callback.answer("ربات در حال بروزرسانی است. لطفاً بعداً تلاش کنید.", show_alert=True)
+    elif op_mode == "SALES_PAUSED":
+        return await callback.answer("فروش در حال حاضر متوقف شده است.", show_alert=True)
+        
     plan_id = int(callback.data.split('_')[2])
     plan = await db_manager.get_plan(plan_id)
     if not plan:
-         return await callback.answer("پلن یافت نشد.", show_alert=True)
-         
+        return await callback.answer("پلن یافت نشد.", show_alert=True)
+
+    # Stash plan data for later use
     await state.update_data(
-        plan_id=plan_id, 
-        plan_price_day=plan['price_per_day'], 
-        plan_price_gb=plan['price_per_gb'], 
+        plan_id=plan_id,
+        plan_price_day=plan['price_per_day'],
+        plan_price_gb=plan['price_per_gb'],
         admin_description=plan['admin_description'],
-        plan_name=plan['name']
+        plan_name=plan['name'],
+        license_note=''  # default empty
     )
+    await state.set_state(CheckoutStates.waiting_for_license_note)
+
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 انصراف", callback_data="main_menu")
+
+    await callback.message.edit_text(
+        LICENSE_NOTE_TEXT,
+        reply_markup=builder.as_markup()
+    )
+
+
+@checkout_router.message(CheckoutStates.waiting_for_license_note)
+async def save_license_note(message: types.Message, state: FSMContext):
+    """User typed their license note. Save it and proceed to calculator."""
+    note = (message.text or "").strip()[:100]  # cap at 100 chars
     
-    await render_calculator(callback.message, state, plan_id)
+    # Validation for mandatory note
+    if not note or len(note) < 2:
+        return await message.answer("❌ نام/یادداشت لایسنس نباید خالی باشد. لطفاً یک نام معتبر وارد کنید:")
+        
+    await state.update_data(license_note=note)
+    await state.set_state(None)
+
+    data = await state.get_data()
+    await render_calculator(message, state, data['plan_id'])
+
+
+# ============================================================
+# === ROUTER: CALCULATOR ===
+# ============================================================
+
 
 async def render_calculator(message: types.Message, state: FSMContext, plan_id: int):
+    """Handles render calculator."""
     data = await state.get_data()
     
     time_packages = await db_manager.get_time_packages(plan_id)
@@ -124,6 +182,7 @@ async def render_calculator(message: types.Message, state: FSMContext, plan_id: 
 
 @checkout_router.callback_query(F.data.startswith('calc_time_'))
 async def update_time(callback: types.CallbackQuery, state: FSMContext):
+    """Handles update time."""
     time_id = int(callback.data.split('_')[2])
     await state.update_data(time_id=time_id)
     data = await state.get_data()
@@ -131,6 +190,7 @@ async def update_time(callback: types.CallbackQuery, state: FSMContext):
 
 @checkout_router.callback_query(F.data.startswith('calc_traffic_'))
 async def update_traffic(callback: types.CallbackQuery, state: FSMContext):
+    """Handles update traffic."""
     traffic_id = int(callback.data.split('_')[2])
     await state.update_data(traffic_id=traffic_id)
     data = await state.get_data()
@@ -139,11 +199,13 @@ async def update_traffic(callback: types.CallbackQuery, state: FSMContext):
 # === ROUTER: PRE-PAYMENT INVOICE ===
 @checkout_router.callback_query(F.data == 'checkout_confirm')
 async def show_pre_payment(callback: types.CallbackQuery, state: FSMContext):
+    """Handles show pre payment."""
     data = await state.get_data()
     await prepare_and_send_invoice(callback.message, callback.from_user.id, data, state)
 
 async def prepare_and_send_invoice(message: types.Message, user_id: int, data: dict, state: FSMContext):
     # Base Values
+    """Handles prepare and send invoice."""
     days = data['days']
     gb = data['gb']
     price_per_day = data['plan_price_day']
@@ -246,6 +308,7 @@ async def prepare_and_send_invoice(message: types.Message, user_id: int, data: d
 # === ROUTER: DISCOUNT CODE ===
 @checkout_router.callback_query(F.data == "apply_discount")
 async def ask_discount(callback: types.CallbackQuery, state: FSMContext):
+    """Handles ask discount."""
     await state.set_state(CheckoutStates.waiting_for_discount_code)
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 انصراف", callback_data="cancel_modifier")
@@ -253,6 +316,7 @@ async def ask_discount(callback: types.CallbackQuery, state: FSMContext):
 
 @checkout_router.message(CheckoutStates.waiting_for_discount_code)
 async def process_discount(message: types.Message, state: FSMContext):
+    """Handles process discount."""
     code = message.text
     # validate code against db_manager
     discount = await db_manager.get_discount_code(code, message.from_user.id)
@@ -279,6 +343,7 @@ async def process_discount(message: types.Message, state: FSMContext):
 # === ROUTER: GIFT CODE ===
 @checkout_router.callback_query(F.data == "apply_gift")
 async def ask_gift(callback: types.CallbackQuery, state: FSMContext):
+    """Handles ask gift."""
     await state.set_state(CheckoutStates.waiting_for_gift_code)
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 انصراف", callback_data="cancel_modifier")
@@ -286,6 +351,7 @@ async def ask_gift(callback: types.CallbackQuery, state: FSMContext):
 
 @checkout_router.message(CheckoutStates.waiting_for_gift_code)
 async def process_gift(message: types.Message, state: FSMContext):
+    """Handles process gift."""
     code = message.text
     gift = await db_manager.get_gift_code(code, message.from_user.id)
     if not gift or 'error' in gift:
@@ -301,23 +367,26 @@ async def process_gift(message: types.Message, state: FSMContext):
 # === ROUTER: CANCEL MODIFIER ===
 @checkout_router.callback_query(F.data == "cancel_modifier")
 async def cancel_modifier(callback: types.CallbackQuery, state: FSMContext):
+    """Handles cancel modifier."""
     await state.set_state(None)
     await prepare_and_send_invoice(callback.message, callback.from_user.id, await state.get_data(), state)
 
 @checkout_router.callback_query(F.data == "pay_free")
 async def pay_free(callback: types.CallbackQuery, state: FSMContext):
+    """Handles pay free."""
     data = await state.get_data()
     invoice_id = str(uuid.uuid4())[:8].upper()
-    
+    license_note = data.get('license_note', '')
+
     async with aiosqlite.connect(db_manager.DB_PATH) as db:
         await db.execute('''
             INSERT INTO invoices (id, user_id, plan_id, days, gb, base_price, wallet_deduction, 
-            discount_code, discount_deduction, gift_code, gift_deduction, final_amount, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'paid')
+            discount_code, discount_deduction, gift_code, gift_deduction, final_amount, license_note, status, renew_license_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'paid', ?)
         ''', (invoice_id, callback.from_user.id, data['plan_id'], data['days'], data['gb'],
               data['base_price'], data['wallet_deduction'], data.get('discount_code'), 
               data.get('discount_amount', 0), data.get('gift_code'), data.get('gift_amount', 0), 
-              0))
+              0, license_note, data.get('renew_license_id')))
         await db.commit()
         
     await state.clear()
@@ -332,6 +401,7 @@ async def pay_free(callback: types.CallbackQuery, state: FSMContext):
 # === ROUTER: FREE TEST ===
 @checkout_router.callback_query(F.data == "free_test")
 async def process_free_test(callback: types.CallbackQuery):
+    """Handles process free test."""
     user_id = callback.from_user.id
     
     async with aiosqlite.connect(db_manager.DB_PATH) as db:

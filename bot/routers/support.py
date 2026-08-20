@@ -1,3 +1,8 @@
+"""
+support.py
+----------
+Module containing functionalities for support.
+"""
 # === IMPORTS ===
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
@@ -10,6 +15,7 @@ support_router = Router()
 # === ROUTER: SUPPORT REQUEST ===
 @support_router.callback_query(F.data == "support")
 async def support_start(callback: types.CallbackQuery, state: FSMContext):
+    """Handles support start."""
     await state.set_state(SupportStates.waiting_for_user_message)
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 انصراف", callback_data="main_menu")
@@ -17,6 +23,7 @@ async def support_start(callback: types.CallbackQuery, state: FSMContext):
 
 @support_router.message(SupportStates.waiting_for_user_message)
 async def process_support_msg(message: types.Message, state: FSMContext):
+    """Handles process support msg."""
     await state.set_state(None)
     
     # Forward to all admins
@@ -38,6 +45,7 @@ async def process_support_msg(message: types.Message, state: FSMContext):
 # === ROUTER: ADMIN REPLY ===
 @support_router.callback_query(F.data.startswith('reply_'))
 async def admin_reply_start(callback: types.CallbackQuery, state: FSMContext):
+    """Handles admin reply start."""
     user_id = int(callback.data.split('_')[1])
     await state.update_data(reply_to_user_id=user_id)
     await state.set_state(SupportStates.waiting_for_admin_reply)
@@ -45,6 +53,7 @@ async def admin_reply_start(callback: types.CallbackQuery, state: FSMContext):
 
 @support_router.message(SupportStates.waiting_for_admin_reply)
 async def admin_reply_send(message: types.Message, state: FSMContext):
+    """Handles admin reply send."""
     data = await state.get_data()
     user_id = data.get('reply_to_user_id')
     if not user_id:

@@ -1,4 +1,10 @@
+"""
+config.py
+---------
+Module containing functionalities for config.
+"""
 # === IMPORTS AND ENV LOAD ===
+# === IMPORTS ===
 import os
 from dotenv import load_dotenv
 

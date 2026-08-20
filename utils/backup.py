@@ -1,4 +1,9 @@
-﻿# === IMPORTS ===
+"""
+backup.py
+---------
+Module containing functionalities for backup.
+"""
+# === IMPORTS ===
 import asyncio
 import logging
 import zipfile

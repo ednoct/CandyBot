@@ -1,9 +1,15 @@
+"""
+invoice_api.py
+--------------
+Module containing functionalities for invoice_api.
+"""
 # === IMPORTS ===
 from aiohttp import web
 from database import db_manager
 
 # === API ENDPOINTS: INVOICES ===
 async def api_get_invoices(request):
+    """Handles api get invoices."""
     try:
         limit = int(request.query.get('limit', 50))
         page = int(request.query.get('page', 1))
@@ -27,6 +33,7 @@ async def api_get_invoices(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_user_invoices(request):
+    """Handles api user invoices."""
     try:
         limit = int(request.query.get('limit', 10))
         page = int(request.query.get('page', 1))
@@ -49,6 +56,7 @@ async def api_user_invoices(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_get_services(request):
+    """Handles api get services."""
     try:
         limit = int(request.query.get('limit', 50))
         page = int(request.query.get('page', 1))
@@ -72,6 +80,7 @@ async def api_get_services(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_get_invoice(request):
+    """Handles api get invoice."""
     try:
         data = await request.json()
         id_invoice = data.get('id_invoice')
@@ -87,6 +96,7 @@ async def api_get_invoice(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_invoice_add(request):
+    """Handles api invoice add."""
     try:
         data = await request.json()
         chat_id = data.get('chat_id')
@@ -102,6 +112,7 @@ async def api_invoice_add(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_remove_service(request):
+    """Handles api remove service."""
     try:
         data = await request.json()
         id_invoice = data.get('id_invoice')
@@ -115,6 +126,7 @@ async def api_remove_service(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_service_action(request):
+    """Handles api service action."""
     try:
         data = await request.json()
         action = data.get('action')
@@ -124,6 +136,7 @@ async def api_service_action(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_service_simple_action(request):
+    """Handles api service simple action."""
     try:
         data = await request.json()
         action = data.get('action')
@@ -133,6 +146,7 @@ async def api_service_simple_action(request):
         return web.json_response({'status': False, 'msg': str(e)}, status=500)
 
 async def api_time_ranges(request):
+    """Handles api time ranges."""
     try:
         # Mocking time ranges
         return web.json_response({
@@ -147,6 +161,7 @@ async def api_time_ranges(request):
 
 # === ROUTER REGISTRATION ===
 def register_invoice_routes(app: web.Application):
+    """Handles register invoice routes."""
     app.router.add_get('/api/invoices', api_get_invoices)
     app.router.add_get('/api/user_invoices', api_user_invoices)
     app.router.add_get('/api/services', api_get_services)

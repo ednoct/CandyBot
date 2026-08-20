@@ -1,4 +1,9 @@
-﻿# === IMPORTS ===
+"""
+finance.py
+----------
+Module containing functionalities for finance.
+"""
+# === IMPORTS ===
 import aiosqlite
 from aiohttp import web
 import aiohttp_jinja2
