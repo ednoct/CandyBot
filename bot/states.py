@@ -29,6 +29,8 @@ class AdminStates(StatesGroup):
     waiting_for_crypto_address = State()
     waiting_for_transfer_target_id = State()
     waiting_for_qr_background = State()
+    waiting_for_app_name = State()
+    waiting_for_app_url = State()
     # === XUI Panel Management (مدیریت ثنا) ===
     waiting_for_panel_url = State()
     waiting_for_panel_token = State()
