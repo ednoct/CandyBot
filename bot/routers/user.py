@@ -389,9 +389,9 @@ async def affiliate_dashboard(callback: types.CallbackQuery):
         f"👥 <b>سیستم زیرمجموعه گیری (بازاریابی)</b>\n\n"
         f"با دعوت دوستان خود، درصدی از مبلغ خرید آنها را به عنوان پورسانت دریافت کنید!\n\n"
         f"📊 <b>آمار شما:</b>\n"
-        f"تعداد دعوت شده‌ها: {stats['invited_count']} نفر\n"
-        f"تعداد خریداران: {stats['buyers_count']} نفر\n"
-        f"کل پورسانت دریافتی: {stats['total_earned']:,} تومان\n\n"
+        f"تعداد دعوت شده‌ها: {stats['invited']} نفر\n"
+        f"تعداد خریداران: {stats['buyers']} نفر\n"
+        f"کل پورسانت دریافتی: {stats['earned']:,} تومان\n\n"
         f"🔗 <b>لینک اختصاصی شما:</b>\n<code>{ref_link}</code>"
     )
     
