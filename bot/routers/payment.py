@@ -66,15 +66,15 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
     # Generate Invoice in DB
     async with aiosqlite.connect(db_manager.DB_PATH) as db:
         # First save to standard invoices for products
-        config_note = data.get('config_note', '')
+        license_note = data.get('license_note', '')
         await db.execute('''
             INSERT INTO invoices (id, user_id, plan_id, days, gb, base_price, wallet_deduction, 
-            discount_code, discount_deduction, gift_code, gift_deduction, final_amount, config_note, status, renew_license_id)
+            discount_code, discount_deduction, gift_code, gift_deduction, final_amount, license_note, status, renew_license_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
         ''', (invoice_id, callback.from_user.id, data.get('plan_id'), data.get('days'), data.get('gb'),
               data.get('base_price'), data.get('wallet_deduction'), data.get('discount_code'), 
               data.get('discount_amount', 0), data.get('gift_code'), data.get('gift_amount', 0), 
-              amount, config_note, data.get('renew_license_id')))
+              amount, license_note, data.get('renew_license_id')))
               
         # Also create a legacy payment_report if offline
         if gateway_code in ['usdt', 'gram']:
