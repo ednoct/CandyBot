@@ -255,7 +255,9 @@ class PaymentConfirmationManager:
                     await db.execute("UPDATE xui_licenses SET invoice_id = ?, panel_id = ? WHERE id = ?", (invoice_id, panel['id'], renew_lic_id))
                     await db.commit()
             else:
-                sub_id = await provision_license(panel, full_invoice, user_id)
+                # Paid plan = "Customers" group, Free trial = "Trial" group
+                xui_group = "Trial" if is_free_test else "Customers"
+                sub_id = await provision_license(panel, full_invoice, user_id, group=xui_group)
         except Exception as e:
             error_text = str(e)[:600]
             logging.error(f"XUI provisioning failed for invoice {invoice_id}: {error_text}", exc_info=True)

@@ -44,12 +44,12 @@ async def manage_discounts(callback: types.CallbackQuery):
     
     async with aiosqlite.connect(db_manager.DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM discount_codes ORDER BY id DESC LIMIT 20") as cursor:
+        async with db.execute("SELECT * FROM discount_codes LIMIT 20") as cursor:
             codes = await cursor.fetchall()
             
     builder = InlineKeyboardBuilder()
     for code in codes:
-        builder.button(text=f"❌ حذف {code['code']}", callback_data=f"del_discount_{code['id']}")
+        builder.button(text=f"❌ حذف {code['code']}", callback_data=f"del_discount_{code['code']}")
         
     builder.button(text="➕ افزودن کد تخفیف", callback_data="add_discount_start")
     builder.button(text="🔙 بازگشت", callback_data="admin_discounts")
@@ -61,9 +61,9 @@ async def manage_discounts(callback: types.CallbackQuery):
 @admin_discounts_router.callback_query(F.data.startswith("del_discount_"))
 async def del_discount(callback: types.CallbackQuery):
     if not is_admin(callback.message): return
-    did = int(callback.data.split("_")[2])
+    code = callback.data.replace("del_discount_", "")
     async with aiosqlite.connect(db_manager.DB_PATH) as db:
-        await db.execute("DELETE FROM discount_codes WHERE id = ?", (did,))
+        await db.execute("DELETE FROM discount_codes WHERE code = ?", (code,))
         await db.commit()
     await callback.answer("✅ کد تخفیف حذف شد.", show_alert=True)
     await manage_discounts(callback)
@@ -161,12 +161,12 @@ async def manage_gifts(callback: types.CallbackQuery):
     
     async with aiosqlite.connect(db_manager.DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM gift_codes ORDER BY id DESC LIMIT 20") as cursor:
+        async with db.execute("SELECT * FROM gift_codes LIMIT 20") as cursor:
             codes = await cursor.fetchall()
             
     builder = InlineKeyboardBuilder()
     for code in codes:
-        builder.button(text=f"❌ حذف {code['code']}", callback_data=f"del_gift_{code['id']}")
+        builder.button(text=f"❌ حذف {code['code']}", callback_data=f"del_gift_{code['code']}")
         
     builder.button(text="➕ افزودن کد هدیه", callback_data="add_gift_start")
     builder.button(text="🔙 بازگشت", callback_data="admin_discounts")
@@ -178,9 +178,9 @@ async def manage_gifts(callback: types.CallbackQuery):
 @admin_discounts_router.callback_query(F.data.startswith("del_gift_"))
 async def del_gift(callback: types.CallbackQuery):
     if not is_admin(callback.message): return
-    did = int(callback.data.split("_")[2])
+    code = callback.data.replace("del_gift_", "")
     async with aiosqlite.connect(db_manager.DB_PATH) as db:
-        await db.execute("DELETE FROM gift_codes WHERE id = ?", (did,))
+        await db.execute("DELETE FROM gift_codes WHERE code = ?", (code,))
         await db.commit()
     await callback.answer("✅ کد هدیه حذف شد.", show_alert=True)
     await manage_gifts(callback)

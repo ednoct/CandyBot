@@ -261,10 +261,12 @@ class XUIClient:
         tg_id: int,
         limit_ip: int,
         inbound_ids: list,
+        group: str = "Customers",
     ) -> bool:
         """
         Create a new client on the panel.
         total_gb=0 means unlimited traffic.
+        group: XUI client group name ("Customers" for paid, "Trial" for free test).
         """
         total_bytes = int(float(total_gb) * 1024 ** 3) if float(total_gb) > 0 else 0
         expiry_ms = int((time.time() + days * 86400) * 1000)
@@ -277,6 +279,7 @@ class XUIClient:
                 "tgId": int(tg_id),
                 "limitIp": int(limit_ip),
                 "enable": True,
+                "group": group,
             },
             "inboundIds": inbound_ids,
         }
@@ -321,9 +324,11 @@ class XUIClient:
         tg_id: int,
         limit_ip: int,
         inbound_ids: list,
+        group: str = "Customers",
     ) -> str:
         """
         Idempotent: create the client if it doesn't exist, then return its subId.
+        group: "Customers" for paid plans, "Trial" for free tests.
 
         Raises RuntimeError if provisioning fails or no subId is available.
         """
@@ -331,7 +336,7 @@ class XUIClient:
         client_data = await self.get_client(email)
 
         if not client_data:
-            await self.add_client(email, total_gb, days, tg_id, limit_ip, inbound_ids)
+            await self.add_client(email, total_gb, days, tg_id, limit_ip, inbound_ids, group=group)
             # Brief pause for panel to register the new client
             await asyncio.sleep(1.2)
             client_data = await self.get_client(email)
@@ -383,7 +388,7 @@ class XUIClient:
 # Module-level convenience coroutines (called from payment/confirm.py)
 # ---------------------------------------------------------------------------
 
-async def provision_license(panel_row, invoice_row, user_id: int) -> str:
+async def provision_license(panel_row, invoice_row, user_id: int, group: str = "Customers") -> str:
     """
     Top-level coroutine that provisions a 3x-UI license for a paid invoice.
 
@@ -392,6 +397,7 @@ async def provision_license(panel_row, invoice_row, user_id: int) -> str:
     panel_row   : aiosqlite.Row from `xui_panels` (url, bearer_token, inbound_ids, ip_limit)
     invoice_row : aiosqlite.Row from `invoices`   (id, days, gb, license_note)
     user_id     : Telegram user ID
+    group       : XUI client group — "Customers" for paid plans, "Trial" for free tests
 
     Returns
     -------
@@ -435,9 +441,10 @@ async def provision_license(panel_row, invoice_row, user_id: int) -> str:
             tg_id=user_id,
             limit_ip=ip_limit,
             inbound_ids=inbound_ids,
+            group=group,
         )
 
-    logger.info("License provisioned | email=%s | sub_id=%s", email, sub_id)
+    logger.info("License provisioned | email=%s | sub_id=%s | group=%s", email, sub_id, group)
     return sub_id
 
 

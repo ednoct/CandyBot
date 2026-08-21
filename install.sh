@@ -166,7 +166,6 @@ EOF
     banner
     _sec "Installation Complete"
     _kv "Bot Service" "${C_OK}Active (Systemd)${CR}"
-    _kv "Webhook URL" "${C_KEY}https://$YOUR_DOMAIN/webhook/main${CR}"
     
     echo ""
     read -p "  ❯ Press Enter to return to menu..." _ < /dev/tty
