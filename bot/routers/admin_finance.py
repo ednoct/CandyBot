@@ -62,6 +62,7 @@ async def finance_menu(callback: types.CallbackQuery):
     builder.button(text="🚫 استثناء تایید خودکار", callback_data="fin_auto_confirm_exceptions")
     
     # New Options
+    builder.button(text="🎁 مدیریت تخفیف و هدیه", callback_data="admin_discounts")
     builder.button(text="🤖 تایید رسید بدون بررسی", callback_data="toggle_auto_confirm_global")
     builder.button(text="💵 رسید های تایید نشده", callback_data="fin_pending_receipts")
     builder.button(text="📈 محدودیت‌های واریز", callback_data="fin_limits_menu")
@@ -69,7 +70,7 @@ async def finance_menu(callback: types.CallbackQuery):
     # Back
     builder.button(text="🔙 بازگشت", callback_data="admin_back")
     
-    builder.adjust(2, 2, 2, 2, 2, 1, 1, 1, 1, 1)
+    builder.adjust(2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1)
     
     await callback.message.edit_text("💎 **مدیریت مالی و درگاه‌ها**", reply_markup=builder.as_markup(), parse_mode="Markdown")
 

@@ -38,6 +38,9 @@ async def init_db():
             "ALTER TABLE invoices ADD COLUMN panel_id INTEGER",
             "ALTER TABLE invoices ADD COLUMN renew_license_id INTEGER",
             "ALTER TABLE invoices ADD COLUMN last_error TEXT",
+            "ALTER TABLE xui_licenses ADD COLUMN alert_sent INTEGER DEFAULT 0",
+            "ALTER TABLE xui_panels ADD COLUMN name TEXT",
+            "ALTER TABLE xui_panels ADD COLUMN sub_link TEXT",
             # Referral & CRM columns
             "ALTER TABLE users ADD COLUMN referred_by INTEGER",
             "ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1",
@@ -53,6 +56,24 @@ async def init_db():
         )
         await db.execute(
             "INSERT OR IGNORE INTO settings (key, value) VALUES ('cashback_percent', '0')"
+        )
+        await db.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES ('free_test_enabled', '0')"
+        )
+        await db.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES ('free_test_gb', '1')"
+        )
+        await db.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES ('free_test_days', '1')"
+        )
+        await db.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES ('free_test_daily_limit', '50')"
+        )
+        await db.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES ('free_test_panel_id', '0')"
+        )
+        await db.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES ('admin_card_number', '1234-5678-9012-3456')"
         )
         await db.execute(
             "INSERT OR IGNORE INTO settings (key, value) VALUES ('referral_enabled', '0')"
@@ -575,12 +596,12 @@ async def get_discount_code(code: str, user_id: int):
 # === XUI PANEL DB OPERATIONS ===
 # ============================================================
 
-async def add_xui_panel(url: str, bearer_token: str, inbound_ids: str, ip_limit: int, label: str = None) -> int:
+async def add_xui_panel(name: str, url: str, sub_link: str, bearer_token: str, inbound_ids: str, ip_limit: int, label: str = None) -> int:
     """Insert a new XUI panel definition and return its generated id."""
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
-            'INSERT INTO xui_panels (url, bearer_token, inbound_ids, ip_limit, label) VALUES (?, ?, ?, ?, ?)',
-            (url.rstrip('/'), bearer_token, inbound_ids, ip_limit, label)
+            'INSERT INTO xui_panels (name, url, sub_link, bearer_token, inbound_ids, ip_limit, label) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            (name, url.rstrip('/'), sub_link, bearer_token, inbound_ids, ip_limit, label)
         )
         await db.commit()
         return cursor.lastrowid

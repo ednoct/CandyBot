@@ -32,10 +32,31 @@ class AdminStates(StatesGroup):
     waiting_for_app_name = State()
     waiting_for_app_url = State()
     # === XUI Panel Management (مدیریت ثنا) ===
+    waiting_for_panel_name = State()
     waiting_for_panel_url = State()
+    waiting_for_panel_sub_link = State()
     waiting_for_panel_token = State()
     waiting_for_panel_inbound_ids = State()
     waiting_for_panel_ip_limit = State()
+
+    # === Admin Discounts & Gifts ===
+    waiting_for_admin_discount_code = State()
+    waiting_for_admin_discount_type = State()
+    waiting_for_admin_discount_value = State()
+    waiting_for_admin_discount_max_uses = State()
+    waiting_for_admin_discount_expiry = State()
+    waiting_for_admin_discount_user_id = State()
+    
+    waiting_for_admin_gift_code = State()
+    waiting_for_admin_gift_value = State()
+    waiting_for_admin_gift_max_uses = State()
+    waiting_for_admin_gift_expiry = State()
+    waiting_for_admin_gift_user_id = State()
+
+    # === Free Trial ===
+    waiting_for_free_trial_gb = State()
+    waiting_for_free_trial_days = State()
+    waiting_for_free_trial_daily_limit = State()
 
 # === FSM STATES: CHECKOUT ===
 class CheckoutStates(StatesGroup):

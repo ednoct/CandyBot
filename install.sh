@@ -85,24 +85,26 @@ install_bot() {
     fi
 
     run_step "Updating system packages" "apt-get update -y"
-    run_step "Installing dependencies (Python, Nginx, Certbot)" "apt-get install -y python3 python3-pip python3-venv python3-dev nginx certbot python3-certbot-nginx git curl jq ufw sqlite3"
+    
+    # 1. NO Nginx. Just Python, Certbot, and basic utilities.
+    run_step "Installing dependencies (Python, Certbot)" "apt-get install -y python3 python3-pip python3-venv python3-dev certbot git curl jq ufw sqlite3"
 
     _sec "Bot Configuration"
-    # 1. Get Domain
+    # Get Domain
     read -p "  ❯ Enter your domain (e.g. api.domain.com): " YOUR_DOMAIN < /dev/tty
     while ! validate_domain "$YOUR_DOMAIN"; do
         echo -e "  ${C_BAD}Invalid domain format.${CR}"
         read -p "  ❯ Enter your domain: " YOUR_DOMAIN < /dev/tty
     done
 
-    # 2. Get Token
+    # Get Token
     read -p "  ❯ Enter Telegram Bot Token: " YOUR_TOKEN < /dev/tty
     while ! validate_token "$YOUR_TOKEN"; do
         echo -e "  ${C_BAD}Invalid token format.${CR}"
         read -p "  ❯ Enter Telegram Bot Token: " YOUR_TOKEN < /dev/tty
     done
 
-    # 3. Get Admin ID
+    # Get Admin ID
     read -p "  ❯ Enter Admin Telegram ID: " YOUR_ADMIN < /dev/tty
     while [[ ! "$YOUR_ADMIN" =~ ^[0-9]+$ ]]; do
         echo -e "  ${C_BAD}Must be a number.${CR}"
@@ -117,54 +119,31 @@ install_bot() {
     run_step "Creating Python virtual environment" "python3 -m venv $BOT_DIR/venv"
     run_step "Installing Python requirements" "$BOT_DIR/venv/bin/pip install --upgrade pip && $BOT_DIR/venv/bin/pip install -r $BOT_DIR/requirements.txt"
 
-    # Create .env file
+    # Firewall: Allow 80 (for Certbot Standalone) and 443 (for Telegram Webhook)
+    run_step "Configuring Firewall (UFW)" "ufw allow 80/tcp && ufw allow 443/tcp >/dev/null 2>&1 || true"
+
+    # 2. SSL Configuration (Standalone mode - spins up its own temp server on port 80)
+    run_step "Obtaining Let's Encrypt SSL (Standalone)" "certbot certonly --standalone -d $YOUR_DOMAIN --non-interactive --agree-tos --register-unsafely-without-email"
+
+    # 3. Create .env file (Routing Python to port 443 directly with the SSL certs)
     cat <<EOF > $BOT_DIR/.env
 BOT_TOKEN="$YOUR_TOKEN"
 ADMIN_IDS="$YOUR_ADMIN"
-WEB_HOST="127.0.0.1"
-WEB_PORT="8080"
-CORS_ORIGIN="*"
+WEB_HOST="0.0.0.0"
+WEB_PORT="443"
 WEBHOOK_DOMAIN="$YOUR_DOMAIN"
+SSL_CERT="/etc/letsencrypt/live/$YOUR_DOMAIN/fullchain.pem"
+SSL_PRIV="/etc/letsencrypt/live/$YOUR_DOMAIN/privkey.pem"
 EOF
     run_step "Generating .env configuration" "chmod 600 $BOT_DIR/.env"
 
     # Initialize Database (SQLite)
     run_step "Initializing SQLite database" "cd $BOT_DIR && PYTHONPATH=$BOT_DIR $BOT_DIR/venv/bin/python -c 'import asyncio; from database.db_manager import init_db; asyncio.run(init_db())' 2>/dev/null || true"
 
-    # Generate and Inject Web Admin Credentials
-    WEB_ADMIN_USER="admin_$(cat /dev/urandom | tr -dc 'a-z0-9' | fold -w 4 | head -n 1)"
-    WEB_ADMIN_PASS="$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 10 | head -n 1)"
-    
-    run_step "Creating Web Admin User" "sqlite3 $BOT_DIR/candy.db \"INSERT INTO admins (username, password, role) VALUES ('$WEB_ADMIN_USER', '$WEB_ADMIN_PASS', 'admin');\""
-
-    # Nginx Configuration
-    local VHOST="/etc/nginx/sites-available/$YOUR_DOMAIN.conf"
-    cat <<EOF > "$VHOST"
-server {
-    listen 80;
-    server_name $YOUR_DOMAIN;
-
-    location / {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-}
-EOF
-    run_step "Configuring Nginx Reverse Proxy" "ln -sf $VHOST /etc/nginx/sites-enabled/ && rm -f /etc/nginx/sites-enabled/default && systemctl restart nginx"
-
-    # SSL Configuration
-    run_step "Obtaining Let's Encrypt SSL" "certbot --nginx -d $YOUR_DOMAIN --non-interactive --agree-tos --register-unsafely-without-email"
-
     # Systemd Service
     cat <<EOF > /etc/systemd/system/candybot.service
 [Unit]
-Description=CandyBot Telegram & Web API Service
+Description=CandyBot Telegram Webhook Service
 After=network.target
 
 [Service]
@@ -180,23 +159,15 @@ WantedBy=multi-user.target
 EOF
     run_step "Creating Systemd service" "systemctl daemon-reload && systemctl enable candybot && systemctl start candybot"
 
-    # Firewall
-    run_step "Configuring Firewall (UFW)" "ufw allow 80/tcp && ufw allow 443/tcp >/dev/null 2>&1 || true"
-
-    # Telegram Webhook
+    # 4. Telegram Webhook (Standard Port 443, no appended port needed)
     run_step "Setting Telegram Webhook" "curl -s \"https://api.telegram.org/bot\$YOUR_TOKEN/setWebhook?url=https://\$YOUR_DOMAIN/webhook/main\" > /dev/null"
 
     clear
     banner
     _sec "Installation Complete"
     _kv "Bot Service" "${C_OK}Active (Systemd)${CR}"
-    _kv "Web Panel URL" "${C_KEY}https://$YOUR_DOMAIN/admin/login${CR}"
+    _kv "Webhook URL" "${C_KEY}https://$YOUR_DOMAIN/webhook/main${CR}"
     
-    _sec "Web Panel Credentials"
-    _kv "Username" "${C_KEY}$WEB_ADMIN_USER${CR}"
-    _kv "Password" "${C_KEY}$WEB_ADMIN_PASS${CR}"
-    printf "    ${C_WARN}!${CR} ${C_DIM}Please save these credentials somewhere safe.${CR}\n"
-
     echo ""
     read -p "  ❯ Press Enter to return to menu..." _ < /dev/tty
     show_menu
@@ -238,7 +209,6 @@ remove_bot() {
     fi
 
     run_step "Stopping and disabling services" "systemctl stop candybot 2>/dev/null; systemctl disable candybot 2>/dev/null; rm -f /etc/systemd/system/candybot.service; systemctl daemon-reload"
-    run_step "Removing Nginx configurations" "rm -f /etc/nginx/sites-enabled/*.conf /etc/nginx/sites-available/*.conf 2>/dev/null; systemctl restart nginx"
     run_step "Deleting bot directory" "rm -rf $BOT_DIR"
     
     echo -e "\n  ${C_OK}✔${CR} ${C_OK}CandyBot has been completely removed from this server.${CR}\n"

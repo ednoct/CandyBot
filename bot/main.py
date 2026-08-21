@@ -9,30 +9,25 @@ import logging
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
-from aiohttp import web
-
-from bot.config import BOT_TOKEN, WEB_HOST, WEB_PORT, WEBHOOK_DOMAIN
+from bot.config import BOT_TOKEN
 from database.db_manager import init_db
 from bot.routers import checkout_router, admin_router, user_router, support_router
-from web.panel_api import init_web_app
+from cron.tasks import setup_cron_tasks
 from cron.tasks import setup_cron_tasks
 
 # === LOGGING CONFIG ===
 logging.basicConfig(level=logging.INFO)
 
-# === WEBHOOK PATH ===
-WEBHOOK_PATH = "/webhook/main"
-WEBHOOK_URL = f"https://{WEBHOOK_DOMAIN}{WEBHOOK_PATH}"
+
 
 # === STARTUP / SHUTDOWN HANDLERS ===
 async def on_startup(bot: Bot):
     """Handles on startup."""
     try:
-        await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
-        logging.info(f"Webhook set to {WEBHOOK_URL}")
+        await bot.delete_webhook(drop_pending_updates=True)
+        logging.info("Webhook deleted, starting long-polling...")
     except Exception as e:
-        logging.error(f"Failed to set webhook (might be rate-limited): {e}")
+        logging.error(f"Failed to delete webhook: {e}")
 
     # Recover PROCESSING invoices
     try:
@@ -54,8 +49,7 @@ async def on_startup(bot: Bot):
 
 async def on_shutdown(bot: Bot):
     """Handles on shutdown."""
-    logging.info("Shutting down... deleting webhook.")
-    await bot.delete_webhook()
+    logging.info("Shutting down...")
 
 # === MAIN ASYNC INITIALIZATION ===
 async def main():
@@ -81,10 +75,13 @@ async def main():
         admin_plans_router,
         admin_reports_router,
         admin_xui_router,
+        admin_discounts_router,
+        admin_free_trial_router,
         checkout_router,
         payment_router,
         support_router, 
-        user_router
+        user_router,
+        user_free_trial_router
     )
     
     dp.include_router(user_router)
@@ -95,40 +92,20 @@ async def main():
     dp.include_router(admin_users_router)
     dp.include_router(admin_shop_router)
     dp.include_router(admin_xui_router)
+    dp.include_router(admin_discounts_router)
+    dp.include_router(admin_free_trial_router)
     dp.include_router(admin_plans_router)
     dp.include_router(checkout_router)
     dp.include_router(payment_router)
     dp.include_router(support_router)
+    dp.include_router(user_free_trial_router)
     
     # === CRON TASKS ===
     setup_cron_tasks(bot)
     
-    # === WEB SERVER START ===
-    web_app = await init_web_app()
-    
-    # Link aiogram to aiohttp web server
-    webhook_requests_handler = SimpleRequestHandler(
-        dispatcher=dp,
-        bot=bot,
-    )
-    webhook_requests_handler.register(web_app, path=WEBHOOK_PATH)
-    setup_application(web_app, dp, bot=bot)
-
-    # Start aiohttp server
-    runner = web.AppRunner(web_app)
-    await runner.setup()
-    site = web.TCPSite(runner, WEB_HOST, WEB_PORT)
-    await site.start()
-    logging.info(f"Web API & Webhook running on http://{WEB_HOST}:{WEB_PORT}")
-    
-    # Set Telegram Webhook
-    await on_startup(bot)
-
-    # Keep the event loop running
-    try:
-        await asyncio.Event().wait()
-    finally:
-        await on_shutdown(bot)
+    # === START POLLING ===
+    logging.info("Starting bot polling...")
+    await dp.start_polling(bot)
 
 # === ENTRY POINT ===
 if __name__ == "__main__":

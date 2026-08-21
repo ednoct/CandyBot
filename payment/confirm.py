@@ -182,17 +182,25 @@ class PaymentConfirmationManager:
     # ------------------------------------------------------------------
     # PRIVATE: _provision_and_deliver
     # ------------------------------------------------------------------
-    async def _provision_and_deliver(self, invoice_id: str, user_id: int, invoice) -> None:
+    async def _provision_and_deliver(self, invoice_id: str, user_id: int, invoice, is_free_test: bool = False) -> None:
         """
         1. Find the panel bound to the invoice's plan.
         2. Provision a license on that panel.
         3. Store the license row.
         4. Deliver sub_id + QR code to user.
         """
-        plan_id = invoice['plan_id']
+        # Convert sqlite3.Row to dict to avoid .get() issues
+        if not isinstance(invoice, dict):
+            invoice = dict(invoice)
+            
+        plan_id = invoice.get('plan_id', 0)
 
         # Fetch the panel binding for this plan
-        binding = await db_manager.get_plan_panel(plan_id)
+        if is_free_test:
+            panel_id = invoice.get('panel_id')
+            binding = {'panel_id': panel_id} if panel_id else None
+        else:
+            binding = await db_manager.get_plan_panel(plan_id)
         if not binding:
             logging.error(f"No panel bound to plan {plan_id} for invoice {invoice_id}. Cannot provision.")
             await self._notify_provisioning_failure(
@@ -220,9 +228,13 @@ class PaymentConfirmationManager:
         try:
             from bot.services.xui_client import provision_license, renew_license, build_client_email
             # Re-fetch the full invoice with new license_note column
-            full_invoice = await db_manager.get_invoice_by_id(invoice_id)
+            full_invoice_row = await db_manager.get_invoice_by_id(invoice_id)
+            if full_invoice_row:
+                full_invoice = dict(full_invoice_row)
+            else:
+                full_invoice = dict(invoice)
             
-            renew_lic_id = full_invoice['renew_license_id'] if 'renew_license_id' in full_invoice.keys() else None
+            renew_lic_id = full_invoice.get('renew_license_id')
             is_renewal = bool(renew_lic_id)
             
             if is_renewal:

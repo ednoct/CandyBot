@@ -9,6 +9,64 @@ import logging
 import aiosqlite
 from database.db_manager import DB_PATH
 from bot.routers import checkout
+from bot.services.sub_stats import fetch_sub_stats
+
+# === BACKGROUND TASK: LICENSE STATS ALERTS ===
+async def cron_license_stats_check(bot=None):
+    """
+    Background loop to check license stats via sub-link and alert users
+    when their traffic drops below 10% or they have less than 3 days left.
+    Runs every 6 hours (21600 seconds).
+    """
+    if not bot:
+        return
+        
+    while True:
+        try:
+            async with aiosqlite.connect(DB_PATH) as db:
+                db.row_factory = aiosqlite.Row
+                
+                # Get all active licenses with sub_links
+                async with db.execute(
+                    "SELECT l.id, l.user_id, l.sub_id, p.sub_link, l.alert_sent "
+                    "FROM xui_licenses l "
+                    "JOIN xui_panels p ON l.panel_id = p.id "
+                    "WHERE p.sub_link IS NOT NULL AND p.sub_link != '' AND l.alert_sent = 0"
+                ) as cursor:
+                    licenses = await cursor.fetchall()
+                    
+                for lic in licenses:
+                    stats = await fetch_sub_stats(lic['sub_link'], lic['sub_id'])
+                    if not stats:
+                        continue
+                        
+                    needs_alert = False
+                    reason = ""
+                    
+                    if not stats['is_unlimited_traffic'] and stats['fraction'] < 0.10:
+                        needs_alert = True
+                        reason = f"حجم باقی‌مانده شما به کمتر از ۱۰ درصد ({stats['remaining_gb']:.2f} GB) رسیده است."
+                    elif not stats['is_unlimited_time'] and stats['days_left'] < 3.0:
+                        needs_alert = True
+                        reason = f"اعتبار زمانی شما کمتر از ۳ روز ({int(stats['days_left'])} روز) است."
+                        
+                    if needs_alert:
+                        try:
+                            await bot.send_message(
+                                lic['user_id'],
+                                f"⚠️ <b>هشدار رو به اتمام بودن سرویس</b>\n\nکاربر گرامی، {reason}\nلطفاً برای تمدید سرویس خود اقدام کنید.",
+                                parse_mode="HTML"
+                            )
+                            # Mark alert as sent
+                            await db.execute("UPDATE xui_licenses SET alert_sent = 1 WHERE id = ?", (lic['id'],))
+                            await db.commit()
+                        except Exception as e:
+                            logging.error(f"Failed to send alert to user {lic['user_id']}: {e}")
+                            
+        except Exception as e:
+            logging.error(f"Cron License Stats Check Error: {e}")
+            
+        await asyncio.sleep(21600) # 6 hours
 
 # === BACKGROUND TASK: PAYMENT CHECK ===
 async def cron_payment_check(bot=None):
@@ -112,6 +170,7 @@ def setup_cron_tasks(bot=None, loop=None):
     if loop is None:
         loop = asyncio.get_event_loop()
     loop.create_task(cron_payment_check(bot))
+    loop.create_task(cron_license_stats_check(bot))
     loop.create_task(cron_database_cleanup())
     loop.create_task(cron_broadcast())
     loop.create_task(cron_housekeeping())

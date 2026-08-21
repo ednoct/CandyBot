@@ -57,10 +57,13 @@ async def settings_menu(callback: types.CallbackQuery):
     # New Utilities
     builder.button(text="🖼 پس زمینه کیوآرکد", callback_data="admin_manage_qr")
     
+    # Free Trial
+    builder.button(text="🎁 تنظیمات تست رایگان", callback_data="admin_free_trial")
+    
     # Back
     builder.button(text="🔙 بازگشت", callback_data="admin_back")
     
-    builder.adjust(2, 2, 2, 2, 1, 1, 1, 1)
+    builder.adjust(2, 2, 2, 2, 1, 1, 1, 1, 1)
     
     await callback.message.edit_text("⚙️ **تنظیمات عمومی ربات**", reply_markup=builder.as_markup(), parse_mode="Markdown")
 

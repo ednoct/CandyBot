@@ -232,18 +232,15 @@ async def my_services(callback: types.CallbackQuery):
 
     builder = InlineKeyboardBuilder()
     for lic in licenses:
-        note = lic['license_note'] or 'بدون یادداشت'
-        builder.row(
-            types.InlineKeyboardButton(text="👁 مشاهده", callback_data=f"view_license_{lic['id']}"),
-            types.InlineKeyboardButton(text="♻️ تمدید", callback_data=f"renew_lic_{lic['id']}"),
-            types.InlineKeyboardButton(text=f"📋 {note}", callback_data="none")
-        )
+        note = lic['license_note'] or 'بدون نام'
+        builder.button(text=f"📦 {note}", callback_data=f"view_license_{lic['id']}")
+        
+    builder.adjust(2) # 2-column grid
     builder.row(types.InlineKeyboardButton(text="🔙 برگشت", callback_data="main_menu"))
-    builder.adjust(1)
 
     await callback.message.edit_text(
         f"📦 <b>لایسنس های من</b>\n\n"
-        f"شما <b>{len(licenses)}</b> لایسنس دارید. برای مشاهده جزئیات کلیک کنید:",
+        f"شما <b>{len(licenses)}</b> لایسنس دارید. برای مشاهده جزئیات روی نام سرویس کلیک کنید:",
         reply_markup=builder.as_markup(),
         parse_mode="HTML"
     )
@@ -275,49 +272,39 @@ async def view_license(callback: types.CallbackQuery):
     note_line = f"\n📝 یادداشت لایسنس: <b>{note}</b>" if lic['license_note'] else ""
 
     # Fetch Live Status
-    from bot.services.xui_client import XUIClient, build_client_email
-    email = build_client_email(lic['license_note'], lic['user_id'], lic['invoice_id'])
-    
+    from bot.services.sub_stats import fetch_sub_stats
     live_status = "در حال دریافت وضعیت..."
     
     try:
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute("SELECT bearer_token, url FROM xui_panels WHERE id = ?", (lic['panel_id'],)) as cur:
-                prow = await cur.fetchone()
-        
-        if prow:
-            async with XUIClient(prow['url'], prow['bearer_token']) as client:
-                cdata = await client.get_client(email)
-                if cdata:
-                    up = cdata.get('up', 0)
-                    down = cdata.get('down', 0)
-                    total = cdata.get('total', 0)
-                    enable = cdata.get('enable', False)
-                    expiryTime = cdata.get('expiryTime', 0)
-                    
-                    used_gb = (up + down) / (1024**3)
-                    total_gb = total / (1024**3) if total > 0 else 0
-                    
-                    if total == 0:
-                        trf_text = f"مصرف شده: {used_gb:.2f} GB / نامحدود"
-                    else:
-                        trf_text = f"ترافیک: {used_gb:.2f} / {total_gb:.2f} GB"
-                        
-                    import time
-                    now = int(time.time() * 1000)
-                    if expiryTime > 0:
-                        days_left = (expiryTime - now) / (1000 * 86400)
-                        exp_text = f"اعتبار: {max(0, days_left):.1f} روز"
-                    else:
-                        exp_text = "اعتبار: نامحدود"
-                        
-                    is_active = enable and (expiryTime == 0 or expiryTime > now) and (total == 0 or (up + down) < total)
-                    status_text = "🟢 فعال" if is_active else "🔴 پایان یافته / مسدود"
-                    
-                    live_status = f"\nوضعیت: {status_text}\n{trf_text}\n{exp_text}"
+        sub_link = lic['sub_link'] if 'sub_link' in lic.keys() else None # Need to make sure it's fetched
+        if not sub_link:
+            # Re-fetch panel sub_link if not explicitly joined in query
+            async with aiosqlite.connect(DB_PATH) as db:
+                db.row_factory = aiosqlite.Row
+                async with db.execute("SELECT sub_link FROM xui_panels WHERE id = ?", (lic['panel_id'],)) as cur:
+                    prow = await cur.fetchone()
+                    if prow:
+                        sub_link = prow['sub_link']
+
+        if sub_link:
+            stats = await fetch_sub_stats(sub_link, sub_id)
+            if stats:
+                if stats['is_unlimited_traffic']:
+                    trf_text = f"مصرف شده: {stats['used_gb']:.2f} GB / نامحدود"
                 else:
-                    live_status = "\nوضعیت: 🔴 یافت نشد (از پنل حذف شده است)"
+                    trf_text = f"ترافیک: {stats['used_gb']:.2f} / {stats['total_gb']:.2f} GB"
+                    
+                if stats['is_unlimited_time']:
+                    exp_text = "اعتبار: نامحدود"
+                else:
+                    exp_text = f"اعتبار: {stats['days_left']:.1f} روز"
+                    
+                status_text = "🔴 پایان یافته / مسدود" if stats['is_expired'] else "🟢 فعال"
+                live_status = f"\nوضعیت: {status_text}\n{trf_text}\n{exp_text}"
+            else:
+                live_status = "\nوضعیت: 🔴 نامشخص (خطا در دریافت اطلاعات ساب لینک)"
+        else:
+            live_status = "\nوضعیت: ⚠️ پنل فاقد ساب لینک است"
     except Exception as e:
         import logging
         logging.error(f"Error fetching live status for license {license_id}: {e}")
@@ -337,6 +324,7 @@ async def view_license(callback: types.CallbackQuery):
             copy_text=types.CopyTextButton(text=sub_id)
         )
     )
+    builder.row(types.InlineKeyboardButton(text="♻️ تمدید", callback_data=f"renew_lic_{license_id}"))
     builder.row(types.InlineKeyboardButton(text="🔙 بازگشت به سرویس‌ها", callback_data="my_services"))
 
     # Try to send QR code as a new message with photo

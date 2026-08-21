@@ -48,12 +48,29 @@ async def add_panel_start(callback: types.CallbackQuery, state: FSMContext):
     """Handles add panel start."""
     if not is_admin(callback.message):
         return
-    await state.set_state(AdminStates.waiting_for_panel_url)
+    await state.set_state(AdminStates.waiting_for_panel_name)
 
     builder = InlineKeyboardBuilder()
     builder.button(text="❌ انصراف", callback_data="admin_xui")
     await callback.message.edit_text(
-        "🖥 <b>مرحله ۱/۴ — آدرس پنل</b>\n\n"
+        "🖥 <b>مرحله ۱/۶ — نام پنل</b>\n\n"
+        "یک نام دلخواه برای این پنل وارد کنید.\n"
+        "<i>مثال: پنل آلمان 1</i>",
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
+    )
+
+
+@admin_xui_router.message(AdminStates.waiting_for_panel_name)
+async def add_panel_name(message: types.Message, state: FSMContext):
+    if not is_admin(message): return
+    await state.update_data(panel_name=message.text.strip())
+    await state.set_state(AdminStates.waiting_for_panel_url)
+
+    builder = InlineKeyboardBuilder()
+    builder.button(text="❌ انصراف", callback_data="admin_xui")
+    await message.answer(
+        "🌐 <b>مرحله ۲/۶ — آدرس پنل</b>\n\n"
         "آدرس کامل پنل ثنا خود را وارد کنید.\n"
         "<i>مثال: https://panel.example.com:2053</i>",
         reply_markup=builder.as_markup(),
@@ -75,12 +92,33 @@ async def add_panel_url(message: types.Message, state: FSMContext):
         )
 
     await state.update_data(panel_url=url.rstrip("/"))
+    await state.set_state(AdminStates.waiting_for_panel_sub_link)
+
+    builder = InlineKeyboardBuilder()
+    builder.button(text="❌ انصراف", callback_data="admin_xui")
+    await message.answer(
+        "🔗 <b>مرحله ۳/۶ — آدرس ساب لینک</b>\n\n"
+        "آدرس ساب لینک پنل ثنا خود را برای دریافت حجم مصرفی لایسنس وارد کنید.\n"
+        "<i>مثال: https://sub.example.com/sub/</i>",
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
+    )
+
+
+@admin_xui_router.message(AdminStates.waiting_for_panel_sub_link)
+async def add_panel_sub_link(message: types.Message, state: FSMContext):
+    if not is_admin(message): return
+    sub_link = message.text.strip()
+    if not sub_link.startswith(("http://", "https://")):
+        return await message.answer("❌ آدرس نامعتبر. باید با http یا https شروع شود.")
+        
+    await state.update_data(panel_sub_link=sub_link)
     await state.set_state(AdminStates.waiting_for_panel_token)
 
     builder = InlineKeyboardBuilder()
     builder.button(text="❌ انصراف", callback_data="admin_xui")
     await message.answer(
-        "🔑 <b>مرحله ۲/۴ — توکن ورود (Bearer Token)</b>\n\n"
+        "🔑 <b>مرحله ۴/۶ — توکن ورود (Bearer Token)</b>\n\n"
         "توکن API پنل ثنا را وارد کنید.\n"
         "<i>این مقدار را از بخش Settings → Security → API Token پنل کپی کنید.</i>",
         reply_markup=builder.as_markup(),
@@ -104,7 +142,7 @@ async def add_panel_token(message: types.Message, state: FSMContext):
     builder = InlineKeyboardBuilder()
     builder.button(text="❌ انصراف", callback_data="admin_xui")
     await message.answer(
-        "📡 <b>مرحله ۳/۴ — آیدی اینباند(ها)</b>\n\n"
+        "📡 <b>مرحله ۵/۶ — آیدی اینباند(ها)</b>\n\n"
         "آیدی اینباند یا اینباندهایی که لایسنس‌های خریداری شده روی آن‌ها ساخته خواهند شد را وارد کنید.\n\n"
         "<i>(برای یک آیدی، فقط عدد را وارد کنید. "
         "برای چند آیدی، اعداد را با ویرگول از هم جدا کنید. "
@@ -137,7 +175,7 @@ async def add_panel_inbound_ids(message: types.Message, state: FSMContext):
     builder = InlineKeyboardBuilder()
     builder.button(text="❌ انصراف", callback_data="admin_xui")
     await message.answer(
-        "👥 <b>مرحله ۴/۴ — محدودیت IP (IP Limit)</b>\n\n"
+        "👥 <b>مرحله ۶/۶ — محدودیت IP (IP Limit)</b>\n\n"
         "حداکثر تعداد کاربران همزمان برای اشتراک‌هایی که روی این پنل ساخته می‌شوند را وارد کنید.\n"
         "<i>مثال: <code>2</code></i>",
         reply_markup=builder.as_markup(),
@@ -160,7 +198,9 @@ async def add_panel_ip_limit(message: types.Message, state: FSMContext):
 
     # Persist to DB
     panel_id = await db_manager.add_xui_panel(
+        name=data.get("panel_name", "بدون نام"),
         url=data["panel_url"],
+        sub_link=data.get("panel_sub_link", ""),
         bearer_token=data["panel_token"],
         inbound_ids=data["panel_inbound_ids"],
         ip_limit=ip_limit,
@@ -176,7 +216,9 @@ async def add_panel_ip_limit(message: types.Message, state: FSMContext):
     await message.answer(
         f"✅ <b>پنل با موفقیت اضافه شد</b>\n\n"
         f"🆔 شناسه پنل: <code>{panel_id}</code>\n"
+        f"📛 نام: <code>{data.get('panel_name', 'بدون نام')}</code>\n"
         f"🌐 آدرس: <code>{url_display}</code>\n"
+        f"🔗 ساب لینک: <code>{data.get('panel_sub_link', '')}</code>\n"
         f"📡 اینباندها: <code>{data['panel_inbound_ids']}</code>\n"
         f"👥 IP Limit: <code>{ip_limit}</code>",
         reply_markup=builder.as_markup(),
@@ -251,7 +293,9 @@ async def panel_detail(callback: types.CallbackQuery):
 
     text = (
         f"🖥 <b>جزئیات پنل #{panel['id']}</b>\n\n"
+        f"📛 <b>نام پنل:</b> <code>{panel.get('name', 'ثبت نشده')}</code>\n\n"
         f"🌐 <b>آدرس پنل:</b>\n<code>{panel['url']}</code>\n\n"
+        f"🔗 <b>ساب لینک:</b>\n<code>{panel.get('sub_link', 'ثبت نشده')}</code>\n\n"
         f"🔑 <b>توکن ورود:</b>\n<code>{masked_token}</code>\n\n"
         f"📡 <b>آیدی اینباندها:</b>\n<code>{panel['inbound_ids']}</code>\n\n"
         f"👥 <b>IP Limit:</b> <code>{panel['ip_limit']}</code>\n\n"

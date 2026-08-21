@@ -137,11 +137,14 @@ CREATE INDEX IF NOT EXISTS idx_payment_reports_user_id ON payment_reports(user_i
 -- Stores each admin-defined 3x-UI panel (credentials & config)
 CREATE TABLE IF NOT EXISTS xui_panels (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,                               -- panel name
     label TEXT,                              -- optional human label
     url TEXT NOT NULL,                       -- full panel URL e.g. https://panel.example.com:2053
+    sub_link TEXT,                           -- sub link endpoint
     bearer_token TEXT NOT NULL,              -- XUI API bearer token
     inbound_ids TEXT NOT NULL,               -- comma-separated inbound IDs e.g. "1,3,5"
     ip_limit INTEGER NOT NULL DEFAULT 1,     -- concurrent IP limit for clients created on this panel
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -243,4 +246,13 @@ CREATE TABLE IF NOT EXISTS user_acquisition (
     detail      TEXT,      -- free-text detail if source='other'
     asked_at    INTEGER,
     answered_at INTEGER
+);
+
+-- ============================================================
+-- FREE TRIAL USAGE
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS free_trial_usage (
+    user_id     INTEGER PRIMARY KEY,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
