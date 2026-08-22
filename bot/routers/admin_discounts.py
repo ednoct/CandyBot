@@ -139,7 +139,7 @@ async def add_discount_save(message: types.Message, state: FSMContext):
     
     async with aiosqlite.connect(db_manager.DB_PATH) as db:
         await db.execute(
-            "INSERT INTO discount_codes (code, discount_type, discount_value, max_uses, used_count, expiration_date, user_id_restriction) VALUES (?, ?, ?, ?, 0, ?, ?)",
+            "INSERT INTO discount_codes (code, type, value, max_uses, used_count, expiration_date, user_id_restriction) VALUES (?, ?, ?, ?, 0, ?, ?)",
             (data['d_code'], data['d_type'], data['d_value'], data['d_max_uses'], data['d_expiry'], user_id)
         )
         await db.commit()
