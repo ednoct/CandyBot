@@ -21,16 +21,10 @@ class AdminStates(StatesGroup):
     waiting_for_user_id = State()
     waiting_for_add_balance = State()
     waiting_for_reduce_balance = State()
-    waiting_for_card_number = State()
-
-    waiting_for_exclude_id = State()
-    waiting_for_remove_exclude_id = State()
     waiting_for_min_max_limit = State()
     waiting_for_crypto_address = State()
     waiting_for_transfer_target_id = State()
     waiting_for_qr_background = State()
-    waiting_for_app_name = State()
-    waiting_for_app_url = State()
     # === XUI Panel Management (مدیریت ثنا) ===
     waiting_for_panel_name = State()
     waiting_for_panel_url = State()

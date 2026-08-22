@@ -50,15 +50,15 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
         if arz_usdt_rate is None:
             return await callback.answer("خطا در دریافت قیمت لحظه ای تتر. لطفا مجددا تلاش کنید.", show_alert=True)
         usdprice = round(amount / arz_usdt_rate, 2)
-        if usdprice <= 1:
-            return await callback.answer("❌ خطا: کمترین مبلغ برای پرداخت در این درگاه 2 دلار می باشد.", show_alert=True)
+        if usdprice < 1.0:
+            return await callback.answer("❌ خطا: کمترین مبلغ برای پرداخت در این درگاه 1 دلار می باشد.", show_alert=True)
 
     if gateway_code == 'gram':
         gram_irt_price = await get_gram_irt_price()
         if gram_irt_price is None:
             return await callback.answer("خطا در دریافت قیمت لحظه ای گرام. لطفا مجددا تلاش کنید.", show_alert=True)
         gram_amount = round(amount / gram_irt_price, 2)
-        if gram_amount <= 0.1:
+        if gram_amount < 0.1:
             return await callback.answer("❌ خطا: کمترین مبلغ برای پرداخت در این درگاه 0.1 گرام می باشد.", show_alert=True)
 
     invoice_id = str(uuid.uuid4())[:8].upper()
@@ -77,7 +77,7 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
               amount, license_note, data.get('renew_license_id')))
               
         # Also create a legacy payment_report if offline
-        if gateway_code in ['usdt', 'gram', 'card']:
+        if gateway_code in ['usdt', 'gram']:
             expires_at = int(time.time()) + (7200 if gateway_code == 'usdt' else 86400)
             method = f"{gateway_code} offline"
             try:
@@ -96,26 +96,7 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
     # Store gateway_code in state so receipt handler knows which type
     await state.update_data(last_gateway=gateway_code)
     
-    # 1. Handle Card to Card (Offline)
-    if gateway_code == 'card':
-        # Default card number fallback
-        card_number = legacy_settings.get('card_number', "1234-5678-9012-3456")
-        card_holder = legacy_settings.get('card_holder', '')
-        builder = InlineKeyboardBuilder()
-        builder.row(types.InlineKeyboardButton(text="📎 ارسال رسید / کد پیگیری", callback_data=f"sendtxid_{invoice_id}_card"))
-        
-        holder_line = f"💁 به نام: <b>{card_holder}</b>\n" if card_holder else ""
-        await callback.message.edit_text(
-            f"💳 <b>پرداخت کارت به کارت</b>\n\n"
-            f"🛒 کد فاکتور: <code>{invoice_id}</code>\n"
-            f"💰 مبلغ قابل پرداخت: <b>{amount:,} تومان</b>\n\n"
-            f"💳 شماره کارت:\n<code>{card_number}</code>\n"
-            f"{holder_line}\n"
-            f"پس از واریز، از دکمه زیر <b>تصویر رسید</b> یا <b>کد پیگیری</b> تراکنش را ارسال کنید.",
-            reply_markup=builder.as_markup(),
-            parse_mode="HTML"
-        )
-        return
+    # 1. (Removed Card to Card)
 
     # 2. Handle USDT (Offline)
     if gateway_code == 'usdt':
@@ -327,20 +308,12 @@ async def prompt_txid(callback: types.CallbackQuery, state: FSMContext):
     builder = InlineKeyboardBuilder()
     builder.button(text="❌ انصراف", callback_data="cancel_txid")
     
-    if gateway == 'card':
-        prompt_text = (
-            "📎 <b>ارسال رسید پرداخت</b>\n\n"
-            "لطفاً <b>تصویر رسید</b> تراکنش یا <b>کد پیگیری</b> بانکی را ارسال کنید:\n\n"
-            "🖼 <i>میتوانید عکس رسید را مستقیماً ارسال کنید</i>\n"
-            "🔢 <i>یا کد پیگیری را به صورت متن تایپ کنید</i>"
-        )
-    else:
-        prompt_text = (
-            "📎 <b>ارسال رسید پرداخت</b>\n\n"
-            "لطفاً <b>هش تراکنش (TxID)</b> یا <b>تصویر رسید</b> را ارسال کنید:\n\n"
-            "🖼 <i>میتوانید اسکرین‌شات رسید کیف پول را ارسال کنید</i>\n"
-            "🔢 <i>یا TxID (هش تراکنش) را به صورت متن paste کنید</i>"
-        )
+    prompt_text = (
+        "📎 <b>ارسال رسید پرداخت</b>\n\n"
+        "لطفاً <b>هش تراکنش (TxID)</b> یا <b>تصویر رسید</b> را ارسال کنید:\n\n"
+        "🖼 <i>میتوانید اسکرین‌شات رسید کیف پول را ارسال کنید</i>\n"
+        "🔢 <i>یا TxID (هش تراکنش) را به صورت متن paste کنید</i>"
+    )
     
     await callback.answer()
     await callback.message.answer(
@@ -403,7 +376,7 @@ async def process_txid(message: types.Message, state: FSMContext):
     admin_builder.button(text="✅ تایید", callback_data=f"confirm_receipt_{invoice_id}")
     admin_builder.button(text="❌ رد", callback_data=f"reject_receipt_{invoice_id}")
     
-    gateway_label = {'card': 'کارت به کارت', 'usdt': 'تتر (USDT)', 'gram': 'گرام (TON)'}.get(gateway, gateway)
+    gateway_label = {'usdt': 'تتر (USDT)', 'gram': 'گرام (TON)'}.get(gateway, gateway)
     caption_text = (
         f"📩 <b>رسید جدید</b>\n\n"
         f"👤 کاربر: <code>{message.from_user.id}</code>\n"

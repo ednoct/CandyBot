@@ -63,6 +63,13 @@ class PaymentConfirmationManager:
                 if added_balance > 0:
                     await db.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (added_balance, user_id))
                     
+                wallet_deduction = invoice.get('wallet_deduction', 0)
+                if wallet_deduction and wallet_deduction > 0:
+                    if user['balance'] < wallet_deduction:
+                        # Should have been validated earlier, but safeguard here
+                        return False
+                    await db.execute("UPDATE users SET balance = balance - ? WHERE id = ?", (wallet_deduction, user_id))
+                    
                 await db.commit()
                 
             # Now trigger async helpers (Cashback and Referral)

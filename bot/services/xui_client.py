@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 # QR CODE GENERATION (with graceful fallback if Pillow is unavailable)
 # ---------------------------------------------------------------------------
 
-def generate_qr_bytes(data: str) -> Optional[BytesIO]:
+async def generate_qr_bytes(data: str) -> Optional[BytesIO]:
     """
     Generate a QR code PNG for `data` and return it as a BytesIO object.
 
@@ -43,6 +43,8 @@ def generate_qr_bytes(data: str) -> Optional[BytesIO]:
     try:
         import qrcode
         from PIL import Image  # noqa: F401 — confirms Pillow is present
+        from database import db_manager
+        import os
 
         qr = qrcode.QRCode(
             version=None,           # auto-size
@@ -53,9 +55,32 @@ def generate_qr_bytes(data: str) -> Optional[BytesIO]:
         qr.add_data(data)
         qr.make(fit=True)
 
-        img = qr.make_image(fill_color="black", back_color="white")
+        img = qr.make_image(fill_color="black", back_color="white").convert("RGBA")
+        
+        # Check if QR background is enabled
+        qr_bg_enabled = await db_manager.get_setting('qr_bg_enabled', '0')
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        bg_path = os.path.join(project_root, 'utils', 'qr-background.jpg')
+        
+        if qr_bg_enabled == '1' and os.path.exists(bg_path):
+            bg = Image.open(bg_path).convert("RGBA")
+            w, h = bg.size
+            
+            # Size the generated QR code to roughly 52% of the background's dimensions
+            target_size = int(min(w, h) * 0.52)
+            
+            # Resize QR
+            img = img.resize((target_size, target_size), Image.Resampling.LANCZOS)
+            
+            # Paste it at the exact (x, y) coordinate center
+            offset_x = (w - target_size) // 2
+            offset_y = (h - target_size) // 2
+            
+            bg.paste(img, (offset_x, offset_y), img)
+            img = bg
+
         buf = BytesIO()
-        img.save(buf, format="PNG")
+        img.convert("RGB").save(buf, format="PNG")
         buf.seek(0)
         return buf
 

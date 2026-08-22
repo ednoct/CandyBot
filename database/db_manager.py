@@ -31,6 +31,12 @@ async def init_db():
             await db.execute("ALTER TABLE licenses_cargo ADD COLUMN is_free_test INTEGER DEFAULT 0")
         except Exception:
             pass
+            
+        # Legacy cleanup
+        try:
+            await db.execute("DROP TABLE IF EXISTS app")
+        except Exception:
+            pass
 
         # XUI integration migrations — safe ALTER TABLE (idempotent)
         for migration_sql in [

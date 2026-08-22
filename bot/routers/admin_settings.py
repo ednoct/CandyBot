@@ -51,11 +51,11 @@ async def settings_menu(callback: types.CallbackQuery):
     builder.button(text="📯 مدیریت کانال‌ها", callback_data="admin_manage_channels")
     builder.button(text="👨‍💻 مدیریت ادمین‌ها", callback_data="admin_manage_admins")
     
-    # Apps Management
-    builder.button(text="📱 مدیریت برنامه‌ها", callback_data="admin_manage_apps")
-    
     # New Utilities
-    builder.button(text="🖼 پس زمینه کیوآرکد", callback_data="admin_manage_qr")
+    qr_bg_enabled = await db_manager.get_setting('qr_bg_enabled', '0')
+    builder.button(text="🖼 پس زمینه کیوآرکد:", callback_data="none")
+    builder.button(text=status_on if qr_bg_enabled == '1' else status_off, callback_data="toggle_qr_bg")
+    builder.button(text="آپلود عکس پس زمینه", callback_data="admin_manage_qr")
     
     # Free Trial
     builder.button(text="🎁 تنظیمات تست رایگان", callback_data="admin_free_trial")
@@ -63,11 +63,11 @@ async def settings_menu(callback: types.CallbackQuery):
     # Back
     builder.button(text="🔙 بازگشت", callback_data="admin_back")
     
-    builder.adjust(2, 2, 2, 2, 1, 1, 1, 1, 1)
+    builder.adjust(2, 2, 2, 2, 2, 1, 1, 1)
     
     await callback.message.edit_text("⚙️ **تنظیمات عمومی ربات**", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
-@admin_settings_router.callback_query(F.data.in_({"toggle_op_mode", "toggle_feedback", "toggle_acquisition"}))
+@admin_settings_router.callback_query(F.data.in_({"toggle_op_mode", "toggle_feedback", "toggle_acquisition", "toggle_qr_bg"}))
 async def handle_toggles(callback: types.CallbackQuery):
     """Handles handle toggles."""
     if not is_admin(callback.message): return
@@ -91,6 +91,12 @@ async def handle_toggles(callback: types.CallbackQuery):
         next_val = '0' if current == '1' else '1'
         async with aiosqlite.connect(db_manager.DB_PATH) as db:
             await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('acquisition_survey_enabled', ?)", (next_val,))
+            await db.commit()
+    elif callback.data == "toggle_qr_bg":
+        current = await db_manager.get_setting('qr_bg_enabled', '0')
+        next_val = '0' if current == '1' else '1'
+        async with aiosqlite.connect(db_manager.DB_PATH) as db:
+            await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('qr_bg_enabled', ?)", (next_val,))
             await db.commit()
             
     await settings_menu(callback)
@@ -174,93 +180,7 @@ async def add_admin_save(message: types.Message, state: FSMContext):
     builder.button(text="🔙 بازگشت به تنظیمات", callback_data="admin_settings")
     await message.answer(f"✅ کاربر {new_admin_id} با موفقیت به عنوان ادمین اضافه شد.", reply_markup=builder.as_markup())
 
-# === ROUTER: MANAGE APPS ===
-@admin_settings_router.callback_query(F.data == "admin_manage_apps")
-async def manage_apps(callback: types.CallbackQuery):
-    """Handles manage apps."""
-    if not is_admin(callback.message): return
-    
-    builder = InlineKeyboardBuilder()
-    builder.button(text="➕ اضافه کردن برنامه", callback_data="add_app")
-    builder.button(text="❌ حذف برنامه", callback_data="del_app")
-    builder.button(text="🔙 بازگشت", callback_data="admin_settings")
-    builder.adjust(2, 1)
-    
-    await callback.message.edit_text("📱 **مدیریت لینک دانلود برنامه‌ها**", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
-@admin_settings_router.callback_query(F.data == "add_app")
-async def add_app_start(callback: types.CallbackQuery, state: FSMContext):
-    """Handles add app start."""
-    if not is_admin(callback.message): return
-    await state.set_state(AdminStates.waiting_for_app_name)
-    await callback.message.edit_text("📌 جهت اضافه کردن لینک دانلود برنامه نام اپ یا نام دکمه را ارسال نمایید (مثلا: دانلود Candy Connect):")
-
-@admin_settings_router.message(AdminStates.waiting_for_app_name)
-async def add_app_name(message: types.Message, state: FSMContext):
-    """Handles add app name."""
-    if not is_admin(message): return
-    if len(message.text) > 200:
-        return await message.answer("📌 نام باید کمتر از ۲۰۰ کاراکتر باشد.")
-        
-    await state.update_data(app_name=message.text)
-    await state.set_state(AdminStates.waiting_for_app_url)
-    await message.answer("📌 لینک دانلود اپ را ارسال نمایید:")
-
-@admin_settings_router.message(AdminStates.waiting_for_app_url)
-async def add_app_url(message: types.Message, state: FSMContext):
-    """Handles add app url."""
-    if not is_admin(message): return
-    url = message.text
-    if not url.startswith("http"):
-        return await message.answer("❌ لینک نامعتبر است.")
-        
-    data = await state.get_data()
-    from database.db_manager import DB_PATH
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("INSERT INTO app (name, link) VALUES (?, ?)", (data['app_name'], url))
-        await db.commit()
-        
-    await state.set_state(None)
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 مدیریت برنامه‌ها", callback_data="admin_manage_apps")
-    await message.answer("✅ لینک اپ شما با موفقیت اضافه گردید.", reply_markup=builder.as_markup())
-
-@admin_settings_router.callback_query(F.data == "del_app")
-async def del_app_start(callback: types.CallbackQuery):
-    """Handles del app start."""
-    if not is_admin(callback.message): return
-    
-    from database.db_manager import DB_PATH
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT id, name FROM app") as cursor:
-            apps = await cursor.fetchall()
-            
-    if not apps:
-        return await callback.answer("برنامه‌ای یافت نشد.", show_alert=True)
-        
-    builder = InlineKeyboardBuilder()
-    for app in apps:
-        builder.button(text=app['name'], callback_data=f"remove_app_{app['id']}")
-    builder.button(text="🔙 بازگشت", callback_data="admin_manage_apps")
-    builder.adjust(1)
-    
-    await callback.message.edit_text("📌 برای حذف برنامه از لیست زیر نام برنامه را انتخاب کنید:", reply_markup=builder.as_markup())
-
-@admin_settings_router.callback_query(F.data.startswith("remove_app_"))
-async def del_app_process(callback: types.CallbackQuery):
-    """Handles del app process."""
-    if not is_admin(callback.message): return
-    app_id = int(callback.data.split("_")[2])
-    
-    from database.db_manager import DB_PATH
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("DELETE FROM app WHERE id = ?", (app_id,))
-        await db.commit()
-        
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 مدیریت برنامه‌ها", callback_data="admin_manage_apps")
-    await callback.message.edit_text("✅ برنامه با موفقیت حذف گردید.", reply_markup=builder.as_markup())
 
 # === ROUTER: QR BACKGROUND ===
 @admin_settings_router.callback_query(F.data == "admin_manage_qr")
@@ -287,11 +207,13 @@ async def manage_qr_process(message: types.Message, state: FSMContext):
     
     import os
     project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    custom_jpg = os.path.join(project_root, 'custom.jpg')
-    images_jpg = os.path.join(project_root, 'images.jpg')
+    utils_dir = os.path.join(project_root, 'utils')
+    if not os.path.exists(utils_dir):
+        os.makedirs(utils_dir)
+        
+    bg_jpg = os.path.join(utils_dir, 'qr-background.jpg')
     
-    await message.bot.download_file(file_path, custom_jpg)
-    await message.bot.download_file(file_path, images_jpg)
+    await message.bot.download_file(file_path, bg_jpg)
     
     await state.set_state(None)
     from aiogram.utils.keyboard import InlineKeyboardBuilder

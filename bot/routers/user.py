@@ -329,7 +329,7 @@ async def view_license(callback: types.CallbackQuery):
 
     # Try to send QR code as a new message with photo
     from bot.services.xui_client import generate_qr_bytes
-    qr_buf = generate_qr_bytes(sub_id)
+    qr_buf = await generate_qr_bytes(sub_id)
 
     try:
         if qr_buf is not None:
@@ -405,8 +405,21 @@ async def process_wallet_charge(message: types.Message, state: FSMContext):
         return await message.answer("❌ لطفاً یک عدد معتبر وارد کنید.")
         
     amount = int(message.text)
-    if amount < 10000:
-        return await message.answer("❌ حداقل مبلغ شارژ 10,000 تومان است.")
+    from database.db_manager import DB_PATH
+    import aiosqlite
+    
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT value FROM settings WHERE key = 'lim_min_wallet'") as cursor:
+            row = await cursor.fetchone()
+            min_limit = int(row[0]) if row and row[0] else 10000
+        async with db.execute("SELECT value FROM settings WHERE key = 'lim_max_wallet'") as cursor:
+            row = await cursor.fetchone()
+            max_limit = int(row[0]) if row and row[0] else 50000000
+            
+    if amount < min_limit:
+        return await message.answer(f"❌ حداقل مبلغ شارژ {min_limit:,} تومان است.")
+    if amount > max_limit:
+        return await message.answer(f"❌ حداکثر مبلغ شارژ {max_limit:,} تومان است.")
         
     await state.set_state(None)
     # We create a FSMContext directly for payment.py since this is a pseudo invoice
@@ -429,7 +442,6 @@ async def process_wallet_charge(message: types.Message, state: FSMContext):
     from database.db_manager import DB_PATH
     import aiosqlite
     available_gateways = [
-        ('کارت به کارت', 'cart', 'pay_card'),
         ('گرام (TON)', 'gram', 'pay_gram'),
         ('تتر (BSC)', 'usdt', 'pay_usdt'),
         ('کارت به کارت هوشمند', 'frenzyex', 'pay_frenzyex')

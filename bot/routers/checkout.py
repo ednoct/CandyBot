@@ -280,7 +280,6 @@ async def prepare_and_send_invoice(message: types.Message, user_id: int, data: d
         from database.db_manager import DB_PATH
         
         available_gateways = [
-            ('کارت به کارت', 'cart', 'pay_card'),
             ('گرام (TON)', 'gram', 'pay_gram'),
             ('تتر (BSC)', 'usdt', 'pay_usdt'),
             ('کارت به کارت هوشمند', 'frenzyex', 'pay_frenzyex')
@@ -379,12 +378,21 @@ async def pay_free(callback: types.CallbackQuery, state: FSMContext):
     license_note = data.get('license_note', '')
 
     async with aiosqlite.connect(db_manager.DB_PATH) as db:
+        wallet_deduction = data.get('wallet_deduction', 0)
+        
+        # Strict mathematical balance validation
+        if wallet_deduction > 0:
+            async with db.execute("SELECT balance FROM users WHERE id = ?", (callback.from_user.id,)) as cursor:
+                user = await cursor.fetchone()
+                if not user or user['balance'] < wallet_deduction:
+                    return await callback.answer("❌ موجودی کیف پول شما برای این پرداخت کافی نیست.", show_alert=True)
+                    
         await db.execute('''
             INSERT INTO invoices (id, user_id, plan_id, days, gb, base_price, wallet_deduction, 
             discount_code, discount_deduction, gift_code, gift_deduction, final_amount, license_note, status, renew_license_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'paid', ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
         ''', (invoice_id, callback.from_user.id, data['plan_id'], data['days'], data['gb'],
-              data['base_price'], data['wallet_deduction'], data.get('discount_code'), 
+              data['base_price'], wallet_deduction, data.get('discount_code'), 
               data.get('discount_amount', 0), data.get('gift_code'), data.get('gift_amount', 0), 
               0, license_note, data.get('renew_license_id')))
         await db.commit()

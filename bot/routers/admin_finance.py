@@ -34,18 +34,9 @@ async def finance_menu(callback: types.CallbackQuery):
             key = f"{code}_status" if code in ['frenzyex', 'usdt', 'gram'] else f"gateway_status_{code}"
             async with db.execute("SELECT value FROM settings WHERE key = ?", (key,)) as cursor:
                 row = await cursor.fetchone()
-                return (row and row[0] == '1') or (not row and code in ['cart', 'zarinpal'])
+                return (row and row[0] == '1')
                 
-        status_cart = "✅" if await get_status('cart') else "❌"
-        status_frenzyex = "✅" if await get_status('frenzyex') else "❌"
-        status_usdt = "✅" if await get_status('usdt') else "❌"
-        status_gram = "✅" if await get_status('gram') else "❌"
-    
-    builder = InlineKeyboardBuilder()
-    
     # Gateways (Parity with finance.php)
-    builder.button(text="کارت به کارت:", callback_data="none")
-    builder.button(text=status_cart, callback_data="toggle_fin_cart")
     
     builder.button(text="FrenzyEx:", callback_data="none")
     builder.button(text=status_frenzyex, callback_data="toggle_fin_frenzyex")
@@ -57,52 +48,21 @@ async def finance_menu(callback: types.CallbackQuery):
     builder.button(text=status_gram, callback_data="toggle_fin_gram")
     
     # Settings
-    builder.button(text="💳 تنظیم شماره کارت", callback_data="fin_set_card")
     builder.button(text="🪙 تنظیم متغیرها", callback_data="fin_crypto_wallets")
-    builder.button(text="🚫 استثناء تایید خودکار", callback_data="fin_auto_confirm_exceptions")
     
     # New Options
     builder.button(text="🎁 مدیریت تخفیف و هدیه", callback_data="admin_discounts")
-    builder.button(text="🤖 تایید رسید بدون بررسی", callback_data="toggle_auto_confirm_global")
     builder.button(text="💵 رسید های تایید نشده", callback_data="fin_pending_receipts")
-    builder.button(text="📈 محدودیت‌های واریز", callback_data="fin_limits_menu")
+    builder.button(text="📈 محدودیت‌های شارژ کیف پول", callback_data="fin_limits_menu")
     
     # Back
     builder.button(text="🔙 بازگشت", callback_data="admin_back")
     
-    builder.adjust(2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1)
+    builder.adjust(2, 2, 2, 1, 1, 1, 1)
     
     await callback.message.edit_text("💎 **مدیریت مالی و درگاه‌ها**", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
-@admin_finance_router.callback_query(F.data == "fin_set_card")
-async def set_card_number_prompt(callback: types.CallbackQuery, state: FSMContext):
-    """Handles set card number prompt."""
-    if not is_admin(callback.message): return
-    await state.set_state(AdminStates.waiting_for_card_number)
-    
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 لغو و بازگشت", callback_data="admin_finance")
-    await callback.message.edit_text("لطفا شماره کارت جدید (۱۶ رقمی) را ارسال کنید:", reply_markup=builder.as_markup())
 
-@admin_finance_router.message(AdminStates.waiting_for_card_number)
-async def set_card_number_process(message: types.Message, state: FSMContext):
-    """Handles set card number process."""
-    if not is_admin(message): return
-    
-    card_number = message.text.strip()
-    if not card_number.isdigit() or len(card_number) != 16:
-        return await message.answer("❌ شماره کارت نامعتبر است. باید دقیقا ۱۶ رقم باشد.")
-        
-    from database.db_manager import DB_PATH
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ('card_number', card_number))
-        await db.commit()
-        
-    await state.set_state(None)
-    
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 بازگشت", callback_data="admin_finance")
-    await message.answer(f"✅ شماره کارت با موفقیت به `{card_number}` تغییر یافت.", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
 @admin_finance_router.callback_query(F.data.startswith("toggle_fin_"))
 async def handle_finance_toggles(callback: types.CallbackQuery):
@@ -118,7 +78,7 @@ async def handle_finance_toggles(callback: types.CallbackQuery):
         async with db.execute("SELECT value FROM settings WHERE key = ?", (key_name,)) as cursor:
             row = await cursor.fetchone()
             
-        current_status = row[0] if row else ('1' if code in ['cart', 'zarinpal'] else '0')
+        current_status = row[0] if row else '0'
         new_status = '0' if current_status == '1' else '1'
         
         await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key_name, new_status))
@@ -190,142 +150,7 @@ async def set_crypto_wallet_process(message: types.Message, state: FSMContext):
     builder.button(text="🔙 بازگشت", callback_data="fin_crypto_wallets")
     await message.answer(f"✅ تنظیمات با موفقیت ذخیره شد.", reply_markup=builder.as_markup())
 
-# === ROUTER: AUTO CONFIRM EXCEPTIONS ===
-@admin_finance_router.callback_query(F.data == "fin_auto_confirm_exceptions")
-async def auto_confirm_exceptions_menu(callback: types.CallbackQuery):
-    """Handles auto confirm exceptions menu."""
-    if not is_admin(callback.message): return
-    
-    builder = InlineKeyboardBuilder()
-    builder.button(text="➕ اضافه کردن کاربر", callback_data="add_exception")
-    builder.button(text="❌ حذف از لیست", callback_data="del_exception")
-    builder.button(text="👁 مشاهده لیست", callback_data="view_exceptions")
-    builder.button(text="🔙 بازگشت", callback_data="admin_finance")
-    builder.adjust(2, 1, 1)
-    
-    await callback.message.edit_text("🚫 **استثناء کردن کاربر از تایید خودکار**", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
-@admin_finance_router.callback_query(F.data == "add_exception")
-async def add_exception_start(callback: types.CallbackQuery, state: FSMContext):
-    """Handles add exception start."""
-    if not is_admin(callback.message): return
-    await state.set_state(AdminStates.waiting_for_exclude_id)
-    
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 بازگشت", callback_data="fin_auto_confirm_exceptions")
-    await callback.message.edit_text("📌 آیدی عددی کاربر (User ID) را ارسال کنید:", reply_markup=builder.as_markup())
-
-@admin_finance_router.message(AdminStates.waiting_for_exclude_id)
-async def add_exception_process(message: types.Message, state: FSMContext):
-    """Handles add exception process."""
-    if not is_admin(message): return
-    
-    try:
-        user_id = int(message.text)
-    except ValueError:
-        return await message.answer("❌ لطفا فقط آیدی عددی وارد کنید.")
-        
-    from database.db_manager import DB_PATH
-    import json
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT value FROM settings WHERE key = 'auto_confirm_exceptions'") as cursor:
-            row = await cursor.fetchone()
-            
-        exceptions = json.loads(row[0]) if row else []
-        
-        if user_id in exceptions:
-            return await message.answer("❌ کاربر در لیست استثناء وجود دارد.")
-            
-        exceptions.append(user_id)
-        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_confirm_exceptions', ?)", (json.dumps(exceptions),))
-        await db.commit()
-        
-    await state.set_state(None)
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 مدیریت استثناها", callback_data="fin_auto_confirm_exceptions")
-    await message.answer("✅ کاربر با موفقیت به لیست اضافه گردید.", reply_markup=builder.as_markup())
-
-@admin_finance_router.callback_query(F.data == "del_exception")
-async def del_exception_start(callback: types.CallbackQuery, state: FSMContext):
-    """Handles del exception start."""
-    if not is_admin(callback.message): return
-    await state.set_state(AdminStates.waiting_for_remove_exclude_id)
-    
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 بازگشت", callback_data="fin_auto_confirm_exceptions")
-    await callback.message.edit_text("📌 آیدی عددی کاربر را جهت حذف از لیست ارسال کنید:", reply_markup=builder.as_markup())
-
-@admin_finance_router.message(AdminStates.waiting_for_remove_exclude_id)
-async def del_exception_process(message: types.Message, state: FSMContext):
-    """Handles del exception process."""
-    if not is_admin(message): return
-    
-    try:
-        user_id = int(message.text)
-    except ValueError:
-        return await message.answer("❌ لطفا فقط آیدی عددی وارد کنید.")
-        
-    from database.db_manager import DB_PATH
-    import json
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT value FROM settings WHERE key = 'auto_confirm_exceptions'") as cursor:
-            row = await cursor.fetchone()
-            
-        exceptions = json.loads(row[0]) if row else []
-        
-        if user_id not in exceptions:
-            return await message.answer("❌ کاربر در لیست استثناء وجود ندارد.")
-            
-        exceptions.remove(user_id)
-        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_confirm_exceptions', ?)", (json.dumps(exceptions),))
-        await db.commit()
-        
-    await state.set_state(None)
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 مدیریت استثناها", callback_data="fin_auto_confirm_exceptions")
-    await message.answer("✅ کاربر با موفقیت از لیست حذف گردید.", reply_markup=builder.as_markup())
-
-@admin_finance_router.callback_query(F.data == "view_exceptions")
-async def view_exceptions_process(callback: types.CallbackQuery):
-    """Handles view exceptions process."""
-    if not is_admin(callback.message): return
-    
-    from database.db_manager import DB_PATH
-    import json
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT value FROM settings WHERE key = 'auto_confirm_exceptions'") as cursor:
-            row = await cursor.fetchone()
-            
-    exceptions = json.loads(row[0]) if row else []
-    
-    if not exceptions:
-        return await callback.answer("❌ کاربری در لیست وجود ندارد", show_alert=True)
-        
-    text = "لیست افراد استثناء:\n\n" + "\n".join([f"`{u}`" for u in exceptions])
-    
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 بازگشت", callback_data="fin_auto_confirm_exceptions")
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
-
-# === ROUTER: GLOBAL AUTO CONFIRM ===
-@admin_finance_router.callback_query(F.data == 'toggle_auto_confirm_global')
-async def toggle_auto_confirm(callback: types.CallbackQuery):
-    """Handles toggle auto confirm."""
-    if not is_admin(callback.message): return
-    from database.db_manager import DB_PATH
-    import aiosqlite
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT value FROM settings WHERE key = 'global_auto_confirm'") as cursor:
-            row = await cursor.fetchone()
-        
-        current_status = row[0] if row else 'off'
-        new_status = 'on' if current_status == 'off' else 'off'
-        
-        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('global_auto_confirm', ?)", (new_status,))
-        await db.commit()
-        
-    status_text = 'فعال (✅)' if new_status == 'on' else 'غیرفعال (❌)'
-    await callback.answer(f"تایید خودکار کارت به کارت: {status_text}", show_alert=True)
 
 # === ROUTER: PENDING RECEIPTS ===
 @admin_finance_router.callback_query(F.data == 'fin_pending_receipts')
@@ -367,7 +192,7 @@ async def limits_menu(callback: types.CallbackQuery):
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     builder = InlineKeyboardBuilder()
     
-    gateways = [('کارت به کارت', 'cart')]
+    gateways = [('شارژ کیف پول', 'wallet')]
     for name, code in gateways:
         builder.button(text=f"⬇️ حداقل {name}", callback_data=f"lim_min_{code}")
         builder.button(text=f"⬆️ حداکثر {name}", callback_data=f"lim_max_{code}")
@@ -375,7 +200,7 @@ async def limits_menu(callback: types.CallbackQuery):
     builder.button(text="🔙 بازگشت", callback_data="admin_finance")
     builder.adjust(2)
     
-    await callback.message.edit_text("📈 **تنظیم محدودیت‌های واریز**", reply_markup=builder.as_markup(), parse_mode="Markdown")
+    await callback.message.edit_text("📈 **تنظیم محدودیت‌های شارژ کیف پول**", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
 @admin_finance_router.callback_query(F.data.startswith('lim_'))
 async def set_limit_prompt(callback: types.CallbackQuery, state: FSMContext):
