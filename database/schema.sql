@@ -114,6 +114,7 @@ CREATE TABLE IF NOT EXISTS payment_reports (
     message_id INTEGER,
     crypto_hash TEXT,
     crypto_address TEXT,
+    gateway_request_id TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

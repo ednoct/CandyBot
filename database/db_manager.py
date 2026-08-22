@@ -44,6 +44,7 @@ async def init_db():
             # Referral & CRM columns
             "ALTER TABLE users ADD COLUMN referred_by INTEGER",
             "ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1",
+            "ALTER TABLE payment_reports ADD COLUMN gateway_request_id TEXT",
         ]:
             try:
                 await db.execute(migration_sql)
@@ -86,6 +87,15 @@ async def init_db():
         )
         await db.execute(
             "INSERT OR IGNORE INTO settings (key, value) VALUES ('acquisition_survey_enabled', '0')"
+        )
+        await db.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES ('frenzyex_callback_secret', '')"
+        )
+        await db.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES ('frenzyex_api_key', '')"
+        )
+        await db.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES ('frenzyex_base_url', 'https://frenzy.fastsnap.info')"
         )
         await db.commit()
 

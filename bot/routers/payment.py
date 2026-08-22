@@ -1,7 +1,7 @@
 """
 This module corresponds to the 'bot/routers/payment.py' branch in the candy_architecture.md map.
 It acts as the UNIFIED PAYMENT HANDLER, routing 'pay_*' callbacks triggered from checkout,
-and integrating both online (Tetra) and offline (USDT, GRAM) gateways.
+and integrating both online (FrenzyEx) and offline (USDT, GRAM, Card) gateways.
 """
 # === IMPORTS ===
 from aiogram import Router, F, types
@@ -24,7 +24,7 @@ class PaymentState(StatesGroup):
 @payment_router.callback_query(F.data.startswith("pay_"))
 async def process_payment(callback: types.CallbackQuery, state: FSMContext):
     """Handles process payment."""
-    gateway_code = callback.data.split('_')[1] # e.g. 'card', 'zarinpal', 'aqaye', 'trx', 'usdt', 'gram', 'tetra'
+    gateway_code = callback.data.split('_')[1] # e.g. 'card', 'zarinpal', 'aqaye', 'trx', 'usdt', 'gram', 'frenzyex'
     
     data = await state.get_data()
     if 'final_amount' not in data:
@@ -40,10 +40,10 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
             legacy_settings = {row['key']: row['value'] for row in settings_rows}
 
     # Gateway early validation
-    if gateway_code == 'tetra':
-        tetra_api_key = legacy_settings.get('tetra_api_key', '')
-        if not tetra_api_key:
-            return await callback.answer("❌ درگاه کارت به کارت هوشمند (تترا) پیکربندی نشده است.", show_alert=True)
+    if gateway_code == 'frenzyex':
+        frenzyex_api_key = legacy_settings.get('frenzyex_api_key', '')
+        if not frenzyex_api_key:
+            return await callback.answer("❌ درگاه پرداخت آنلاین پیکربندی نشده است.", show_alert=True)
             
     if gateway_code == 'usdt':
         arz_usdt_rate = await get_arz_usdt_rate()
@@ -199,35 +199,120 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
         )
         return
 
-    # 4. Handle Tetra (Online)
-    if gateway_code == 'tetra':
-        await state.clear()  # Online gateway - no receipt submission needed
-        from payment.gateways import TetraGateway
-            
-        gateway = TetraGateway(tetra_api_key)
-        # We can hardcode the URL or get it from settings, usually the API domain is enough
-        domain = legacy_settings.get('web_domain', 'https://tetra98.com')
-        callback_url = f"{domain}/api/payment/webhook/tetra"
+    # 4. Handle FrenzyEx (Online)
+    if gateway_code == 'frenzyex':
+        await state.clear()
+        from payment.gateways import FrenzyExGateway
         
-        # TetraGateway expects (invoice_id, amount_toman, callback_url)
+        frenzyex_base_url = legacy_settings.get('frenzyex_base_url', 'https://frenzy.fastsnap.info')
+        gateway = FrenzyExGateway(api_key=frenzyex_api_key, base_url=frenzyex_base_url)
+        
+        from bot.config import WEBHOOK_DOMAIN
+        callback_url = f"https://{WEBHOOK_DOMAIN}/ipn/frenzyex"
+        
+        # FrenzyExGateway expects (order_id, amount, callback_url)
         result = await gateway.create_payment(invoice_id, amount, callback_url)
         
         if result.get('success'):
-            url = result.get('payment_url_bot') or result.get('payment_url_web')
             builder = InlineKeyboardBuilder()
-            builder.row(types.InlineKeyboardButton(text="💳 پرداخت آنلاین", url=url))
+            if result.get('payment_url_bot'):
+                builder.row(types.InlineKeyboardButton(text="پرداخت در تلگرام 💳", url=result.get('payment_url_bot')))
+            if result.get('payment_url_web'):
+                builder.row(types.InlineKeyboardButton(text="صفحه پرداخت تحت وب 🌐", url=result.get('payment_url_web')))
+                
+            request_id = result.get('request_id')
+            builder.row(types.InlineKeyboardButton(text="بررسی وضعیت پرداخت 🔄", callback_data=f"frenzyex_check_{invoice_id}_{request_id}"))
+            builder.row(types.InlineKeyboardButton(text="انصراف ❌", callback_data=f"frenzyex_cancel_{invoice_id}_{request_id}"))
+            
+            # Store frenzy_request_id in payment_reports
+            async with aiosqlite.connect(db_manager.DB_PATH) as db:
+                try:
+                    await db.execute("UPDATE payment_reports SET gateway_request_id = ? WHERE invoice_id = ?", (request_id, invoice_id))
+                except:
+                    pass
+                await db.commit()
             
             await callback.message.edit_text(
                 f"✅ فاکتور آنلاین شما ایجاد شد\n\n"
                 f"🛒 کد پیگیری: `{invoice_id}`\n"
                 f"💰 مبلغ قابل پرداخت: {amount:,} تومان\n\n"
-                f"لطفاً از طریق دکمه زیر پرداخت را انجام دهید:",
+                f"لطفاً از طریق دکمه‌های زیر پرداخت را انجام دهید:",
                 reply_markup=builder.as_markup(),
                 parse_mode="Markdown"
             )
         else:
             await callback.answer(f"❌ خطا در ایجاد فاکتور: {result.get('error', 'Unknown Error')}", show_alert=True)
         return
+
+@payment_router.callback_query(F.data.startswith("frenzyex_check_"))
+async def check_frenzyex_status(callback: types.CallbackQuery):
+    """Checks frenzyex payment status manually."""
+    parts = callback.data.split('_')
+    invoice_id = parts[2]
+    request_id = parts[3]
+    
+    async with aiosqlite.connect(db_manager.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute('SELECT key, value FROM settings WHERE key = "frenzyex_api_key" OR key = "frenzyex_base_url"') as cursor:
+            settings_rows = await cursor.fetchall()
+            settings = {row['key']: row['value'] for row in settings_rows}
+            
+    frenzyex_api_key = settings.get('frenzyex_api_key', '')
+    frenzyex_base_url = settings.get('frenzyex_base_url', 'https://frenzy.fastsnap.info')
+    
+    if not frenzyex_api_key:
+        return await callback.answer("API Key یافت نشد.", show_alert=True)
+        
+    from payment.gateways import FrenzyExGateway
+    gateway = FrenzyExGateway(api_key=frenzyex_api_key, base_url=frenzyex_base_url)
+    result = await gateway.get_payment_status(request_id)
+    
+    if result.get('success'):
+        status = result.get('status')
+        if status == 'paid':
+            await callback.answer("پرداخت انجام شده است! در حال پردازش...", show_alert=True)
+            from payment.confirm import PaymentConfirmationManager
+            pcm = PaymentConfirmationManager(callback.bot)
+            success = await pcm.confirm_paid(invoice_id, method="FrenzyEx")
+            if success:
+                await callback.message.edit_reply_markup(reply_markup=None)
+                await callback.message.reply(f"فاکتور {invoice_id} با موفقیت تایید شد.")
+        elif status == 'pending':
+            await callback.answer("پرداخت هنوز انجام نشده است (pending).", show_alert=True)
+        elif status == 'expired':
+            await callback.answer("فاکتور منقضی شده است.", show_alert=True)
+        elif status == 'canceled':
+            await callback.answer("فاکتور لغو شده است.", show_alert=True)
+        else:
+            await callback.answer(f"وضعیت نامشخص: {status}", show_alert=True)
+    else:
+        await callback.answer(f"خطا در ارتباط با درگاه: {result.get('error')}", show_alert=True)
+
+@payment_router.callback_query(F.data.startswith("frenzyex_cancel_"))
+async def cancel_frenzyex_status(callback: types.CallbackQuery):
+    """Cancels a frenzyex payment manually."""
+    parts = callback.data.split('_')
+    invoice_id = parts[2]
+    request_id = parts[3]
+    
+    async with aiosqlite.connect(db_manager.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute('SELECT key, value FROM settings WHERE key = "frenzyex_api_key" OR key = "frenzyex_base_url"') as cursor:
+            settings_rows = await cursor.fetchall()
+            settings = {row['key']: row['value'] for row in settings_rows}
+            
+    frenzyex_api_key = settings.get('frenzyex_api_key', '')
+    frenzyex_base_url = settings.get('frenzyex_base_url', 'https://frenzy.fastsnap.info')
+    
+    from payment.gateways import FrenzyExGateway
+    gateway = FrenzyExGateway(api_key=frenzyex_api_key, base_url=frenzyex_base_url)
+    
+    await callback.message.edit_text("در حال لغو فاکتور...")
+    success = await gateway.cancel_payment(request_id)
+    if success:
+        await callback.message.edit_text("فاکتور با موفقیت لغو شد.")
+    else:
+        await callback.message.edit_text("امکان لغو فاکتور وجود ندارد یا قبلا لغو شده است.")
 
 @payment_router.callback_query(F.data.startswith("sendtxid_"))
 async def prompt_txid(callback: types.CallbackQuery, state: FSMContext):

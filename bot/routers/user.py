@@ -432,12 +432,12 @@ async def process_wallet_charge(message: types.Message, state: FSMContext):
         ('کارت به کارت', 'cart', 'pay_card'),
         ('گرام (TON)', 'gram', 'pay_gram'),
         ('تتر (BSC)', 'usdt', 'pay_usdt'),
-        ('کارت به کارت هوشمند', 'tetra', 'pay_tetra')
+        ('کارت به کارت هوشمند', 'frenzyex', 'pay_frenzyex')
     ]
     
     async with aiosqlite.connect(DB_PATH) as db:
         for name, code, cb_data in available_gateways:
-            key_name = f"{code}_status" if code in ['tetra', 'usdt', 'gram'] else f"gateway_status_{code}"
+            key_name = f"{code}_status" if code in ['frenzyex', 'usdt', 'gram'] else f"gateway_status_{code}"
             async with db.execute("SELECT value FROM settings WHERE key = ?", (key_name,)) as cursor:
                 row = await cursor.fetchone()
                 is_active = (row and row[0] == '1')

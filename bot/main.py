@@ -13,7 +13,8 @@ from bot.config import BOT_TOKEN
 from database.db_manager import init_db
 from bot.routers import checkout_router, admin_router, user_router, support_router
 from cron.tasks import setup_cron_tasks
-from cron.tasks import setup_cron_tasks
+from aiohttp import web
+from bot.config import WEB_HOST, WEB_PORT
 
 # === LOGGING CONFIG ===
 logging.basicConfig(level=logging.INFO)
@@ -50,6 +51,75 @@ async def on_startup(bot: Bot):
 async def on_shutdown(bot: Bot):
     """Handles on shutdown."""
     logging.info("Shutting down...")
+
+# === FRENZYEX IPN HANDLER ===
+async def frenzyex_webhook_handler(request: web.Request):
+    """Handles incoming FrenzyEx webhooks."""
+    raw_body = await request.read()
+    signature = request.headers.get("X-Frenzy-Signature", "")
+    event_type = request.headers.get("X-Frenzy-Event", "")
+    
+    from database.db_manager import DB_PATH
+    import aiosqlite
+    
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT value FROM settings WHERE key = 'frenzyex_callback_secret'") as cursor:
+            row = await cursor.fetchone()
+            
+    if not row or not row[0]:
+        logging.critical("FrenzyEx Callback Secret is not set in the database.")
+        return web.Response(status=500, text="Internal Server Error: Secret not configured")
+        
+    frenzyex_callback_secret = row[0]
+    
+    from payment.verifiers import PaymentVerifier
+    if not PaymentVerifier.verify_frenzyex_signature(raw_body, signature, frenzyex_callback_secret):
+        return web.Response(status=401, text="Unauthorized: Invalid signature")
+        
+    try:
+        data = await request.json()
+    except:
+        return web.Response(status=400, text="Bad Request: Invalid JSON")
+        
+    if event_type == "payment.completed" and data.get("status") == "paid":
+        order_ref = data.get("order_ref")
+        
+        from database.db_manager import DB_PATH
+        import aiosqlite
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT id, status FROM invoices WHERE id = ?", (order_ref,)) as cursor:
+                inv = await cursor.fetchone()
+                
+        if inv:
+            if inv['status'] != 'pending':
+                # Already processed
+                return web.json_response({"ok": True})
+                
+            from payment.confirm import PaymentConfirmationManager
+            bot = request.app['bot']
+            pcm = PaymentConfirmationManager(bot)
+            success = await pcm.confirm_paid(order_ref, method="FrenzyEx Webhook")
+            if success:
+                return web.json_response({"ok": True})
+            else:
+                return web.Response(status=500, text="Internal Server Error during provisioning")
+        else:
+            return web.Response(status=404, text="Order not found")
+            
+    return web.json_response({"ok": True})
+
+async def run_web_server(bot: Bot):
+    """Runs aiohttp web server concurrently."""
+    app = web.Application()
+    app['bot'] = bot
+    app.router.add_post('/ipn/frenzyex', frenzyex_webhook_handler)
+    
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, WEB_HOST, WEB_PORT)
+    await site.start()
+    logging.info(f"Web server started on {WEB_HOST}:{WEB_PORT}")
 
 # === MAIN ASYNC INITIALIZATION ===
 async def main():
@@ -102,6 +172,9 @@ async def main():
     
     # === CRON TASKS ===
     setup_cron_tasks(bot)
+    
+    # === START WEB SERVER ===
+    await run_web_server(bot)
     
     # === START POLLING ===
     logging.info("Starting bot polling...")

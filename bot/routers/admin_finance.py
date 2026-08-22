@@ -31,13 +31,13 @@ async def finance_menu(callback: types.CallbackQuery):
     async with aiosqlite.connect(DB_PATH) as db:
         async def get_status(code):
             """Handles get status."""
-            key = f"{code}_status" if code in ['tetra', 'usdt', 'gram'] else f"gateway_status_{code}"
+            key = f"{code}_status" if code in ['frenzyex', 'usdt', 'gram'] else f"gateway_status_{code}"
             async with db.execute("SELECT value FROM settings WHERE key = ?", (key,)) as cursor:
                 row = await cursor.fetchone()
                 return (row and row[0] == '1') or (not row and code in ['cart', 'zarinpal'])
                 
         status_cart = "✅" if await get_status('cart') else "❌"
-        status_tetra = "✅" if await get_status('tetra') else "❌"
+        status_frenzyex = "✅" if await get_status('frenzyex') else "❌"
         status_usdt = "✅" if await get_status('usdt') else "❌"
         status_gram = "✅" if await get_status('gram') else "❌"
     
@@ -47,8 +47,8 @@ async def finance_menu(callback: types.CallbackQuery):
     builder.button(text="کارت به کارت:", callback_data="none")
     builder.button(text=status_cart, callback_data="toggle_fin_cart")
     
-    builder.button(text="Tetra:", callback_data="none")
-    builder.button(text=status_tetra, callback_data="toggle_fin_tetra")
+    builder.button(text="FrenzyEx:", callback_data="none")
+    builder.button(text=status_frenzyex, callback_data="toggle_fin_frenzyex")
     
     builder.button(text="USDT:", callback_data="none")
     builder.button(text=status_usdt, callback_data="toggle_fin_usdt")
@@ -58,7 +58,7 @@ async def finance_menu(callback: types.CallbackQuery):
     
     # Settings
     builder.button(text="💳 تنظیم شماره کارت", callback_data="fin_set_card")
-    builder.button(text="🪙 آدرس کیف پول‌ها", callback_data="fin_crypto_wallets")
+    builder.button(text="🪙 تنظیم متغیرها", callback_data="fin_crypto_wallets")
     builder.button(text="🚫 استثناء تایید خودکار", callback_data="fin_auto_confirm_exceptions")
     
     # New Options
@@ -114,7 +114,7 @@ async def handle_finance_toggles(callback: types.CallbackQuery):
     import aiosqlite
     
     async with aiosqlite.connect(DB_PATH) as db:
-        key_name = f"{code}_status" if code in ['tetra', 'usdt', 'gram'] else f"gateway_status_{code}"
+        key_name = f"{code}_status" if code in ['frenzyex', 'usdt', 'gram'] else f"gateway_status_{code}"
         async with db.execute("SELECT value FROM settings WHERE key = ?", (key_name,)) as cursor:
             row = await cursor.fetchone()
             
@@ -137,22 +137,39 @@ async def crypto_wallets_menu(callback: types.CallbackQuery):
     builder.button(text="تغییر آدرس GRAM", callback_data="set_wallet_gram")
     builder.button(text="تغییر کامنت GRAM", callback_data="set_memo_gram")
     builder.button(text="تغییر لینک صرافی", callback_data="set_exchanger_gram")
-    builder.button(text="تنظیم API تترا", callback_data="set_tetra_api_key")
+    builder.button(text="تنظیم API Key FrenzyEx", callback_data="set_frenzyex_api_key")
+    builder.button(text="تنظیم Base URL FrenzyEx", callback_data="set_frenzyex_base_url")
+    builder.button(text="تنظیم Webhook Secret FrenzyEx", callback_data="set_frenzyex_callback_secret")
     builder.button(text="🔙 بازگشت", callback_data="admin_finance")
     builder.adjust(1)
-    await callback.message.edit_text("🪙 **مدیریت آدرس‌های کریپتو**", reply_markup=builder.as_markup(), parse_mode="Markdown")
+    await callback.message.edit_text("🪙 **مدیریت متغیر درگاه ها**", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
-@admin_finance_router.callback_query(F.data.in_(["set_wallet_usdt", "set_wallet_gram", "set_memo_gram", "set_exchanger_gram", "set_tetra_api_key"]))
+@admin_finance_router.callback_query(F.data.in_(["set_wallet_usdt", "set_wallet_gram", "set_memo_gram", "set_exchanger_gram", "set_frenzyex_api_key", "set_frenzyex_base_url", "set_frenzyex_callback_secret"]))
 async def set_crypto_wallet_prompt(callback: types.CallbackQuery, state: FSMContext):
     """Handles set crypto wallet prompt."""
     if not is_admin(callback.message): return
     key_name = callback.data.replace('set_', '')
     await state.update_data(setting_key=key_name)
     await state.set_state(FinanceStates.waiting_for_crypto_setting)
+    from database.db_manager import DB_PATH
+    import aiosqlite
     
+    current_val_text = ""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute('SELECT value FROM settings WHERE key = ?', (key_name,)) as cursor:
+            row = await cursor.fetchone()
+            if row and row[0]:
+                val = row[0]
+                if key_name == 'frenzyex_callback_secret':
+                    if len(val) > 8:
+                        val = f"{val[:4]}{'*' * (len(val) - 8)}{val[-4:]}"
+                    else:
+                        val = "****"
+                current_val_text = f"\nمقدار فعلی: `{val}`\n"
+                
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 لغو", callback_data="fin_crypto_wallets")
-    await callback.message.edit_text(f"لطفا مقدار جدید برای `{key_name}` را ارسال کنید:", reply_markup=builder.as_markup(), parse_mode="Markdown")
+    await callback.message.edit_text(f"لطفا مقدار جدید برای `{key_name}` را ارسال کنید:{current_val_text}", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
 @admin_finance_router.message(FinanceStates.waiting_for_crypto_setting)
 async def set_crypto_wallet_process(message: types.Message, state: FSMContext):
