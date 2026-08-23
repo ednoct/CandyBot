@@ -108,13 +108,12 @@ async def cmd_start(message: types.Message, state: FSMContext, command: CommandO
                 await show_user_management_panel(message, target_id)
                 return
         elif command.args.startswith("ref_"):
-
-        try:
-            ref_code = int(command.args[4:])
-            if is_new_user and ref_code != message.from_user.id:
-                await db_manager.set_referred_by(message.from_user.id, ref_code)
-        except ValueError:
-            pass
+            try:
+                ref_code = int(command.args[4:])
+                if is_new_user and ref_code != message.from_user.id:
+                    await db_manager.set_referred_by(message.from_user.id, ref_code)
+            except ValueError:
+                pass
 
     message_text, markup = await _build_main_menu(message.from_user.id)
     await message.answer(message_text, reply_markup=markup, parse_mode="HTML")
