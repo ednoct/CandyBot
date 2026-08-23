@@ -1235,3 +1235,103 @@ async def get_processing_invoices():
             "SELECT * FROM invoices WHERE status = 'processing' ORDER BY created_at ASC LIMIT 50"
         ) as cur:
             return await cur.fetchall()
+
+# ============================================================
+# USER LISTS & GLOBAL CHARGE
+# ============================================================
+
+async def get_all_users_detailed():
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT id, username, balance FROM users ORDER BY created_at DESC") as cur:
+            return await cur.fetchall()
+
+async def get_users_positive_balance():
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT id, username, balance FROM users WHERE balance > 0 ORDER BY balance DESC") as cur:
+            return await cur.fetchall()
+
+async def get_users_negative_balance():
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT id, username, balance FROM users WHERE balance < 0 ORDER BY balance ASC") as cur:
+            return await cur.fetchall()
+
+async def get_users_with_referrals():
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        # users who have affiliatescount > 0 OR exist as referrer in referral_commissions
+        async with db.execute("""
+            SELECT id, username, balance, affiliatescount 
+            FROM users 
+            WHERE affiliatescount > 0 
+               OR id IN (SELECT referrer_id FROM referral_commissions)
+            ORDER BY affiliatescount DESC
+        """) as cur:
+            return await cur.fetchall()
+
+async def add_global_balance(amount: int):
+    """Adds balance to all active users."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("UPDATE users SET balance = balance + ? WHERE is_active = 1", (amount,))
+        await db.commit()
+
+async def get_invoice_details(invoice_id: str):
+    """Fetch complete details of an invoice for search."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT i.*, u.username, x.sub_id, x.panel_id, p.url as panel_url
+            FROM invoices i
+            LEFT JOIN users u ON i.user_id = u.id
+            LEFT JOIN xui_licenses x ON i.id = x.invoice_id
+            LEFT JOIN xui_panels p ON x.panel_id = p.id
+            WHERE i.id = ?
+        """, (invoice_id,)) as cur:
+            return await cur.fetchone()
+
+async def get_all_active_xui_licenses_non_trial():
+    """Get all active xui_licenses that are not free trials to add traffic/time."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT xl.id, xl.invoice_id, xl.user_id, xl.panel_id, xl.sub_id, xl.license_note,
+                   p.url as panel_url, p.bearer_token, p.ip_limit
+            FROM xui_licenses xl
+            JOIN xui_panels p ON xl.panel_id = p.id
+            JOIN invoices i ON xl.invoice_id = i.id
+            WHERE i.status = 'approved' AND i.base_price > 0
+        """) as cur:
+            return await cur.fetchall()
+
+async def get_users_with_active_licenses():
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT DISTINCT u.id, u.username, u.balance
+            FROM users u
+            JOIN invoices i ON u.id = i.user_id
+            JOIN xui_licenses xl ON i.id = xl.invoice_id
+            WHERE i.status = 'approved'
+            ORDER BY u.created_at DESC
+        """) as cur:
+            return await cur.fetchall()
+
+async def add_trial_users_balance(amount: int):
+    """Adds balance to users who received a free trial but didn't buy anything."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("""
+            UPDATE users SET balance = balance + ?
+            WHERE is_active = 1
+            AND id IN (
+                SELECT user_id FROM free_trial_usage
+                UNION
+                SELECT user_id FROM invoices WHERE base_price = 0
+            )
+            AND id NOT IN (
+                SELECT user_id FROM invoices WHERE base_price > 0 AND status = 'approved'
+            )
+        """, (amount,))
+        await db.commit()
+

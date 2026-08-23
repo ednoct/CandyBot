@@ -25,6 +25,16 @@ class AdminStates(StatesGroup):
     waiting_for_crypto_address = State()
     waiting_for_transfer_target_id = State()
     waiting_for_qr_background = State()
+    
+    # === User Management (New Features) ===
+    waiting_for_global_charge_amount = State()
+    waiting_for_trial_charge_amount = State()
+    waiting_for_order_id = State()
+    waiting_for_global_traffic_days = State()
+    waiting_for_global_traffic_gb = State()
+    
+    waiting_for_admin_user_msg = State()
+    waiting_for_fast_gift_value = State()
     # === XUI Panel Management (مدیریت ثنا) ===
     waiting_for_panel_name = State()
     waiting_for_panel_url = State()

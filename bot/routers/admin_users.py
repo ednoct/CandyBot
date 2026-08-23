@@ -24,37 +24,25 @@ async def users_menu(callback: types.CallbackQuery, state: FSMContext):
     builder = InlineKeyboardBuilder()
     
     # Row 1
-    builder.row(InlineKeyboardButton(text="لیست کاربرانی که موجودی دارند.", callback_data="admin_users_balance"))
+    builder.row(InlineKeyboardButton(text="لیست کاربرانی که موجودی دارند.", callback_data="admin_ulist_bal_0"))
     # Row 2
-    builder.row(InlineKeyboardButton(text="لیست کاربرانی که زیرمجموعه دارند.", callback_data="admin_users_refs"))
+    builder.row(InlineKeyboardButton(text="لیست کاربرانی که زیرمجموعه دارند.", callback_data="admin_ulist_ref_0"))
     # Row 3
-    builder.row(InlineKeyboardButton(text="لیست کاربران شماره کارت فعال.", callback_data="admin_users_cards"))
+    builder.row(InlineKeyboardButton(text="لیست کاربران دارای اشتراک", callback_data="admin_ulist_sub_0"))
     # Row 4
-    builder.row(InlineKeyboardButton(text="لیست کاربرانی که موجودی منفی دارند.", callback_data="admin_users_negative"))
-    # Row 5 (RTL: Agents on right, All users on left?) The prompt: "[لیست کل کاربران] | [لیست نمایندگان] (فارسی از راست به چپ رعایت شود)"
-    # Right to left in code means rightmost button is first in the row. Wait, telegram renders LTR for buttons in array. 
-    # Array: [B1, B2] -> Rendered: B1 B2. In Persian, B1 is on the left. So B2 is on the right.
-    # To put [لیست نمایندگان] on the right, it should be the SECOND item. Wait, no.
-    # B1(left), B2(right) -> in Telegram, the first item in row is left, second is right.
-    # Wait, telegram actually renders RTL if phone language is Persian?
-    # Usually, developers put the "right" button as the second item to appear on the right for LTR phones, 
-    # but the prompt says: "[لیست کل کاربران] | [لیست نمایندگان] (فارسی از راست به چپ رعایت شود)"
-    # I'll put Agents first, All Users second in code:
-    builder.row(
-        InlineKeyboardButton(text="لیست کل کاربران", callback_data="admin_users_all"),
-        InlineKeyboardButton(text="لیست نمایندگان", callback_data="admin_users_agents")
-    )
-    # Row 6: [👥 شارژ همگانی] | [🛍 جستجو سفارش]
+    builder.row(InlineKeyboardButton(text="لیست کل کاربران", callback_data="admin_ulist_all_0"))
+    # Row 5: [👥 شارژ همگانی] | [🎁 شارژ تستی] | [🛍 جستجو سفارش]
     builder.row(
         InlineKeyboardButton(text="👥 شارژ همگانی", callback_data="admin_global_charge"),
+        InlineKeyboardButton(text="🎁 شارژ تریال", callback_data="admin_trial_charge"),
         InlineKeyboardButton(text="🛍 جستجو سفارش", callback_data="admin_search_order")
     )
-    # Row 7: [📩 بخش ارسال پیام] | [🔍 جستجو کاربر]
+    # Row 6: [📩 بخش ارسال پیام] | [🔍 جستجو کاربر]
     builder.row(
         InlineKeyboardButton(text="📩 بخش ارسال پیام", callback_data="admin_broadcast_menu"),
         InlineKeyboardButton(text="🔍 جستجو کاربر", callback_data="admin_search_user")
     )
-    # Row 8: [🔋 حجم یا زمان همگانی]
+    # Row 7: [🔋 حجم یا زمان همگانی]
     builder.row(InlineKeyboardButton(text="🔋 حجم یا زمان همگانی", callback_data="admin_global_traffic"))
     
     # Back button to main admin menu
@@ -92,8 +80,13 @@ async def show_user_management_panel(message: types.Message, target_id: int):
         builder.button(text="🔄 انتقال حساب", callback_data=f"user_transfer_{user['id']}")
         builder.button(text="📢 بدون نیاز به جوین", callback_data=f"user_bypass_{user['id']}")
         builder.button(text="💳 تراکنش‌ها", callback_data=f"user_payments_{user['id']}")
+        
+        # New buttons: Send Message and Fast Gift
+        builder.button(text="📩 ارسال پیام مستقیم", callback_data=f"user_msg_{user['id']}")
+        builder.button(text="🎁 ارسال کد هدیه", callback_data=f"user_gift_{user['id']}")
+        
         builder.button(text="🔙 بازگشت", callback_data="admin_users")
-        builder.adjust(2, 1, 2, 2, 1, 1)
+        builder.adjust(2, 1, 2, 2, 2, 1, 1)
     else:
         text = "❌ کاربر یافت نشد."
         builder = InlineKeyboardBuilder()
@@ -405,3 +398,376 @@ async def broadcast_execute(callback: types.CallbackQuery, state: FSMContext):
     
     await callback.message.edit_text(f"✅ فرآیند ارسال در پس‌زمینه آغاز شد. گزارش نهایی به زودی ارسال می‌شود.")
 
+# ============================================================
+# PAGINATED USER LISTS
+# ============================================================
+def _build_paginated_users_keyboard(users: list, list_type: str, current_page: int, total_pages: int):
+    from aiogram.types import InlineKeyboardButton
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    
+    builder = InlineKeyboardBuilder()
+    
+    start_idx = current_page * 10
+    end_idx = start_idx + 10
+    page_users = users[start_idx:end_idx]
+    
+    for u in page_users:
+        username = f"@{u['username']}" if u.get('username') else "NoUsername"
+        bal = u.get('balance', 0)
+        btn_text = f"👤 ID: {u['id']} | {username} | 💰 {bal}"
+        builder.row(InlineKeyboardButton(text=btn_text, callback_data=f"user_manage_{u['id']}"))
+        
+    # Pagination controls
+    nav_buttons = []
+    if current_page > 0:
+        nav_buttons.append(InlineKeyboardButton(text="⬅️ قبلی", callback_data=f"admin_ulist_{list_type}_{current_page - 1}"))
+    
+    nav_buttons.append(InlineKeyboardButton(text=f"📄 {current_page + 1} از {total_pages}", callback_data="ignore"))
+    
+    if current_page < total_pages - 1:
+        nav_buttons.append(InlineKeyboardButton(text="بعدی ➡️", callback_data=f"admin_ulist_{list_type}_{current_page + 1}"))
+        
+    if nav_buttons:
+        builder.row(*nav_buttons)
+        
+    builder.row(InlineKeyboardButton(text="🔙 بازگشت به منوی مدیریت", callback_data="admin_users"))
+    return builder.as_markup()
+
+@admin_users_router.callback_query(F.data.startswith("admin_ulist_"))
+async def handle_paginated_users(callback: types.CallbackQuery):
+    if not is_admin(callback.message): return
+    
+    parts = callback.data.split("_")
+    list_type = parts[2]
+    page = int(parts[3])
+    
+    if list_type == "all":
+        users = await db_manager.get_all_users_detailed()
+        title = "لیست کل کاربران"
+    elif list_type == "bal":
+        users = await db_manager.get_users_positive_balance()
+        title = "کاربران دارای موجودی"
+    elif list_type == "ref":
+        users = await db_manager.get_users_with_referrals()
+        title = "کاربران دارای زیرمجموعه"
+    elif list_type == "sub":
+        users = await db_manager.get_users_with_active_licenses()
+        title = "کاربران دارای اشتراک فعال"
+    else:
+        return await callback.answer("لیست نامعتبر", show_alert=True)
+        
+    if not users:
+        return await callback.answer("هیچ کاربری در این لیست یافت نشد.", show_alert=True)
+        
+    total_pages = (len(users) - 1) // 10 + 1
+    if page >= total_pages: page = total_pages - 1
+    if page < 0: page = 0
+    
+    markup = _build_paginated_users_keyboard(users, list_type, page, total_pages)
+    text = f"📁 **{title}**\nتعداد کل: {len(users)} کاربر\nصفحه {page+1} از {total_pages}\n\nبرای مدیریت، روی نام کاربر کلیک کنید:"
+    
+    try:
+        await callback.message.edit_text(text, reply_markup=markup, parse_mode="Markdown")
+    except Exception:
+        await callback.answer() # Ignore if message is not modified
+
+@admin_users_router.callback_query(F.data.startswith("user_manage_"))
+async def handle_user_manage_click(callback: types.CallbackQuery, state: FSMContext):
+    if not is_admin(callback.message): return
+    target_id = int(callback.data.split("_")[2])
+    await callback.message.delete()
+    await show_user_management_panel(callback.message, target_id)
+
+# ============================================================
+# SEARCH ORDER
+# ============================================================
+@admin_users_router.callback_query(F.data == "admin_search_order")
+async def search_order_prompt(callback: types.CallbackQuery, state: FSMContext):
+    if not is_admin(callback.message): return
+    await state.set_state(AdminStates.waiting_for_order_id)
+    
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 لغو", callback_data="admin_users")
+    await callback.message.edit_text("شناسه سفارش (Invoice ID) را وارد کنید:", reply_markup=builder.as_markup())
+
+@admin_users_router.message(AdminStates.waiting_for_order_id)
+async def search_order_execute(message: types.Message, state: FSMContext):
+    if not is_admin(message): return
+    invoice_id = message.text.strip()
+    await state.clear()
+    
+    order = await db_manager.get_invoice_details(invoice_id)
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 بازگشت", callback_data="admin_users")
+    
+    if not order:
+        return await message.answer(f"❌ سفارشی با شناسه `{invoice_id}` یافت نشد.", reply_markup=builder.as_markup())
+        
+    username = f"@{order['username']}" if order.get('username') else "ندارد"
+    text = (
+        f"🛍 **اطلاعات سفارش**\n\n"
+        f"شناسه فاکتور: `{order['id']}`\n"
+        f"آیدی کاربر: `{order['user_id']}` ({username})\n"
+        f"وضعیت: **{order['status']}**\n"
+        f"مبلغ: {order['final_amount']} تومان\n"
+        f"سرور: {order.get('panel_url', 'نامشخص')}\n\n"
+    )
+    if order.get('sub_id'):
+        from bot.services.xui_client import build_sub_url
+        sub_link = build_sub_url(order['panel_url'], order['sub_id'])
+        text += f"🔗 لینک اتصال:\n`{sub_link}`"
+        
+    await message.answer(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+
+# ============================================================
+# GLOBAL CHARGE
+# ============================================================
+@admin_users_router.callback_query(F.data == "admin_global_charge")
+async def global_charge_prompt(callback: types.CallbackQuery, state: FSMContext):
+    if not is_admin(callback.message): return
+    await state.set_state(AdminStates.waiting_for_global_charge_amount)
+    
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 لغو", callback_data="admin_users")
+    await callback.message.edit_text(
+        "مبلغ مورد نظر برای شارژ همگانی کیف پول تمام کاربران فعال را به تومان وارد کنید:\n(برای کسر موجودی، مبلغ منفی وارد کنید)", 
+        reply_markup=builder.as_markup()
+    )
+
+@admin_users_router.message(AdminStates.waiting_for_global_charge_amount)
+async def global_charge_execute(message: types.Message, state: FSMContext):
+    if not is_admin(message): return
+    try:
+        amount = int(message.text)
+    except ValueError:
+        return await message.answer("❌ لطفا یک عدد معتبر وارد کنید.")
+        
+    await state.clear()
+    msg = await message.answer("⏳ در حال اعمال تغییرات در دیتابیس...")
+    await db_manager.add_global_balance(amount)
+    
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 بازگشت به منوی کاربران", callback_data="admin_users")
+    await msg.edit_text(f"✅ مبلغ {amount} تومان به کیف پول تمامی کاربران فعال افزوده شد.", reply_markup=builder.as_markup())
+
+# ============================================================
+# GLOBAL TRAFFIC / TIME
+# ============================================================
+@admin_users_router.callback_query(F.data == "admin_global_traffic")
+async def global_traffic_prompt(callback: types.CallbackQuery, state: FSMContext):
+    if not is_admin(callback.message): return
+    await state.set_state(AdminStates.waiting_for_global_traffic_gb)
+    
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 لغو", callback_data="admin_users")
+    await callback.message.edit_text(
+        "لطفاً **حجم** مورد نظر برای اضافه شدن به تمامی کانفیگ‌های فعال (بجز تست رایگان) را به گیگابایت وارد کنید:\n(برای عدم تغییر 0 وارد کنید)", 
+        reply_markup=builder.as_markup()
+    )
+
+@admin_users_router.message(AdminStates.waiting_for_global_traffic_gb)
+async def global_traffic_days_prompt(message: types.Message, state: FSMContext):
+    if not is_admin(message): return
+    try:
+        gb = float(message.text)
+        await state.update_data(global_gb=gb)
+    except ValueError:
+        return await message.answer("❌ لطفا یک عدد معتبر وارد کنید.")
+        
+    await state.set_state(AdminStates.waiting_for_global_traffic_days)
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 لغو", callback_data="admin_users")
+    await message.answer(
+        "لطفاً **تعداد روز** مورد نظر برای اضافه شدن به تمامی کانفیگ‌های فعال را وارد کنید:\n(برای عدم تغییر 0 وارد کنید)",
+        reply_markup=builder.as_markup()
+    )
+
+@admin_users_router.message(AdminStates.waiting_for_global_traffic_days)
+async def global_traffic_execute(message: types.Message, state: FSMContext):
+    if not is_admin(message): return
+    try:
+        days = int(message.text)
+    except ValueError:
+        return await message.answer("❌ لطفا یک عدد معتبر وارد کنید.")
+        
+    data = await state.get_data()
+    gb = data.get('global_gb', 0)
+    await state.clear()
+    
+    if gb == 0 and days == 0:
+        return await message.answer("هیچ تغییری اعمال نشد.")
+        
+    msg = await message.answer("⏳ در حال دریافت لیست کانفیگ‌های فعال از دیتابیس... این فرآیند ممکن است طول بکشد.")
+    
+    # Run in background to prevent timeout
+    import asyncio
+    from bot.services.xui_client import XUIClient, build_client_email
+    
+    async def process_global_traffic():
+        licenses = await db_manager.get_all_active_xui_licenses_non_trial()
+        success = 0
+        failed = 0
+        
+        for row in licenses:
+            panel_url = row['panel_url']
+            token = row['bearer_token']
+            email = build_client_email(row['license_note'], row['user_id'], row['invoice_id'])
+            
+            try:
+                async with XUIClient(panel_url, token) as client:
+                    client_data = await client.get_client(email)
+                    if not client_data:
+                        failed += 1
+                        continue
+                        
+                    current_expiry = int(client_data.get("expiryTime") or 0)
+                    now_ms = int(time.time() * 1000)
+                    base = max(now_ms, current_expiry) if current_expiry else now_ms
+                    new_expiry = base + int(days) * 86400 * 1000
+                    
+                    current_total = int(client_data.get("totalGB") or 0)
+                    new_total = current_total + int(float(gb) * 1024 ** 3)
+                    
+                    await client.update_client(email, {
+                        "expiryTime": new_expiry,
+                        "totalGB": new_total,
+                        "enable": True
+                    })
+                    success += 1
+            except Exception as e:
+                failed += 1
+            
+            await asyncio.sleep(0.1) # Sleep to avoid spamming the panel
+            
+        await message.answer(f"✅ فرآیند حجم/زمان همگانی پایان یافت.\nموفق: {success}\nناموفق: {failed}")
+        
+    asyncio.create_task(process_global_traffic())
+    
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 بازگشت به منوی کاربران", callback_data="admin_users")
+    await msg.edit_text(f"فرآیند اضافه کردن {gb} گیگابایت و {days} روز به کانفیگ‌ها در پس‌زمینه آغاز شد.", reply_markup=builder.as_markup())
+
+# ============================================================
+# DIRECT MESSAGE TO USER
+# ============================================================
+@admin_users_router.callback_query(F.data.startswith("user_msg_"))
+async def direct_message_prompt(callback: types.CallbackQuery, state: FSMContext):
+    if not is_admin(callback.message): return
+    target_id = callback.data.split("_")[2]
+    await state.update_data(target_user_id=target_id)
+    await state.set_state(AdminStates.waiting_for_admin_user_msg)
+    
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 لغو", callback_data=f"user_manage_{target_id}")
+    await callback.message.edit_text(
+        f"📩 لطفاً پیام خود را برای ارسال به کاربر `{target_id}` وارد یا فوروارد کنید:\n(می‌توانید عکس یا ویدیو با کپشن ارسال کنید)",
+        reply_markup=builder.as_markup()
+    )
+
+@admin_users_router.message(AdminStates.waiting_for_admin_user_msg)
+async def direct_message_send(message: types.Message, state: FSMContext):
+    if not is_admin(message): return
+    data = await state.get_data()
+    target_id = data.get("target_user_id")
+    await state.clear()
+    
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 بازگشت به پروفایل کاربر", callback_data=f"user_manage_{target_id}")
+    
+    try:
+        await message.copy_to(chat_id=target_id)
+        await message.answer("✅ پیام شما با موفقیت به کاربر ارسال شد.", reply_markup=builder.as_markup())
+    except Exception as e:
+        await message.answer(f"❌ ارسال پیام با خطا مواجه شد. ممکن است کاربر ربات را بلاک کرده باشد.\nمتن خطا: {e}", reply_markup=builder.as_markup())
+
+# ============================================================
+# FAST GIFT CODE GENERATION
+# ============================================================
+import uuid
+
+@admin_users_router.callback_query(F.data.startswith("user_gift_"))
+async def fast_gift_prompt(callback: types.CallbackQuery, state: FSMContext):
+    if not is_admin(callback.message): return
+    target_id = callback.data.split("_")[2]
+    await state.update_data(target_user_id=target_id)
+    await state.set_state(AdminStates.waiting_for_fast_gift_value)
+    
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 لغو", callback_data=f"user_manage_{target_id}")
+    await callback.message.edit_text(
+        f"🎁 مبلغ هدیه اختصاصی برای کاربر `{target_id}` را به تومان وارد کنید:",
+        reply_markup=builder.as_markup()
+    )
+
+@admin_users_router.message(AdminStates.waiting_for_fast_gift_value)
+async def fast_gift_generate(message: types.Message, state: FSMContext):
+    if not is_admin(message): return
+    try:
+        value = int(message.text)
+    except ValueError:
+        return await message.answer("❌ مبلغ نامعتبر است.")
+        
+    data = await state.get_data()
+    target_id = data.get("target_user_id")
+    await state.clear()
+    
+    # Generate a unique 8-character code
+    code = f"GIFT-{uuid.uuid4().hex[:8].upper()}"
+    
+    import aiosqlite
+    from database.db_manager import DB_PATH
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO gift_codes (code, value, max_uses, user_id_restriction) VALUES (?, ?, ?, ?)",
+            (code, value, 1, target_id)
+        )
+        await db.commit()
+        
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 بازگشت به پروفایل کاربر", callback_data=f"user_manage_{target_id}")
+    
+    try:
+        gift_msg = (
+            f"🎁 **هدیه اختصاصی برای شما!**\n\n"
+            f"یک کد هدیه یکبار مصرف به مبلغ **{value}** تومان برای حساب شما صادر شد.\n"
+            f"کد هدیه: `{code}`\n\n"
+            f"می‌توانید در هنگام خرید از این کد استفاده کنید."
+        )
+        await message.bot.send_message(target_id, gift_msg, parse_mode="Markdown")
+        await message.answer(f"✅ کد هدیه `{code}` تولید و مستقیماً برای کاربر ارسال شد.", reply_markup=builder.as_markup())
+    except Exception as e:
+        await message.answer(
+            f"✅ کد هدیه `{code}` ساخته شد اما به دلیل خطای زیر برای کاربر ارسال نشد:\n{e}\n\nمی‌توانید به صورت دستی کد را برایش ارسال کنید.",
+            reply_markup=builder.as_markup()
+        )
+
+# ============================================================
+# TRIAL CHARGE
+# ============================================================
+@admin_users_router.callback_query(F.data == "admin_trial_charge")
+async def trial_charge_prompt(callback: types.CallbackQuery, state: FSMContext):
+    if not is_admin(callback.message): return
+    await state.set_state(AdminStates.waiting_for_trial_charge_amount)
+    
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 لغو", callback_data="admin_users")
+    await callback.message.edit_text(
+        "مبلغ مورد نظر برای **شارژ تست‌های رایگان** (کاربرانی که فقط سرویس رایگان گرفته‌اند) را به تومان وارد کنید:", 
+        reply_markup=builder.as_markup()
+    )
+
+@admin_users_router.message(AdminStates.waiting_for_trial_charge_amount)
+async def trial_charge_execute(message: types.Message, state: FSMContext):
+    if not is_admin(message): return
+    try:
+        amount = int(message.text)
+    except ValueError:
+        return await message.answer("❌ لطفا یک عدد معتبر وارد کنید.")
+        
+    await state.clear()
+    msg = await message.answer("⏳ در حال جستجو و شارژ کاربران هدف...")
+    await db_manager.add_trial_users_balance(amount)
+    
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 بازگشت به منوی کاربران", callback_data="admin_users")
+    await msg.edit_text(f"✅ مبلغ {amount} تومان به کیف پول تمام کاربرانی که فقط از تست رایگان استفاده کرده بودند افزوده شد.", reply_markup=builder.as_markup())
