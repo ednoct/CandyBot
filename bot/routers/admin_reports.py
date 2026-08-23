@@ -46,6 +46,9 @@ async def reports_menu(callback: types.CallbackQuery):
     builder = InlineKeyboardBuilder()
     builder.button(text="📊 آمار پیشرفته ربات", callback_data="stats_all")
     
+    # Reports Settings
+    builder.button(text="📣 تنظیمات گروه گزارشات", callback_data="report_group_setup")
+    
     # Exports
     builder.button(text="📑 خروجی کاربران", callback_data="export_users")
     builder.button(text="📑 خروجی سفارشات", callback_data="export_orders")
@@ -55,14 +58,33 @@ async def reports_menu(callback: types.CallbackQuery):
     builder.button(text="👥 پیگیری تست (CRM)", callback_data="crm_trial_followup")
     
     builder.button(text="🔙 بازگشت", callback_data="admin_back")
-    builder.adjust(1, 3, 1, 1)
+    builder.adjust(1, 1, 3, 1, 1)
     
     await callback.message.edit_text("📈 **آمار و گزارشات کندی**\n\nلطفا بخش مورد نظر را انتخاب کنید:", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
+
 # === ROUTER: REPORTS SETUP (TOPICS) ===
+@admin_reports_router.callback_query(F.data == "report_group_setup")
+async def report_setup_start_callback(callback: types.CallbackQuery, state: FSMContext):
+    """Handles report setup start via callback."""
+    if not is_admin(callback.message): return
+    
+    text = (
+        "آموزش تنظیم گروه :\n"
+        "1 - ابتدا یک گروه  بسازید\n"
+        "2 - ربات  @myidbot را عضو گروه کنید و دستور /getgroupid@myidbot داخل گروه ارسال کنید\n"
+        "3 - حالت تاپیک یا انجمن گروه را از تنظیمات گروه روشن کنید\n"
+        "4 - ربات خودتان را ادمین گروه کنید (مجوز مدیریت تاپیک‌ها فعال باشد)\n"
+        "5 - آیدی عددی ارسال شده را در ربات ارسال کنید."
+    )
+    
+    await state.set_state(AdminReportStates.waiting_for_report_group_id)
+    await callback.message.edit_text(text)
+    await callback.answer()
+
 @admin_reports_router.message(F.text == "📣 گزارشات ربات")
 async def report_setup_start(message: types.Message, state: FSMContext):
-    """Handles report setup start."""
+    """Handles report setup start via message."""
     if not is_admin(message): return
     
     text = (
