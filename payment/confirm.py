@@ -94,7 +94,7 @@ class PaymentConfirmationManager:
                 try:
                     await self.bot.send_message(
                         chat_id=referrer_id,
-                        text=f"🎁 تبریک! مبلغ {ref_res['amount']:,} تومان پورسانت بابت خرید زیرمجموعه شما به کیف پولتان اضافه شد.",
+                        text=f"🎉 تبریک! شما {ref_res['amount']:,} تومان بابت خرید زیرمجموعه خود پاداش دریافت کردید و به کیف پول شما اضافه شد.",
                         parse_mode="HTML"
                     )
                 except Exception as e:

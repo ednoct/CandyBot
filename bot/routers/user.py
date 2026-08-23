@@ -86,11 +86,15 @@ async def _build_main_menu(user_id: int) -> tuple[str, types.InlineKeyboardMarku
 async def cmd_start(message: types.Message, state: FSMContext, command: CommandObject = None):
     """Handles cmd start."""
     await state.clear()
-    await db_manager.create_user(message.from_user.id, message.from_user.username)
+    is_new_user = await db_manager.create_user(message.from_user.id, message.from_user.username)
 
     if command and command.args and command.args.startswith("ref_"):
-        ref_code = command.args[4:]
-        await db_manager.set_referred_by(message.from_user.id, ref_code)
+        try:
+            ref_code = int(command.args[4:])
+            if is_new_user and ref_code != message.from_user.id:
+                await db_manager.set_referred_by(message.from_user.id, ref_code)
+        except ValueError:
+            pass
 
     message_text, markup = await _build_main_menu(message.from_user.id)
     await message.answer(message_text, reply_markup=markup, parse_mode="HTML")
@@ -244,6 +248,35 @@ async def my_services(callback: types.CallbackQuery):
         reply_markup=builder.as_markup(),
         parse_mode="HTML"
     )
+
+# === ROUTER: AFFILIATE (REFERRAL) ===
+@user_router.callback_query(F.data == "affiliate")
+async def show_affiliate(callback: types.CallbackQuery):
+    """Handles affiliate."""
+    user_id = callback.from_user.id
+    bot_info = await callback.bot.get_me()
+    bot_username = bot_info.username
+    
+    invite_link = f"https://t.me/{bot_username}?start=ref_{user_id}"
+    
+    stats = await db_manager.get_referral_stats(user_id)
+    invited = stats['invited']
+    earned = stats['earned']
+    
+    text = (
+        "🤝 <b>همکاری در فروش (دعوت از دوستان)</b>\n\n"
+        "با دعوت دوستان خود به ربات، از هر خرید آنها پاداش دریافت کنید!\n\n"
+        f"👥 <b>تعداد دعوت شده‌ها:</b> {invited} نفر\n"
+        f"💰 <b>مجموع درآمد شما:</b> {earned:,} تومان\n\n"
+        "🔗 <b>لینک دعوت اختصاصی شما:</b>\n"
+        f"<code>{invite_link}</code>\n\n"
+        "برای کپی کردن لینک، روی آن کلیک کنید."
+    )
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(types.InlineKeyboardButton(text="🔙 برگشت", callback_data="main_menu"))
+    
+    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
 
 @user_router.callback_query(F.data.startswith("view_license_"))

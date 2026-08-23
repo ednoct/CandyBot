@@ -79,14 +79,15 @@ async def init_db():
         await db.execute(
             "INSERT OR IGNORE INTO settings (key, value) VALUES ('free_test_panel_id', '0')"
         )
+
         await db.execute(
-            "INSERT OR IGNORE INTO settings (key, value) VALUES ('admin_card_number', '1234-5678-9012-3456')"
+            "INSERT OR IGNORE INTO settings (key, value) VALUES ('referral_status', '0')"
         )
         await db.execute(
-            "INSERT OR IGNORE INTO settings (key, value) VALUES ('referral_enabled', '0')"
+            "INSERT OR IGNORE INTO settings (key, value) VALUES ('referral_reward_type', 'percent')"
         )
         await db.execute(
-            "INSERT OR IGNORE INTO settings (key, value) VALUES ('referral_commission_percent', '0')"
+            "INSERT OR IGNORE INTO settings (key, value) VALUES ('referral_reward_amount', '0')"
         )
         await db.execute(
             "INSERT OR IGNORE INTO settings (key, value) VALUES ('feedback_enabled', '1')"
@@ -119,11 +120,12 @@ async def get_user(user_id: int):
         async with db.execute('SELECT * FROM users WHERE id = ?', (user_id,)) as cursor:
             return await cursor.fetchone()
 
-async def create_user(user_id: int, username: str):
-    """Handles create user."""
+async def create_user(user_id: int, username: str) -> bool:
+    """Handles create user. Returns True if a new user was inserted, False otherwise."""
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute('INSERT OR IGNORE INTO users (id, username) VALUES (?, ?)', (user_id, username))
+        cursor = await db.execute('INSERT OR IGNORE INTO users (id, username) VALUES (?, ?)', (user_id, username))
         await db.commit()
+        return cursor.rowcount > 0
 
 async def update_user_step(user_id: int, step: str):
     """Handles update user step."""
@@ -976,16 +978,17 @@ async def credit_referral_commission(invoice_id: str) -> dict | None:
     Returns {'referrer_id', 'amount', 'balance'} or None.
     """
     # Check if referral enabled
-    enabled = await get_setting('referral_enabled', '0')
-    if enabled != '1':
+    status = await get_setting('referral_status', '0')
+    if status != '1':
         return None
 
-    percent_str = await get_setting('referral_commission_percent', '0')
+    r_type = await get_setting('referral_reward_type', 'percent')
+    val_str = await get_setting('referral_reward_amount', '0')
     try:
-        percent = float(percent_str)
+        val = float(val_str)
     except Exception:
-        percent = 0.0
-    if percent <= 0:
+        val = 0.0
+    if val <= 0:
         return None
 
     async with aiosqlite.connect(DB_PATH) as db:
@@ -1008,7 +1011,12 @@ async def credit_referral_commission(invoice_id: str) -> dict | None:
             return None
 
         referrer_id = int(user_row['referred_by'])
-        commission = int(paid_amount * percent / 100)
+        
+        if r_type == 'fixed':
+            commission = int(val)
+        else:
+            commission = int(paid_amount * val / 100)
+            
         if commission <= 0:
             return None
 
@@ -1026,7 +1034,7 @@ async def credit_referral_commission(invoice_id: str) -> dict | None:
 
     ok, new_balance = await wallet_adjust(
         referrer_id, commission, 'COMMISSION',
-        f"پورسانت از خرید کاربر {buyer_id} (فاکتور {invoice_id})",
+        f"پاداش بابت خرید کاربر {buyer_id} (فاکتور {invoice_id})",
         related_invoice_id=invoice_id,
         unique_key=f"commission:{invoice_id}"
     )

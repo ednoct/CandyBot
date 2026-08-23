@@ -71,7 +71,7 @@ async def cron_license_stats_check(bot=None):
 # === BACKGROUND TASK: PAYMENT CHECK ===
 async def cron_payment_check(bot=None):
     """
-    Background loop to check pending payments (plisio, crypto, cards).
+    Background loop to check pending payments (plisio, crypto).
     Replaces old PHP /cronbot logic for payments.
     Runs every 60 seconds.
     """

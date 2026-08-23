@@ -60,10 +60,13 @@ async def settings_menu(callback: types.CallbackQuery):
     # Free Trial
     builder.button(text="🎁 تنظیمات تست رایگان", callback_data="admin_free_trial")
     
+    # Referral
+    builder.button(text="🤝 تنظیمات زیرمجموعه‌گیری", callback_data="admin_referral")
+    
     # Back
     builder.button(text="🔙 بازگشت", callback_data="admin_back")
     
-    builder.adjust(2, 2, 2, 2, 2, 1, 1, 1)
+    builder.adjust(2, 2, 2, 2, 2, 1, 1, 1, 1)
     
     await callback.message.edit_text("⚙️ **تنظیمات عمومی ربات**", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
@@ -220,3 +223,93 @@ async def manage_qr_process(message: types.Message, state: FSMContext):
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 تنظیمات", callback_data="admin_settings")
     await message.answer("🖼 پس زمینه با موفقیت تنظیم گردید.", reply_markup=builder.as_markup())
+
+# === ROUTER: REFERRAL SYSTEM ===
+@admin_settings_router.callback_query(F.data == "admin_referral")
+async def referral_settings_menu(callback: types.CallbackQuery):
+    """Handles referral settings menu."""
+    if not is_admin(callback.message): return
+    
+    status = await db_manager.get_setting('referral_status', '0')
+    r_type = await db_manager.get_setting('referral_reward_type', 'percent')
+    val = await db_manager.get_setting('referral_reward_amount', '0')
+    
+    status_text = "✅ روشن" if status == '1' else "❌ خاموش"
+    type_text = "مبلغ ثابت" if r_type == 'fixed' else "درصد از خرید"
+    val_text = f"{val} تومان" if r_type == 'fixed' else f"{val} درصد"
+    
+    builder = InlineKeyboardBuilder()
+    builder.button(text="وضعیت سیستم:", callback_data="none")
+    builder.button(text=status_text, callback_data="toggle_ref_status")
+    
+    builder.button(text="نوع پاداش:", callback_data="none")
+    builder.button(text=type_text, callback_data="toggle_ref_type")
+    
+    builder.button(text="مقدار پاداش:", callback_data="none")
+    builder.button(text=val_text, callback_data="set_ref_value")
+    
+    builder.button(text="🔙 بازگشت به تنظیمات", callback_data="admin_settings")
+    
+    builder.adjust(2, 2, 2, 1)
+    
+    await callback.message.edit_text(
+        "🤝 **تنظیمات زیرمجموعه گیری**\n\n"
+        "در این بخش می‌توانید سیستم معرفی دوستان را مدیریت کنید.",
+        reply_markup=builder.as_markup(),
+        parse_mode="Markdown"
+    )
+
+@admin_settings_router.callback_query(F.data.in_({"toggle_ref_status", "toggle_ref_type"}))
+async def handle_referral_toggles(callback: types.CallbackQuery):
+    """Handles referral toggles."""
+    if not is_admin(callback.message): return
+    
+    if callback.data == "toggle_ref_status":
+        current = await db_manager.get_setting('referral_status', '0')
+        next_val = '0' if current == '1' else '1'
+        async with aiosqlite.connect(db_manager.DB_PATH) as db:
+            await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('referral_status', ?)", (next_val,))
+            await db.commit()
+    elif callback.data == "toggle_ref_type":
+        current = await db_manager.get_setting('referral_reward_type', 'percent')
+        next_val = 'percent' if current == 'fixed' else 'fixed'
+        async with aiosqlite.connect(db_manager.DB_PATH) as db:
+            await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('referral_reward_type', ?)", (next_val,))
+            await db.commit()
+            
+    await referral_settings_menu(callback)
+
+@admin_settings_router.callback_query(F.data == "set_ref_value")
+async def set_referral_value_prompt(callback: types.CallbackQuery, state: FSMContext):
+    """Handles set referral value prompt."""
+    if not is_admin(callback.message): return
+    await state.set_state(AdminStates.waiting_for_referral_value)
+    
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 لغو", callback_data="admin_referral")
+    await callback.message.edit_text(
+        "💰 **تنظیم مقدار پاداش**\n"
+        "لطفاً مقدار جدید را به صورت عددی ارسال کنید (بدون کاما):",
+        reply_markup=builder.as_markup(),
+        parse_mode="Markdown"
+    )
+
+@admin_settings_router.message(AdminStates.waiting_for_referral_value)
+async def set_referral_value_process(message: types.Message, state: FSMContext):
+    """Handles set referral value process."""
+    if not is_admin(message): return
+    try:
+        val = float(message.text.strip())
+        if val < 0: raise ValueError
+    except:
+        return await message.answer("❌ لطفاً یک عدد معتبر و مثبت وارد کنید.")
+        
+    val_str = str(int(val)) if val.is_integer() else str(val)
+    async with aiosqlite.connect(db_manager.DB_PATH) as db:
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('referral_reward_amount', ?)", (val_str,))
+        await db.commit()
+        
+    await state.set_state(None)
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 تنظیمات زیرمجموعه‌گیری", callback_data="admin_referral")
+    await message.answer("✅ مقدار پاداش با موفقیت ثبت شد.", reply_markup=builder.as_markup())

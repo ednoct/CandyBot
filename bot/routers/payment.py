@@ -1,7 +1,7 @@
 """
 This module corresponds to the 'bot/routers/payment.py' branch in the candy_architecture.md map.
 It acts as the UNIFIED PAYMENT HANDLER, routing 'pay_*' callbacks triggered from checkout,
-and integrating both online (FrenzyEx) and offline (USDT, GRAM, Card) gateways.
+and integrating both online (FrenzyEx) and offline (USDT, GRAM) gateways.
 """
 # === IMPORTS ===
 from aiogram import Router, F, types
@@ -24,7 +24,7 @@ class PaymentState(StatesGroup):
 @payment_router.callback_query(F.data.startswith("pay_"))
 async def process_payment(callback: types.CallbackQuery, state: FSMContext):
     """Handles process payment."""
-    gateway_code = callback.data.split('_')[1] # e.g. 'card', 'zarinpal', 'aqaye', 'trx', 'usdt', 'gram', 'frenzyex'
+    gateway_code = callback.data.split('_')[1] # e.g. 'zarinpal', 'aqaye', 'trx', 'usdt', 'gram', 'frenzyex'
     
     data = await state.get_data()
     if 'final_amount' not in data:
@@ -96,7 +96,6 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
     # Store gateway_code in state so receipt handler knows which type
     await state.update_data(last_gateway=gateway_code)
     
-    # 1. (Removed Card to Card)
 
     # 2. Handle USDT (Offline)
     if gateway_code == 'usdt':

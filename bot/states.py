@@ -52,6 +52,9 @@ class AdminStates(StatesGroup):
     waiting_for_free_trial_days = State()
     waiting_for_free_trial_daily_limit = State()
 
+    # === Referral System ===
+    waiting_for_referral_value = State()
+
 # === FSM STATES: CHECKOUT ===
 class CheckoutStates(StatesGroup):
     """Class representing CheckoutStates."""
