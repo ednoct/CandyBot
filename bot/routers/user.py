@@ -4,7 +4,7 @@ user.py
 Module containing functionalities for user.
 """
 # === IMPORTS ===
-from aiogram import Router, F, types
+from aiogram import Router, F, types, Bot
 from aiogram.filters import CommandStart, StateFilter, CommandObject
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
@@ -87,7 +87,7 @@ async def _build_main_menu(user_id: int) -> tuple[str, types.InlineKeyboardMarku
 
 # === ROUTER: START COMMAND ===
 @user_router.message(CommandStart(), StateFilter("*"))
-async def cmd_start(message: types.Message, state: FSMContext, command: CommandObject = None, bot: types.Bot = None):
+async def cmd_start(message: types.Message, state: FSMContext, command: CommandObject = None, bot: Bot = None):
     """Handles cmd start."""
     await state.clear()
     is_new_user = await db_manager.create_user(message.from_user.id, message.from_user.username)
@@ -558,7 +558,7 @@ async def handle_feedback_rating(callback: types.CallbackQuery, state: FSMContex
         await callback.message.edit_text(f"شما امتیاز {rating} ستاره دادید. از ثبت نظر شما سپاسگزاریم! 💖")
 
 @user_router.message(UserStates.waiting_for_feedback_comment)
-async def handle_feedback_comment(message: types.Message, state: FSMContext, bot: types.Bot):
+async def handle_feedback_comment(message: types.Message, state: FSMContext, bot: Bot):
     """Handles handle feedback comment."""
     data = await state.get_data()
     invoice_id = data.get('fb_invoice_id')

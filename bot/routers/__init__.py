@@ -20,6 +20,8 @@ from .payment import payment_router
 from .support import support_router
 from .user import user_router
 from .user_free_trial import user_free_trial_router
+from .admin_support import admin_support_router
+from .agent_support import agent_support_router
 
 __all__ = [
     "admin_router",
@@ -36,5 +38,7 @@ __all__ = [
     "payment_router",
     "support_router",
     "user_router",
-    "user_free_trial_router"
+    "user_free_trial_router",
+    "admin_support_router",
+    "agent_support_router"
 ]
