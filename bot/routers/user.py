@@ -12,6 +12,10 @@ import aiosqlite
 from database import db_manager
 from utils.ui_helpers import apply_premium_emojis
 from ..states import UserStates
+from bot.services.notifications import NotificationService
+from bot.routers.admin_users import show_user_management_panel
+from bot.config import ADMIN_IDS
+
 
 user_router = Router()
 
@@ -83,12 +87,28 @@ async def _build_main_menu(user_id: int) -> tuple[str, types.InlineKeyboardMarku
 
 # === ROUTER: START COMMAND ===
 @user_router.message(CommandStart(), StateFilter("*"))
-async def cmd_start(message: types.Message, state: FSMContext, command: CommandObject = None):
+async def cmd_start(message: types.Message, state: FSMContext, command: CommandObject = None, bot: types.Bot = None):
     """Handles cmd start."""
     await state.clear()
     is_new_user = await db_manager.create_user(message.from_user.id, message.from_user.username)
+    
+    if is_new_user and bot:
+        notif_service = NotificationService(bot)
+        username = f"@{message.from_user.username}" if message.from_user.username else "بدون یوزرنیم"
+        await notif_service.send_report(
+            topic_key="announcement_report",
+            text=f"🆕 **کاربر جدید به ربات پیوست!**\nآیدی: `{message.from_user.id}`\nنام کاربری: {username}",
+            user_id=message.from_user.id
+        )
 
-    if command and command.args and command.args.startswith("ref_"):
+    if command and command.args:
+        if command.args.startswith("manage_"):
+            if message.from_user.id in ADMIN_IDS:
+                target_id = command.args.split("_")[1]
+                await show_user_management_panel(message, target_id)
+                return
+        elif command.args.startswith("ref_"):
+
         try:
             ref_code = int(command.args[4:])
             if is_new_user and ref_code != message.from_user.id:
@@ -514,6 +534,13 @@ async def handle_acquisition_survey(callback: types.CallbackQuery):
         await db_manager.save_acquisition_source(callback.from_user.id, source)
         await callback.message.edit_text(f"از نظرسنجی شما متشکریم! ({source})")
         
+        notif_service = NotificationService(callback.bot)
+        await notif_service.send_report(
+            topic_key="announcement_report",
+            text=f"📊 **نظرسنجی آشنایی ثبت شد!**\nانتخاب کاربر: {source}",
+            user_id=callback.from_user.id
+        )
+        
 @user_router.callback_query(F.data.startswith("fb_rate_"))
 async def handle_feedback_rating(callback: types.CallbackQuery, state: FSMContext):
     """Handles handle feedback rating."""
@@ -532,7 +559,7 @@ async def handle_feedback_rating(callback: types.CallbackQuery, state: FSMContex
         await callback.message.edit_text(f"شما امتیاز {rating} ستاره دادید. از ثبت نظر شما سپاسگزاریم! 💖")
 
 @user_router.message(UserStates.waiting_for_feedback_comment)
-async def handle_feedback_comment(message: types.Message, state: FSMContext):
+async def handle_feedback_comment(message: types.Message, state: FSMContext, bot: types.Bot):
     """Handles handle feedback comment."""
     data = await state.get_data()
     invoice_id = data.get('fb_invoice_id')
@@ -542,6 +569,13 @@ async def handle_feedback_comment(message: types.Message, state: FSMContext):
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("UPDATE customer_feedback SET comment = ? WHERE invoice_id = ?", (message.text, invoice_id))
             await db.commit()
+            
+        notif_service = NotificationService(bot)
+        await notif_service.send_report(
+            topic_key="announcement_report",
+            text=f"📝 **نظر/انتقاد جدید ثبت شد!**\nفاکتور: `{invoice_id}`\n\nمتن پیام:\n{message.text}",
+            user_id=message.from_user.id
+        )
             
     await state.clear()
     await message.reply("نظر شما ثبت شد. با تشکر از همراهی شما! 🌺")

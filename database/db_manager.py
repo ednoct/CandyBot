@@ -182,6 +182,16 @@ async def set_setting(key: str, value: str):
         await db.execute('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', (key, value))
         await db.commit()
 
+# === REPORTS DB OPERATIONS ===
+async def set_report_setting(key: str, value: str):
+    """Sets a report-related setting (group id or topic thread id)."""
+    await set_setting(key, value)
+
+async def get_report_setting(key: str):
+    """Gets a report-related setting. Returns integer if exists, else None."""
+    val = await get_setting(key)
+    return int(val) if val and val.isdigit() else (int(val) if val else None)
+
 # === AUTH DB OPERATIONS ===
 async def user_from_token(token: str):
     """Handles user from token."""

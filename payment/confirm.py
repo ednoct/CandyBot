@@ -9,6 +9,7 @@ import aiosqlite
 from io import BytesIO
 from typing import Optional
 from database import db_manager
+from bot.services.notifications import NotificationService
 
 # === PAYMENT CONFIRMATION LOGIC ===
 class PaymentConfirmationManager:
@@ -132,6 +133,18 @@ class PaymentConfirmationManager:
                         await self.bot.send_message(chat_id=channel_row['value'], text=admin_text, parse_mode="HTML")
                     except Exception as e:
                         logging.error(f"Failed to send admin report: {e}")
+                        
+            # Also route to centralized NotificationService (finance_report)
+            try:
+                notif_service = NotificationService(self.bot)
+                topic_key = "buy_report" if invoice['plan_id'] != 0 else "finance_report"
+                await notif_service.send_report(
+                    topic_key=topic_key,
+                    text=f"💵 **پرداخت موفق**\n\nفاکتور: `{invoice_id}`\nمبلغ: {paid_amount:,} تومان\nروش: {method}",
+                    user_id=user_id
+                )
+            except Exception as e:
+                logging.error(f"Failed to send finance/buy report via NotificationService: {e}")
 
             # ----------------------------------------------------------------
             # XUI PROVISIONING — only for product invoices (plan_id != 0)
@@ -391,6 +404,22 @@ class PaymentConfirmationManager:
                         )
                     except Exception:
                         pass
+                
+                # Route to Centralized Notification System
+                try:
+                    notif_service = NotificationService(self.bot)
+                    await notif_service.send_report(
+                        topic_key="error_report",
+                        text=(
+                            f"🚨 **خطای صدور لایسنس**\n\n"
+                            f"فاکتور: `{invoice_id}`\n\n"
+                            f"📋 جزئیات خطا:\n<code>{admin_error[:800]}</code>"
+                        ),
+                        user_id=user_id
+                    )
+                except Exception as e:
+                    logging.error(f"Failed to send error report via NotificationService: {e}")
+                    
             except Exception as e:
                 logging.error(f"Failed to notify admins of provisioning failure: {e}")
 

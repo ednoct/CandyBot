@@ -4,8 +4,10 @@ admin_reports.py
 Module containing functionalities for admin_reports.
 """
 # === IMPORTS ===
-from aiogram import Router, F, types
+from aiogram import Router, F, types, Bot
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from datetime import datetime, timedelta
 import aiosqlite
 import csv
@@ -14,6 +16,22 @@ from .admin import is_admin
 from database import db_manager
 
 admin_reports_router = Router()
+
+class AdminReportStates(StatesGroup):
+    waiting_for_report_group_id = State()
+
+TOPICS = {
+    "buy_report": "🛍 گزارش های خرید",
+    "service_report": "📌 گزارش خرید خدمات",
+    "test_report": "🔑 گزارش اکانت تست",
+    "other_report": "⚙️ سایر گزارشات",
+    "error_report": "❌ گزارش خطا ها",
+    "finance_report": "💰 گزارش مالی",
+    "commission_report": "🎁 گزارش پورسانت ها",
+    "nightly_report": "🌙 گزارش شبانه",
+    "announcement_report": "📝 گزارش اطلاع رسانی ها"
+}
+
 
 # === ROUTER: REPORTS MENU ===
 @admin_reports_router.callback_query(F.data == "admin_reports")
@@ -39,6 +57,55 @@ async def reports_menu(callback: types.CallbackQuery):
     builder.adjust(1, 2, 1, 1, 3, 1, 1)
     
     await callback.message.edit_text("📈 **آمار و گزارشات کندی**\n\nلطفا بازه زمانی مورد نظر را انتخاب کنید:", reply_markup=builder.as_markup(), parse_mode="Markdown")
+
+# === ROUTER: REPORTS SETUP (TOPICS) ===
+@admin_reports_router.message(F.text == "📣 گزارشات ربات")
+async def report_setup_start(message: types.Message, state: FSMContext):
+    """Handles report setup start."""
+    if not is_admin(message): return
+    
+    text = (
+        "آموزش تنظیم گروه :\n"
+        "1 - ابتدا یک گروه  بسازید\n"
+        "2 - ربات  @myidbot را عضو گروه کنید و دستور /getgroupid@myidbot داخل گروه ارسال کنید\n"
+        "3 - حالت تاپیک یا انجمن گروه را از تنظیمات گروه روشن کنید\n"
+        "4 - ربات خودتان را ادمین گروه کنید (مجوز مدیریت تاپیک‌ها فعال باشد)\n"
+        "5 - آیدی عددی ارسال شده را در ربات ارسال کنید."
+    )
+    
+    await state.set_state(AdminReportStates.waiting_for_report_group_id)
+    await message.answer(text)
+
+@admin_reports_router.message(AdminReportStates.waiting_for_report_group_id)
+async def report_setup_process(message: types.Message, state: FSMContext, bot: Bot):
+    """Handles report setup process."""
+    if not is_admin(message): return
+    
+    group_id_str = message.text.strip()
+    
+    try:
+        chat = await bot.get_chat(group_id_str)
+    except Exception as e:
+        return await message.answer(f"❌ خطا در یافتن گروه (مطمئن شوید ربات ادمین گروه است): {e}")
+        
+    if not chat.is_forum:
+        return await message.answer("❌ گروه انتخاب شده حالت 'انجمن' (Forum) ندارد. لطفا از تنظیمات گروه آن را فعال کنید.")
+        
+    wait_msg = await message.answer("در حال ساخت تاپیک‌ها... لطفا صبر کنید.")
+    
+    await db_manager.set_report_setting("report_group_id", str(chat.id))
+    
+    created_topics = 0
+    for key, name in TOPICS.items():
+        try:
+            topic = await bot.create_forum_topic(chat.id, name)
+            await db_manager.set_report_setting(key, str(topic.message_thread_id))
+            created_topics += 1
+        except Exception as e:
+            await message.answer(f"❌ خطا در ساخت تاپیک '{name}': {e}")
+            
+    await state.set_state(None)
+    await wait_msg.edit_text(f"✅ تنظیمات با موفقیت انجام شد و {created_topics} تاپیک ساخته شد.")
 
 # === ROUTER: FETCH STATS ===
 @admin_reports_router.callback_query(F.data.startswith("stats_"))

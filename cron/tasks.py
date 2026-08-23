@@ -10,6 +10,11 @@ import aiosqlite
 from database.db_manager import DB_PATH
 from bot.routers import checkout
 from bot.services.sub_stats import fetch_sub_stats
+from utils.backup import create_database_backup
+from bot.services.notifications import NotificationService
+from aiogram.types import FSInputFile
+from database import db_manager
+
 
 # === BACKGROUND TASK: LICENSE STATS ALERTS ===
 async def cron_license_stats_check(bot=None):
@@ -107,13 +112,15 @@ async def cron_payment_check(bot=None):
             logging.error(f"Cron Payment Check Error: {e}")
         await asyncio.sleep(60)
 
-# === BACKGROUND TASK: DB CLEANUP ===
-async def cron_database_cleanup():
+# === BACKGROUND TASK: DB CLEANUP & NIGHTLY REPORT ===
+async def cron_database_cleanup(bot=None):
     """
-    Daily task to clean up old abandoned invoices and clear stale cache.
+    Daily task to clean up old abandoned invoices, generate stats, backup DB,
+    and send nightly report.
     Replaces generic legacy cron sweeps.
     Runs every 86400 seconds (24h).
     """
+    import os
     while True:
         try:
             async with aiosqlite.connect(DB_PATH) as db:
@@ -121,8 +128,42 @@ async def cron_database_cleanup():
                 await db.execute("DELETE FROM invoices WHERE status = 'pending' AND created_at < datetime('now', '-1 day')")
                 await db.commit()
                 logging.info("Executed daily database cleanup")
+                
+            if bot:
+                # 1. Fetch Daily Stats
+                from datetime import datetime
+                now = datetime.now()
+                start = now.replace(hour=0, minute=0, second=0).strftime('%Y-%m-%d %H:%M:%S')
+                stats = await db_manager.get_bot_stats("WHERE created_at >= ?", (start,))
+                
+                stats_text = (
+                    "🌙 **گزارش روزانه و بکاپ شبانه**\n━━━━━━━━━━━━━━━━━━\n"
+                    f"👥 ثبت نام امروز: {stats['users']} نفر\n"
+                    f"🛍 سفارشات امروز: {stats['orders']} عدد\n"
+                    f"🔑 اکانت‌های تست: {stats['tests']} عدد\n"
+                    f"💸 فروش امروز: {stats['sales']:,} تومان\n"
+                )
+                
+                # 2. Create DB Backup
+                zip_path = await create_database_backup()
+                
+                # 3. Send Notification
+                notif_service = NotificationService(bot)
+                if zip_path and os.path.exists(zip_path):
+                    await notif_service.send_report(
+                        topic_key="nightly_report",
+                        text=stats_text,
+                        file=FSInputFile(zip_path, filename=os.path.basename(zip_path)),
+                        caption=stats_text
+                    )
+                else:
+                    await notif_service.send_report(
+                        topic_key="nightly_report",
+                        text=stats_text + "\n\n⚠️ خطا در تهیه فایل بکاپ دیتابیس."
+                    )
+                    
         except Exception as e:
-            logging.error(f"Cron DB Cleanup Error: {e}")
+            logging.error(f"Cron DB Cleanup & Nightly Report Error: {e}")
         await asyncio.sleep(86400)
 
 # === BACKGROUND TASK: NOTIFICATIONS & BROADCAST ===
@@ -171,6 +212,6 @@ def setup_cron_tasks(bot=None, loop=None):
         loop = asyncio.get_event_loop()
     loop.create_task(cron_payment_check(bot))
     loop.create_task(cron_license_stats_check(bot))
-    loop.create_task(cron_database_cleanup())
+    loop.create_task(cron_database_cleanup(bot))
     loop.create_task(cron_broadcast())
     loop.create_task(cron_housekeeping())

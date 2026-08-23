@@ -32,11 +32,8 @@ async def search_user_prompt(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_user_id)
     await callback.message.edit_text("لطفا شناسه عددی (Chat ID) یا نام کاربری را وارد کنید:")
 
-@admin_users_router.message(AdminStates.waiting_for_user_id)
-async def search_user_result(message: types.Message, state: FSMContext):
-    if not is_admin(message): return
-    
-    target_id = message.text
+async def show_user_management_panel(message: types.Message, target_id: int):
+    """Builds and sends the user management panel for a given user ID."""
     user = await db_manager.get_user(target_id)
     
     if user:
@@ -67,7 +64,15 @@ async def search_user_result(message: types.Message, state: FSMContext):
         builder.button(text="🔙 بازگشت", callback_data="admin_users")
         
     await message.answer(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+
+@admin_users_router.message(AdminStates.waiting_for_user_id)
+async def search_user_result(message: types.Message, state: FSMContext):
+    if not is_admin(message): return
+    
+    target_id = message.text
+    await show_user_management_panel(message, target_id)
     await state.set_state(None)
+
 
 # === ROUTER: WALLET MANAGEMENT ===
 @admin_users_router.callback_query(F.data.startswith("wallet_add_"))

@@ -24,7 +24,7 @@ class PaymentState(StatesGroup):
 @payment_router.callback_query(F.data.startswith("pay_"))
 async def process_payment(callback: types.CallbackQuery, state: FSMContext):
     """Handles process payment."""
-    gateway_code = callback.data.split('_')[1] # e.g. 'zarinpal', 'aqaye', 'trx', 'usdt', 'gram', 'frenzyex'
+    gateway_code = callback.data.split('_')[1] # e.g. 'usdt', 'gram', 'frenzyex'
     
     data = await state.get_data()
     if 'final_amount' not in data:
