@@ -36,6 +36,16 @@ async def finance_menu(callback: types.CallbackQuery):
                 row = await cursor.fetchone()
                 return (row and row[0] == '1')
                 
+        is_frenzyex = await get_status('frenzyex')
+        is_usdt = await get_status('usdt')
+        is_gram = await get_status('gram')
+                
+    status_frenzyex = "✅" if is_frenzyex else "❌"
+    status_usdt = "✅" if is_usdt else "❌"
+    status_gram = "✅" if is_gram else "❌"
+    
+    builder = InlineKeyboardBuilder()
+                
     # Gateways (Parity with finance.php)
     
     builder.button(text="FrenzyEx:", callback_data="none")
