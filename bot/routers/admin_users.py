@@ -64,15 +64,16 @@ async def show_user_management_panel(message: types.Message, target_id: int):
         text = (
             f"👤 **اطلاعات کاربر**\n"
             f"شناسه: `{user['id']}`\n"
-            f"موجودی: {user.get('balance', 0)} تومان\n"
-            f"وضعیت: {user.get('status', 'active')}"
+            f"موجودی: {user['balance']} تومان\n"
+            f"وضعیت: {user['status'] if 'status' in user.keys() else 'active'}"
         )
         builder = InlineKeyboardBuilder()
         builder.button(text="➕ شارژ کیف", callback_data=f"wallet_add_{user['id']}")
         builder.button(text="➖ کسر کیف", callback_data=f"wallet_reduce_{user['id']}")
         builder.button(text="⭕️ صفر کردن موجودی", callback_data=f"wallet_zero_{user['id']}")
         
-        if user.get('status') == 'banned':
+        user_status = user['status'] if 'status' in user.keys() else 'active'
+        if user_status == 'banned':
             builder.button(text="✅ رفع مسدودی", callback_data=f"user_unban_{user['id']}")
         else:
             builder.button(text="🚫 مسدود کردن", callback_data=f"user_ban_{user['id']}")
@@ -412,8 +413,8 @@ def _build_paginated_users_keyboard(users: list, list_type: str, current_page: i
     page_users = users[start_idx:end_idx]
     
     for u in page_users:
-        username = f"@{u['username']}" if u.get('username') else "NoUsername"
-        bal = u.get('balance', 0)
+        username = f"@{u['username']}" if u['username'] else "NoUsername"
+        bal = u['balance'] if u['balance'] is not None else 0
         btn_text = f"👤 ID: {u['id']} | {username} | 💰 {bal}"
         builder.row(InlineKeyboardButton(text=btn_text, callback_data=f"user_manage_{u['id']}"))
         
