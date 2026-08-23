@@ -39,11 +39,12 @@ async def reports_menu(callback: types.CallbackQuery):
     """Handles reports menu."""
     if not is_admin(callback.message): return
     
+    # We will just redirect to the advanced stats default view (all time)
+    # The user wanted to replace the "Overall Bot Statistics" section.
+    # To keep the export buttons accessible, we will show the main menu with the advanced stats entry.
+    
     builder = InlineKeyboardBuilder()
-    builder.button(text="📊 آمار کلی ربات", callback_data="stats_all")
-    builder.button(text="🕐 آمار روز فعلی", callback_data="stats_today")
-    builder.button(text="🕐 آمار روز گذشته", callback_data="stats_yesterday")
-    builder.button(text="🕐 آمار ماه فعلی", callback_data="stats_month")
+    builder.button(text="📊 آمار پیشرفته ربات", callback_data="stats_all")
     
     # Exports
     builder.button(text="📑 خروجی کاربران", callback_data="export_users")
@@ -54,9 +55,9 @@ async def reports_menu(callback: types.CallbackQuery):
     builder.button(text="👥 پیگیری تست (CRM)", callback_data="crm_trial_followup")
     
     builder.button(text="🔙 بازگشت", callback_data="admin_back")
-    builder.adjust(1, 2, 1, 1, 3, 1, 1)
+    builder.adjust(1, 3, 1, 1)
     
-    await callback.message.edit_text("📈 **آمار و گزارشات کندی**\n\nلطفا بازه زمانی مورد نظر را انتخاب کنید:", reply_markup=builder.as_markup(), parse_mode="Markdown")
+    await callback.message.edit_text("📈 **آمار و گزارشات کندی**\n\nلطفا بخش مورد نظر را انتخاب کنید:", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
 # === ROUTER: REPORTS SETUP (TOPICS) ===
 @admin_reports_router.message(F.text == "📣 گزارشات ربات")
@@ -116,7 +117,7 @@ async def fetch_stats(callback: types.CallbackQuery):
     
     clause = ""
     params = ()
-    title = "📊 آمار کلی ربات"
+    title = "📊 آمار کلی ربات (تمام زمان‌ها)"
     
     now = datetime.now()
     
@@ -124,32 +125,92 @@ async def fetch_stats(callback: types.CallbackQuery):
         start = now.replace(hour=0, minute=0, second=0).strftime('%Y-%m-%d %H:%M:%S')
         clause = "WHERE created_at >= ?"
         params = (start,)
-        title = "🕐 آمار روز فعلی"
+        title = "🕐 آمار امروز"
     elif action == "yesterday":
         yesterday = now - timedelta(days=1)
         start = yesterday.replace(hour=0, minute=0, second=0).strftime('%Y-%m-%d %H:%M:%S')
         end = yesterday.replace(hour=23, minute=59, second=59).strftime('%Y-%m-%d %H:%M:%S')
         clause = "WHERE created_at BETWEEN ? AND ?"
         params = (start, end)
-        title = "🕐 آمار روز گذشته"
+        title = "🕐 آمار دیروز"
     elif action == "month":
         start = now.replace(day=1, hour=0, minute=0, second=0).strftime('%Y-%m-%d %H:%M:%S')
         clause = "WHERE created_at >= ?"
         params = (start,)
         title = "🕐 آمار ماه فعلی"
+    elif action == "prevmonth":
+        # First day of current month
+        first_day_curr = now.replace(day=1, hour=0, minute=0, second=0)
+        # Last day of prev month
+        last_day_prev = first_day_curr - timedelta(seconds=1)
+        # First day of prev month
+        first_day_prev = last_day_prev.replace(day=1, hour=0, minute=0, second=0)
         
-    stats = await db_manager.get_bot_stats(clause, params)
+        start = first_day_prev.strftime('%Y-%m-%d %H:%M:%S')
+        end = last_day_prev.strftime('%Y-%m-%d %H:%M:%S')
+        clause = "WHERE created_at BETWEEN ? AND ?"
+        params = (start, end)
+        title = "🕐 آمار ماه قبل"
+    elif action == "hour":
+        one_hour_ago = now - timedelta(hours=1)
+        start = one_hour_ago.strftime('%Y-%m-%d %H:%M:%S')
+        clause = "WHERE created_at >= ?"
+        params = (start,)
+        title = "🕐 آمار یک ساعت اخیر"
+    elif action == "custom":
+        await callback.answer("این بخش در آپدیت‌های بعدی اضافه خواهد شد.", show_alert=True)
+        return
+        
+    stats = await db_manager.get_advanced_bot_stats(clause, params)
     
-    text = f"**{title}**\n━━━━━━━━━━━━━━━━━━\n"
-    text += f"👥 **تعداد کاربران:** {stats['users']} نفر\n"
-    text += f"🛍 **تعداد سفارشات:** {stats['orders']} عدد\n"
-    text += f"🔑 **اکانت‌های تست:** {stats['tests']} عدد\n"
-    text += f"💸 **جمع مبلغ سفارشات:** {stats['sales']} تومان\n"
+    text = f"**{title}**\n━━━━━━━━━━━━━━━━━━\n\n"
+    text += "👤 **بخش کاربران:**\n"
+    text += f"🔹 تعداد کل کاربران: `{stats['total_users']}`\n"
+    text += f"🔹 کاربران دارای خرید: `{stats['users_with_purchase']}`\n"
+    text += f"🔹 اکانت‌های تست دریافت شده: `{stats['test_accounts']}`\n"
+    text += f"🔹 موجودی کل کاربران: `{stats['total_balance']:,}` تومان\n"
+    text += f"🔹 نظرسنجی‌ها: `{stats['poll_count']}` مورد (میانگین `{stats['avg_poll_rating']}` ⭐)\n\n"
+    
+    text += "💰 **بخش مالی و فروش:**\n"
+    text += f"🔸 تعداد کل فروش: `{stats['total_sales_count']}`\n"
+    text += f"🔸 تعداد کل فروش سرویس‌های فعال: `{stats['active_services_sales_count']}`\n"
+    text += f"🔸 جمع کل فروش: `{stats['total_sales_amount']:,}` تومان\n"
+    text += f"🔸 جمع کل فروش سرویس‌های فعال: `{stats['active_services_sales_amount']:,}` تومان\n"
+    text += f"🔸 جمع کل تمدید: `{stats['total_renewal_amount']:,}` تومان\n"
+    text += f"🔸 نرخ تبدیل به مشتری: `{stats['conversion_rate']}%`\n"
+    text += f"🔸 میانگین خرید هر مشتری: `{stats['avg_purchase']:,}` تومان\n"
+    text += f"🔸 درآمد پیش‌بینی‌شده ماهانه: `{stats['estimated_monthly_revenue']:,}` تومان\n"
+    text += f"🔸 درصد تمدید از فروش: `{stats['renewal_percentage']}%`\n"
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 بازگشت", callback_data="admin_reports")
     
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+    from aiogram.types import InlineKeyboardButton
+    # Row 1
+    builder.row(InlineKeyboardButton(text="⏱ آمار کل", callback_data="stats_all"))
+    # Row 2
+    builder.row(InlineKeyboardButton(text="⏱ یک ساعت اخیر", callback_data="stats_hour"))
+    # Row 3: [امروز] | [دیروز] -> In code from right to left: Today | Yesterday
+    builder.row(
+        InlineKeyboardButton(text="امروز ☁️", callback_data="stats_today"),
+        InlineKeyboardButton(text="دیروز ☀️", callback_data="stats_yesterday")
+    )
+    # Row 4: [ماه قبل] | [ماه فعلی]
+    builder.row(
+        InlineKeyboardButton(text="ماه قبل ☁️", callback_data="stats_prevmonth"),
+        InlineKeyboardButton(text="ماه فعلی ☀️", callback_data="stats_month")
+    )
+    # Row 5
+    builder.row(InlineKeyboardButton(text="🗓 مشاهده آمار در تاریخ مشخص", callback_data="stats_custom"))
+    # Row 6
+    builder.row(InlineKeyboardButton(text="❌ بستن", callback_data="admin_reports"))
+    
+    try:
+        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+    except Exception as e:
+        # Ignore message not modified error
+        pass
+    
+    await callback.answer()
 
 # === ROUTER: EXPORT DATA ===
 @admin_reports_router.callback_query(F.data.startswith("export_"))

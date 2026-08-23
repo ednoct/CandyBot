@@ -71,6 +71,24 @@ class UserStates(StatesGroup):
 # === FSM STATES: SUPPORT ===
 class SupportStates(StatesGroup):
     """Class representing SupportStates."""
+    waiting_for_department = State()
     waiting_for_user_message = State()
     waiting_for_admin_reply = State()
 
+# === FSM STATES: ADMIN SUPPORT ===
+class AdminSupportStates(StatesGroup):
+    waiting_for_dept_name = State()
+    waiting_for_agent_id_dept = State()
+    waiting_for_agent_id = State()
+    waiting_for_faq_text = State()
+    waiting_for_remove_dept = State()
+
+# === FSM STATES: AGENT ===
+class AgentStates(StatesGroup):
+    waiting_for_reply = State()
+
+# === FSM STATES: BROADCAST ===
+class BroadcastStates(StatesGroup):
+    waiting_for_audience = State()
+    waiting_for_message = State()
+    waiting_for_pin_decision = State()

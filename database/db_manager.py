@@ -58,6 +58,14 @@ async def init_db():
                 pass  # Column already exists
 
         # Seed default operating mode if not set
+        await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('operating_mode', 'api')")
+        
+        # Insert default department if none exist
+        async with db.execute("SELECT COUNT(*) FROM departments") as cursor:
+            if (await cursor.fetchone())[0] == 0:
+                await db.execute("INSERT INTO departments (name) VALUES ('عمومی')")
+                
+        await db.commit()
         await db.execute(
             "INSERT OR IGNORE INTO settings (key, value) VALUES ('operating_mode', 'NORMAL')"
         )
@@ -339,6 +347,8 @@ async def get_time_packages(plan_id: int):
         async with db.execute('SELECT * FROM time_packages WHERE plan_id = ?', (plan_id,)) as cursor:
             return await cursor.fetchall()
 
+
+
 async def get_time_package(package_id: int):
     """Handles get time package."""
     async with aiosqlite.connect(DB_PATH) as db:
@@ -586,6 +596,89 @@ async def get_bot_stats(timeframe_clause: str = "", timeframe_params: tuple = ()
             "orders": orders_count,
             "sales": sales_sum,
             "tests": test_count
+        }
+
+async def get_advanced_bot_stats(timeframe_clause: str = "", timeframe_params: tuple = ()):
+    """Handles get advanced bot stats."""
+    import time
+    async with aiosqlite.connect(DB_PATH) as db:
+        # User Stats
+        async with db.execute(f"SELECT COUNT(*) FROM users {timeframe_clause}", timeframe_params) as cursor:
+            total_users = (await cursor.fetchone())[0]
+            
+        async with db.execute("SELECT COUNT(DISTINCT user_id) FROM invoices WHERE status IN ('paid', 'approved')") as cursor:
+            users_with_purchase = (await cursor.fetchone())[0]
+            
+        async with db.execute(f"SELECT COUNT(*) FROM licenses_cargo WHERE is_free_test=1") as cursor:
+            test_accounts_cargo = (await cursor.fetchone())[0]
+        
+        async with db.execute(f"SELECT COUNT(*) FROM payment_reports WHERE payment_method = 'free_test'") as cursor:
+            test_accounts_report = (await cursor.fetchone())[0]
+            
+        test_accounts = test_accounts_cargo + test_accounts_report
+            
+        async with db.execute("SELECT SUM(balance) FROM users") as cursor:
+            total_balance = (await cursor.fetchone())[0] or 0
+            
+        async with db.execute("SELECT AVG(rating), COUNT(rating) FROM customer_feedback") as cursor:
+            row = await cursor.fetchone()
+            avg_poll_rating = round(row[0] or 0.0, 1)
+            poll_count = row[1] or 0
+
+        # Finance & Sales Stats
+        order_timeframe = timeframe_clause.replace("WHERE ", "AND ") if timeframe_clause else ""
+        
+        async with db.execute(f"SELECT COUNT(id) FROM invoices WHERE status IN ('paid', 'approved') {order_timeframe}", timeframe_params) as cursor:
+            total_sales_count = (await cursor.fetchone())[0] or 0
+            
+        async with db.execute(f"SELECT COUNT(id) FROM xui_licenses") as cursor:
+            active_services_sales_count = (await cursor.fetchone())[0] or 0
+            
+        async with db.execute(f"SELECT SUM(final_amount) FROM invoices WHERE status IN ('paid', 'approved') {order_timeframe}", timeframe_params) as cursor:
+            total_sales_amount = (await cursor.fetchone())[0] or 0
+            
+        # Approximation for active services amount: total sales in last 30 days
+        thirty_days_ago = time.time() - (30 * 24 * 3600)
+        async with db.execute("SELECT SUM(final_amount) FROM invoices WHERE status IN ('paid', 'approved') AND created_at >= datetime(?, 'unixepoch')", (thirty_days_ago,)) as cursor:
+            active_services_sales_amount = (await cursor.fetchone())[0] or 0
+            
+        async with db.execute(f"SELECT SUM(final_amount) FROM invoices WHERE status IN ('paid', 'approved') AND renew_license_id IS NOT NULL {order_timeframe}", timeframe_params) as cursor:
+            total_renewal_amount = (await cursor.fetchone())[0] or 0
+            
+        async with db.execute(f"SELECT COUNT(id) FROM invoices WHERE status IN ('paid', 'approved') AND renew_license_id IS NOT NULL {order_timeframe}", timeframe_params) as cursor:
+            renewals_count = (await cursor.fetchone())[0] or 0
+
+        # Derived metrics
+        conversion_rate = (users_with_purchase / total_users * 100) if total_users > 0 else 0
+        avg_purchase = (total_sales_amount / users_with_purchase) if users_with_purchase > 0 else 0
+        
+        # Estimated monthly revenue (sales from last 30 days)
+        # Using unix timestamp or datetime? invoices.created_at is TIMESTAMP DEFAULT CURRENT_TIMESTAMP (like '2023-10-01 12:00:00')
+        async with db.execute("SELECT SUM(final_amount) FROM invoices WHERE status IN ('paid', 'approved') AND created_at >= date('now', '-30 days')") as cursor:
+            estimated_monthly_revenue = (await cursor.fetchone())[0] or 0
+            
+        # Recalculate active_services_sales_amount correctly since the previous approach used unixepoch
+        async with db.execute("SELECT SUM(final_amount) FROM invoices WHERE status IN ('paid', 'approved') AND created_at >= date('now', '-30 days')") as cursor:
+            active_services_sales_amount = (await cursor.fetchone())[0] or 0
+            
+        renewal_percentage = (renewals_count / total_sales_count * 100) if total_sales_count > 0 else 0
+
+        return {
+            "total_users": total_users,
+            "users_with_purchase": users_with_purchase,
+            "test_accounts": test_accounts,
+            "total_balance": total_balance,
+            "avg_poll_rating": avg_poll_rating,
+            "poll_count": poll_count,
+            "total_sales_count": total_sales_count,
+            "active_services_sales_count": active_services_sales_count,
+            "total_sales_amount": total_sales_amount,
+            "active_services_sales_amount": active_services_sales_amount,
+            "total_renewal_amount": total_renewal_amount,
+            "conversion_rate": round(conversion_rate, 2),
+            "avg_purchase": round(avg_purchase, 0),
+            "estimated_monthly_revenue": estimated_monthly_revenue,
+            "renewal_percentage": round(renewal_percentage, 2)
         }
 
 async def get_invoice_count():

@@ -151,7 +151,9 @@ async def main():
         payment_router,
         support_router, 
         user_router,
-        user_free_trial_router
+        user_free_trial_router,
+        admin_support_router,
+        agent_support_router
     )
     
     dp.include_router(user_router)
@@ -169,6 +171,8 @@ async def main():
     dp.include_router(payment_router)
     dp.include_router(support_router)
     dp.include_router(user_free_trial_router)
+    dp.include_router(admin_support_router)
+    dp.include_router(agent_support_router)
     
     # === CRON TASKS ===
     setup_cron_tasks(bot)
