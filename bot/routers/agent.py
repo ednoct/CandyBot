@@ -47,7 +47,7 @@ async def show_agent_menu(callback: types.CallbackQuery, state: FSMContext):
     settlement_active = bool(stats['settlement_active'])
 
     text = (
-        f"{default_text}\n\n"
+        f"{default_text}\n"
         f"📊 <b>درصد کمیسیون شما:</b> <b>{commission_percent}٪</b>\n"
         f"🎯 <b>حداقل موجودی جهت درخواست تسویه:</b> <b>{min_settle:,} تومان</b>\n"
         f"💰 <b>موجودی کمیسیون نماینده:</b> <b>{commission_balance:,} تومان</b>\n\n"
@@ -72,7 +72,7 @@ async def show_agent_menu(callback: types.CallbackQuery, state: FSMContext):
         )
     else:
         btn_action = types.InlineKeyboardButton(
-            text="🔓 درخواست فعالسازی",
+            text="🔓 درخواست فعالسازی برداشت",
             callback_data="agent_req_activation",
             style="default"
         )
@@ -81,7 +81,7 @@ async def show_agent_menu(callback: types.CallbackQuery, state: FSMContext):
 
     # Back to user main menu
     builder.row(
-        types.InlineKeyboardButton(text="🔙 بازگشت", callback_data="main_menu", style="primary")
+        types.InlineKeyboardButton(text="🔙 بازگشت", callback_data="main_menu", style="danger")
     )
 
     await send_bottom_message(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
@@ -129,7 +129,7 @@ async def show_agent_referral(callback: types.CallbackQuery, state: FSMContext):
         )
     )
     builder.row(
-        types.InlineKeyboardButton(text="🔙 بازگشت", callback_data="agent_menu", style="primary")
+        types.InlineKeyboardButton(text="🔙 بازگشت", callback_data="agent_menu", style="danger")
     )
 
     banner_file_id = await db_manager.get_setting("affiliate_banner_file_id", AFFILIATE_BANNER_FILE_ID)
@@ -184,7 +184,7 @@ async def handle_agent_activation_request(callback: types.CallbackQuery):
     # Check if a pending request is already waiting
     if await db_manager.has_pending_activation_request(user_id):
         await callback.answer(
-            "⚠️ درخواست فعالسازی شما قبلاً ثبت شده و در انتظار بررسی مدیریت است.",
+            "⚠️ درخواست فعالسازی برداشت شما قبلاً ثبت شده و در انتظار بررسی مدیریت است.",
             show_alert=True
         )
         return
@@ -222,7 +222,7 @@ async def handle_agent_activation_request(callback: types.CallbackQuery):
             logger.error(f"Failed to notify admin {admin_id} for activation request: {e}")
 
     await callback.answer(
-        "✅ درخواست فعالسازی دکمه تسویه برای مدیریت ارسال شد.\nنتیجه بررسی از طریق پیام به شما اطلاع داده خواهد شد.",
+        "✅ درخواست فعالسازی برداشت دکمه تسویه برای مدیریت ارسال شد.\nنتیجه بررسی از طریق پیام به شما اطلاع داده خواهد شد.",
         show_alert=True
     )
 
@@ -271,7 +271,7 @@ async def handle_agent_settlement_request(callback: types.CallbackQuery, state: 
         types.InlineKeyboardButton(text="💰 کل موجودی", callback_data="agent_withdraw_all")
     )
     builder.row(
-        types.InlineKeyboardButton(text="🔙 انصراف", callback_data="agent_menu", style="primary")
+        types.InlineKeyboardButton(text="🔙 انصراف", callback_data="agent_menu", style="danger")
     )
 
     await send_bottom_message(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
@@ -298,7 +298,7 @@ async def process_withdraw_amount_message(message: types.Message, state: FSMCont
     raw_text = (message.text or "").strip().replace(",", "").replace("،", "")
     if not raw_text.isdigit():
         builder = InlineKeyboardBuilder()
-        builder.row(types.InlineKeyboardButton(text="🔙 انصراف", callback_data="agent_menu", style="primary"))
+        builder.row(types.InlineKeyboardButton(text="🔙 انصراف", callback_data="agent_menu", style="danger"))
         await message.answer("❌ لطفاً یک عدد معتبر به تومان وارد کنید:", reply_markup=builder.as_markup())
         return
 
@@ -315,7 +315,7 @@ async def process_withdraw_amount_message(message: types.Message, state: FSMCont
 
     if amount < min_settle:
         builder = InlineKeyboardBuilder()
-        builder.row(types.InlineKeyboardButton(text="🔙 انصراف", callback_data="agent_menu", style="primary"))
+        builder.row(types.InlineKeyboardButton(text="🔙 انصراف", callback_data="agent_menu", style="danger"))
         await message.answer(
             f"❌ حداقل مبلغ برای ثبت درخواست تسویه <b>{min_settle:,} تومان</b> است.",
             reply_markup=builder.as_markup(),
@@ -325,7 +325,7 @@ async def process_withdraw_amount_message(message: types.Message, state: FSMCont
 
     if amount > commission_balance:
         builder = InlineKeyboardBuilder()
-        builder.row(types.InlineKeyboardButton(text="🔙 انصراف", callback_data="agent_menu", style="primary"))
+        builder.row(types.InlineKeyboardButton(text="🔙 انصراف", callback_data="agent_menu", style="danger"))
         await message.answer(
             f"❌ مبلغ درخواستی بیشتر از موجودی کمیسیون شما (<b>{commission_balance:,} تومان</b>) است.",
             reply_markup=builder.as_markup(),
@@ -349,7 +349,7 @@ async def _process_settlement_amount_flow(event: types.CallbackQuery | types.Mes
     gram_irt_price = await get_gram_irt_price()
     if gram_irt_price is None:
         builder = InlineKeyboardBuilder()
-        builder.row(types.InlineKeyboardButton(text="🔙 بازگشت به نمایندگی", callback_data="agent_menu", style="primary"))
+        builder.row(types.InlineKeyboardButton(text="🔙 بازگشت به نمایندگی", callback_data="agent_menu", style="danger"))
         error_msg = "❌ خطا در دریافت قیمت لحظه‌ای گرام. لطفاً چند لحظه بعد مجدداً تلاش فرمایید."
         if isinstance(event, types.CallbackQuery):
             await event.answer(error_msg, show_alert=True)
@@ -360,7 +360,7 @@ async def _process_settlement_amount_flow(event: types.CallbackQuery | types.Mes
     gram_amount = round(amount / gram_irt_price, 2)
     if gram_amount < 0.1:
         builder = InlineKeyboardBuilder()
-        builder.row(types.InlineKeyboardButton(text="🔙 بازگشت به نمایندگی", callback_data="agent_menu", style="primary"))
+        builder.row(types.InlineKeyboardButton(text="🔙 بازگشت به نمایندگی", callback_data="agent_menu", style="danger"))
         error_msg = "❌ خطا: کمترین مبلغ برای تسویه در این درگاه 0.1 گرام می‌باشد."
         if isinstance(event, types.CallbackQuery):
             await event.answer(error_msg, show_alert=True)
@@ -386,7 +386,7 @@ async def _process_settlement_amount_flow(event: types.CallbackQuery | types.Mes
         types.InlineKeyboardButton(text="📥 وارد کردن آدرس کیف پول", callback_data="agent_enter_wallet")
     )
     builder.row(
-        types.InlineKeyboardButton(text="🔙 انصراف", callback_data="agent_menu", style="primary")
+        types.InlineKeyboardButton(text="🔙 انصراف", callback_data="agent_menu", style="danger")
     )
 
     if isinstance(event, types.CallbackQuery):
@@ -414,7 +414,7 @@ async def start_enter_wallet(callback: types.CallbackQuery, state: FSMContext):
 
     builder = InlineKeyboardBuilder()
     builder.row(
-        types.InlineKeyboardButton(text="🔙 انصراف", callback_data="agent_menu", style="primary")
+        types.InlineKeyboardButton(text="🔙 انصراف", callback_data="agent_menu", style="danger")
     )
 
     await send_bottom_message(callback, prompt_text, reply_markup=builder.as_markup(), parse_mode="HTML")
@@ -427,7 +427,7 @@ async def process_wallet_address(message: types.Message, state: FSMContext):
 
     if len(wallet_addr) < 20 or " " in wallet_addr or len(wallet_addr) > 120:
         builder = InlineKeyboardBuilder()
-        builder.row(types.InlineKeyboardButton(text="🔙 انصراف", callback_data="agent_menu", style="primary"))
+        builder.row(types.InlineKeyboardButton(text="🔙 انصراف", callback_data="agent_menu", style="danger"))
         await message.answer(
             "❌ فرمت آدرس کیف پول نامعتبر است. لطفاً یک آدرس معتبر شبکه TON ارسال نمایید:",
             reply_markup=builder.as_markup()
@@ -456,7 +456,7 @@ async def process_wallet_address(message: types.Message, state: FSMContext):
         types.InlineKeyboardButton(text="✅ نهایی کردن درخواست تسویه", callback_data="agent_finalize_settle")
     )
     builder.row(
-        types.InlineKeyboardButton(text="🔙 انصراف", callback_data="agent_menu", style="primary")
+        types.InlineKeyboardButton(text="🔙 انصراف", callback_data="agent_menu", style="danger")
     )
 
     await message.answer(confirm_text, reply_markup=builder.as_markup(), parse_mode="HTML")
@@ -510,7 +510,7 @@ async def finalize_settlement_request(callback: types.CallbackQuery, state: FSMC
     )
     user_builder = InlineKeyboardBuilder()
     user_builder.row(
-        types.InlineKeyboardButton(text="🔙 بازگشت به نمایندگی", callback_data="agent_menu", style="primary")
+        types.InlineKeyboardButton(text="🔙 بازگشت به نمایندگی", callback_data="agent_menu", style="danger")
     )
     await send_bottom_message(callback, user_confirm_text, reply_markup=user_builder.as_markup(), parse_mode="HTML")
 

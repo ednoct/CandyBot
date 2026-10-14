@@ -57,7 +57,7 @@ async def admin_agent_menu(callback: types.CallbackQuery, state: FSMContext):
 
     # Row 4: Back
     builder.row(
-        types.InlineKeyboardButton(text="🔙 بازگشت", callback_data="admin_panel_start", style="primary")
+        types.InlineKeyboardButton(text="🔙 بازگشت", callback_data="admin_panel_start", style="danger")
     )
 
     await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
@@ -80,7 +80,7 @@ async def set_default_text_start(callback: types.CallbackQuery, state: FSMContex
     )
 
     builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text="🔙 انصراف", callback_data="admin_agent", style="primary"))
+    builder.row(types.InlineKeyboardButton(text="🔙 انصراف", callback_data="admin_agent", style="danger"))
 
     await state.set_state(AdminAgentStates.waiting_for_default_text)
     await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
@@ -100,7 +100,7 @@ async def process_default_text(message: types.Message, state: FSMContext):
     await state.clear()
 
     builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text="🔙 بازگشت به تنظیمات نمایندگان", callback_data="admin_agent", style="primary"))
+    builder.row(types.InlineKeyboardButton(text="🔙 بازگشت به تنظیمات نمایندگان", callback_data="admin_agent", style="danger"))
 
     await message.answer("✅ متن پیشفرض نمایندگی با موفقیت به‌روزرسانی شد.", reply_markup=builder.as_markup())
 
@@ -122,7 +122,7 @@ async def set_commission_percent_start(callback: types.CallbackQuery, state: FSM
     )
 
     builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text="🔙 انصراف", callback_data="admin_agent", style="primary"))
+    builder.row(types.InlineKeyboardButton(text="🔙 انصراف", callback_data="admin_agent", style="danger"))
 
     await state.set_state(AdminAgentStates.waiting_for_commission_percent)
     await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
@@ -148,7 +148,7 @@ async def process_commission_percent(message: types.Message, state: FSMContext):
     await state.clear()
 
     builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text="🔙 بازگشت به تنظیمات نمایندگان", callback_data="admin_agent", style="primary"))
+    builder.row(types.InlineKeyboardButton(text="🔙 بازگشت به تنظیمات نمایندگان", callback_data="admin_agent", style="danger"))
 
     await message.answer(f"✅ درصد کمیسیون نمایندگان با موفقیت روی <b>{pct_str}٪</b> تنظیم شد.", reply_markup=builder.as_markup(), parse_mode="HTML")
 
@@ -174,7 +174,7 @@ async def set_min_settlement_start(callback: types.CallbackQuery, state: FSMCont
     )
 
     builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text="🔙 انصراف", callback_data="admin_agent", style="primary"))
+    builder.row(types.InlineKeyboardButton(text="🔙 انصراف", callback_data="admin_agent", style="danger"))
 
     await state.set_state(AdminAgentStates.waiting_for_min_settlement)
     await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
@@ -195,7 +195,7 @@ async def process_min_settlement(message: types.Message, state: FSMContext):
     await state.clear()
 
     builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text="🔙 بازگشت به تنظیمات نمایندگان", callback_data="admin_agent", style="primary"))
+    builder.row(types.InlineKeyboardButton(text="🔙 بازگشت به تنظیمات نمایندگان", callback_data="admin_agent", style="danger"))
 
     await message.answer(f"✅ حداقل موجودی جهت ثبت درخواست تسویه روی <b>{val:,} تومان</b> تنظیم شد.", reply_markup=builder.as_markup(), parse_mode="HTML")
 
@@ -226,7 +226,7 @@ async def list_unsettled_settlements(callback: types.CallbackQuery):
 
     if not items:
         text = "✅ در حال حاضر هیچ درخواست تسویه نشده یا منتظر مانده‌ای وجود ندارد."
-        builder.row(types.InlineKeyboardButton(text="🔙 بازگشت به تنظیمات نمایندگان", callback_data="admin_agent", style="primary"))
+        builder.row(types.InlineKeyboardButton(text="🔙 بازگشت به تنظیمات نمایندگان", callback_data="admin_agent", style="danger"))
         return await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
     text = (
@@ -256,7 +256,7 @@ async def list_unsettled_settlements(callback: types.CallbackQuery):
         builder.row(*nav_buttons)
 
     builder.row(
-        types.InlineKeyboardButton(text="🔙 بازگشت به تنظیمات نمایندگان", callback_data="admin_agent", style="primary")
+        types.InlineKeyboardButton(text="🔙 بازگشت به تنظیمات نمایندگان", callback_data="admin_agent", style="danger")
     )
 
     await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
@@ -324,7 +324,7 @@ async def view_settlement_item(callback: types.CallbackQuery):
 
     # Row 3: Back to unsettled list
     builder.row(
-        types.InlineKeyboardButton(text="🔙 بازگشت به لیست تسویه نشده‌ها", callback_data="agent_unsettled_page_0", style="primary")
+        types.InlineKeyboardButton(text="🔙 بازگشت به لیست تسویه نشده‌ها", callback_data="agent_unsettled_page_0", style="danger")
     )
 
     await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
@@ -372,7 +372,7 @@ async def mark_settlement_done_start(callback: types.CallbackQuery, state: FSMCo
     )
 
     builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text="🔙 انصراف", callback_data="agent_unsettled_page_0", style="primary"))
+    builder.row(types.InlineKeyboardButton(text="🔙 انصراف", callback_data="agent_unsettled_page_0", style="danger"))
 
     await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
@@ -418,7 +418,7 @@ async def process_settlement_tx_hash(message: types.Message, state: FSMContext):
 
     builder = InlineKeyboardBuilder()
     builder.row(
-        types.InlineKeyboardButton(text="🔙 بازگشت به لیست تسویه نشده‌ها", callback_data="agent_unsettled_page_0", style="primary")
+        types.InlineKeyboardButton(text="🔙 بازگشت به لیست تسویه نشده‌ها", callback_data="agent_unsettled_page_0", style="danger")
     )
 
     confirm_admin = (
@@ -453,8 +453,8 @@ async def list_activation_requests(callback: types.CallbackQuery):
     builder = InlineKeyboardBuilder()
 
     if not items:
-        text = "✅ در حال حاضر هیچ درخواست فعالسازی در انتظار بررسی وجود ندارد."
-        builder.row(types.InlineKeyboardButton(text="🔙 بازگشت به تنظیمات نمایندگان", callback_data="admin_agent", style="primary"))
+        text = "✅ در حال حاضر هیچ درخواست فعالسازی برداشت در انتظار بررسی وجود ندارد."
+        builder.row(types.InlineKeyboardButton(text="🔙 بازگشت به تنظیمات نمایندگان", callback_data="admin_agent", style="danger"))
         return await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
     text = (
@@ -484,7 +484,7 @@ async def list_activation_requests(callback: types.CallbackQuery):
         builder.row(*nav_buttons)
 
     builder.row(
-        types.InlineKeyboardButton(text="🔙 بازگشت به تنظیمات نمایندگان", callback_data="admin_agent", style="primary")
+        types.InlineKeyboardButton(text="🔙 بازگشت به تنظیمات نمایندگان", callback_data="admin_agent", style="danger")
     )
 
     await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
@@ -505,7 +505,7 @@ async def view_activation_request(callback: types.CallbackQuery):
 
     un = f"@{req['username']}" if req['username'] else "ندارد"
     text = (
-        "📩 <b>جزئیات درخواست فعالسازی تسویه نماینده</b>\n\n"
+        "📩 <b>جزئیات درخواست فعالسازی برداشت تسویه نماینده</b>\n\n"
         f"🆔 <b>شماره درخواست:</b> #{req['id']}\n"
         f"👤 <b>شناسه عددی نماینده:</b> <code>{req['user_id']}</code>\n"
         f"🔗 <b>نام کاربری:</b> {un}\n\n"
@@ -522,7 +522,7 @@ async def view_activation_request(callback: types.CallbackQuery):
             types.InlineKeyboardButton(text="❌ رد کردن", callback_data=f"agent_act_reject_{req['id']}")
         )
     builder.row(
-        types.InlineKeyboardButton(text="🔙 بازگشت به لیست درخواست‌ها", callback_data="agent_act_page_0", style="primary")
+        types.InlineKeyboardButton(text="🔙 بازگشت به لیست درخواست‌ها", callback_data="agent_act_page_0", style="danger")
     )
 
     await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
@@ -559,11 +559,11 @@ async def approve_activation_request(callback: types.CallbackQuery):
 
     builder = InlineKeyboardBuilder()
     builder.row(
-        types.InlineKeyboardButton(text="🔙 بازگشت به لیست درخواست‌ها", callback_data="agent_act_page_0", style="primary")
+        types.InlineKeyboardButton(text="🔙 بازگشت به لیست درخواست‌ها", callback_data="agent_act_page_0", style="danger")
     )
 
     await callback.message.edit_text(
-        f"✅ <b>درخواست فعالسازی تایید شد!</b>\n\nدکمه درخواست تسویه برای نماینده (<code>{user_id}</code>) برای همیشه فعال گردید و پیام اطلاع‌رسانی برای ایشان ارسال شد.",
+        f"✅ <b>درخواست فعالسازی برداشت تایید شد!</b>\n\nدکمه درخواست تسویه برای نماینده (<code>{user_id}</code>) برای همیشه فعال گردید و پیام اطلاع‌رسانی برای ایشان ارسال شد.",
         reply_markup=builder.as_markup(),
         parse_mode="HTML"
     )
@@ -586,13 +586,13 @@ async def reject_activation_request_start(callback: types.CallbackQuery, state: 
     await state.update_data(req_id=req_id, user_id=req['user_id'])
 
     text = (
-        f"✍️ <b>رد درخواست فعالسازی #{req_id}</b>\n"
+        f"✍️ <b>رد درخواست فعالسازی برداشت #{req_id}</b>\n"
         f"نماینده: <code>{req['user_id']}</code>\n\n"
         "لطفاً دلیل رد درخواست را وارد فرمایید تا به صورت نوتیفیکیشن برای نماینده ارسال گردد:"
     )
 
     builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text="🔙 انصراف", callback_data="agent_act_page_0", style="primary"))
+    builder.row(types.InlineKeyboardButton(text="🔙 انصراف", callback_data="agent_act_page_0", style="danger"))
 
     await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
@@ -620,7 +620,7 @@ async def process_activation_reject_reason(message: types.Message, state: FSMCon
 
     # Notify agent
     agent_msg = (
-        "❌ <b>درخواست فعالسازی دکمه تسویه شما رد شد.</b>\n\n"
+        "❌ <b>درخواست فعالسازی برداشت دکمه تسویه شما رد شد.</b>\n\n"
         f"📋 <b>علت رد درخواست توسط مدیریت:</b>\n{reason}\n\n"
         "<i>در صورت نیاز می‌توانید با پشتیبانی در ارتباط باشید.</i>"
     )
@@ -631,11 +631,11 @@ async def process_activation_reject_reason(message: types.Message, state: FSMCon
 
     builder = InlineKeyboardBuilder()
     builder.row(
-        types.InlineKeyboardButton(text="🔙 بازگشت به لیست درخواست‌ها", callback_data="agent_act_page_0", style="primary")
+        types.InlineKeyboardButton(text="🔙 بازگشت به لیست درخواست‌ها", callback_data="agent_act_page_0", style="danger")
     )
 
     await message.answer(
-        f"✅ درخواست فعالسازی #{req_id} رد شد و دلیل برای نماینده ارسال گردید.",
+        f"✅ درخواست فعالسازی برداشت #{req_id} رد شد و دلیل برای نماینده ارسال گردید.",
         reply_markup=builder.as_markup()
     )
 
