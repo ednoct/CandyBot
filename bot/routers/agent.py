@@ -109,7 +109,7 @@ async def show_agent_referral(callback: types.CallbackQuery, state: FSMContext):
     bot_info = await callback.bot.get_me()
     invite_link = f"https://t.me/{bot_info.username}?start=agent_{user_id}"
 
-    commission_percent = await db_manager.get_setting("agent_commission_percent", "٢٠")
+    commission_percent = await db_manager.get_setting("agent_commission_percent", "15")
     stats = await db_manager.get_agent_stats(user_id)
     invited = stats['invited']
     earned = stats['total_earned']
