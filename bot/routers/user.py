@@ -370,9 +370,9 @@ async def show_affiliate(callback: types.CallbackQuery, state: FSMContext):
                 query="share_affiliate",
                 allow_user_chats=True,
                 allow_group_chats=True,
-                allow_channel_chats=True,
-                style="primary"
-            )
+                allow_channel_chats=True
+            ),
+            style="primary"
         )
     )
     # دکمه برگشت
