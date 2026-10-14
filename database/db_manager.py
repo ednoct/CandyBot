@@ -1454,7 +1454,14 @@ async def remove_department(dept_id: int):
         await db.execute("DELETE FROM departments WHERE id = ?", (dept_id,))
         await db.commit()
 
-async def set_department_agent(dept_id: int, agent_id):
+async def get_department_by_name(name: str):
+    """Returns a single department by name."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM departments WHERE name = ?", (name,)) as cur:
+            return await cur.fetchone()
+
+async def set_department_support_user(dept_id: int, agent_id):
     """Sets the support agent (user_id) for a department. Pass None to clear."""
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
@@ -1462,6 +1469,8 @@ async def set_department_agent(dept_id: int, agent_id):
             (agent_id, dept_id)
         )
         await db.commit()
+
+set_department_agent = set_department_support_user
 
 async def toggle_department_active(dept_id: int, is_active: bool):
     """Activates or deactivates a department."""

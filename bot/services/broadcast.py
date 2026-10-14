@@ -7,6 +7,11 @@ Module containing functionalities for broadcast.
 import asyncio
 import logging
 from database import db_manager
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+START_BUTTON_MARKUP = InlineKeyboardMarkup(inline_keyboard=[[
+    InlineKeyboardButton(text="🟢 شروع و خرید از ربات", callback_data="start_from_notification")
+]])
 
 # === BROADCAST SERVICE ===
 class BroadcastService:
@@ -32,7 +37,7 @@ class BroadcastService:
                     await db.execute("UPDATE broadcast_queue SET status = 'processing' WHERE id = ?", (msg['id'],))
                     await db.commit()
                     
-                    success = await self.send_notification(msg['user_id'], msg['message_text'])
+                    success = await self.send_notification(msg['user_id'], msg['message_text'], markup=START_BUTTON_MARKUP)
                     
                     # Mark complete or failed
                     final_status = 'completed' if success else 'failed'
@@ -43,13 +48,13 @@ class BroadcastService:
 
     async def send_notification(self, user_id: int, message: str, markup=None):
         """
-        Directly send a notification to a specific user.
+        Directly send a notification to a specific user with interactive start button.
         """
         try:
             await self.bot.send_message(
                 chat_id=user_id,
                 text=message,
-                reply_markup=markup,
+                reply_markup=markup or START_BUTTON_MARKUP,
                 parse_mode="HTML"
             )
             return True
@@ -82,8 +87,12 @@ async def safe_broadcast(bot, admin_id: int, user_ids: list, message_id: int, fr
         try:
             if is_forward:
                 msg = await bot.forward_message(chat_id=user_id, from_chat_id=from_chat_id, message_id=message_id)
+                try:
+                    await bot.send_message(chat_id=user_id, text="👇 جهت ورود به منوی اصلی و ثبت سفارش کلیک کنید:", reply_markup=START_BUTTON_MARKUP)
+                except Exception:
+                    pass
             else:
-                msg = await bot.copy_message(chat_id=user_id, from_chat_id=from_chat_id, message_id=message_id)
+                msg = await bot.copy_message(chat_id=user_id, from_chat_id=from_chat_id, message_id=message_id, reply_markup=START_BUTTON_MARKUP)
                 
             if pin_message and msg:
                 try:
@@ -100,8 +109,12 @@ async def safe_broadcast(bot, admin_id: int, user_ids: list, message_id: int, fr
             try:
                 if is_forward:
                     msg = await bot.forward_message(chat_id=user_id, from_chat_id=from_chat_id, message_id=message_id)
+                    try:
+                        await bot.send_message(chat_id=user_id, text="👇 جهت ورود به منوی اصلی و ثبت سفارش کلیک کنید:", reply_markup=START_BUTTON_MARKUP)
+                    except Exception:
+                        pass
                 else:
-                    msg = await bot.copy_message(chat_id=user_id, from_chat_id=from_chat_id, message_id=message_id)
+                    msg = await bot.copy_message(chat_id=user_id, from_chat_id=from_chat_id, message_id=message_id, reply_markup=START_BUTTON_MARKUP)
                 if pin_message and msg:
                     await bot.pin_chat_message(chat_id=user_id, message_id=msg.message_id)
                 success += 1

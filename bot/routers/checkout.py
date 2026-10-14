@@ -1,7 +1,7 @@
 """
 checkout.py
 -----------
-Module containing functionalities for checkout.
+Module containing functionalities for checkout with Dynamic Tiered Pricing.
 """
 # === IMPORTS ===
 from aiogram import Router, F, types
@@ -13,26 +13,104 @@ import uuid
 
 checkout_router = Router()
 
+# ============================================================
+# === TIERED PRICING ENGINE (موتور قیمت‌گذاری پلکانی هوشمند) ===
+# ============================================================
+
+# ساختار هر پلکان: (حداقل_گیگ, حداکثر_گیگ, درصد_تخفیف, عنوان_پلکان, ایموجی)
+TRAFFIC_TIERS = [
+    (1, 99, 0, "پلکان پایه (۱ تا ۹۹ گیگ)", "🔹"),
+    (100, 199, 10, "پلکان نقره‌ای (۱۰۰ تا ۱۹۹ گیگ)", "🥈"),
+    (200, 499, 18, "پلکان طلایی (۲۰۰ تا ۴۹۹ گیگ)", "🥇"),
+    (500, 999999, 25, "پلکان الماس (۵۰۰ گیگ به بالا)", "💎"),
+]
+
+def calculate_tiered_gb_price(base_price_per_gb: int, selected_gb: int) -> dict:
+    """
+    محاسبه قیمت داینامیک هر گیگ، مبلغ کل ترافیک و سود کاربر بر اساس پلکان حجم انتخابی.
+    """
+    discount_percent = 0
+    tier_name = TRAFFIC_TIERS[0][3]
+    tier_emoji = TRAFFIC_TIERS[0][4]
+    tier_index = 0
+    next_tier_gb = None
+    next_tier_discount = None
+    next_tier_unit_price = None
+
+    for i, (min_gb, max_gb, disc, name, emoji) in enumerate(TRAFFIC_TIERS):
+        if min_gb <= selected_gb <= max_gb:
+            discount_percent = disc
+            tier_name = name
+            tier_emoji = emoji
+            tier_index = i
+            if i + 1 < len(TRAFFIC_TIERS):
+                next_tier_gb = TRAFFIC_TIERS[i + 1][0]
+                next_tier_discount = TRAFFIC_TIERS[i + 1][2]
+                next_tier_unit_price = int(round((base_price_per_gb * (100 - next_tier_discount) / 100) / 10.0) * 10)
+            break
+
+    # رند کردن به ضریب ۱۰ تومان برای حفظ زیبایی اعداد در تمام قیمت‌های پایه
+    if discount_percent == 0:
+        unit_price = base_price_per_gb
+    else:
+        unit_price = int(round((base_price_per_gb * (100 - discount_percent) / 100) / 10.0) * 10)
+
+    total_traffic_price = selected_gb * unit_price
+    original_traffic_price = selected_gb * base_price_per_gb
+    saved_amount = original_traffic_price - total_traffic_price
+
+    return {
+        "unit_price": unit_price,
+        "base_unit_price": base_price_per_gb,
+        "discount_percent": discount_percent,
+        "tier_name": tier_name,
+        "tier_emoji": tier_emoji,
+        "tier_index": tier_index,
+        "total_traffic_price": total_traffic_price,
+        "saved_amount": saved_amount,
+        "next_tier_gb": next_tier_gb,
+        "next_tier_discount": next_tier_discount,
+        "next_tier_unit_price": next_tier_unit_price,
+    }
+
+
 # === HELPER: GENERATE INVOICE ===
-async def generate_invoice_text(plan_name, admin_description, days, gb, base_price, discount_code, discount_amount, gift_code, gift_amount, wallet_deduction, final_amount):
-    """Handles generate invoice text."""
-    text = "پیش پرداخت شما به شرح زیر است:\n"
-    text += "خرید اشتراک جدید\nنوع اشتراک: لاینس کندی کانکت\n"
-    text += f"سطح: {plan_name}\n\n"
-    text += "اشتراک جدید شما به شرح زیر است:\n"
-    text += f"حجم: {gb} گیگابایت\n"
-    text += f"مدت: {days} روز\n\n"
+async def generate_invoice_text(
+    plan_name, admin_description, days, gb, base_price,
+    discount_code, discount_amount, gift_code, gift_amount,
+    wallet_deduction, final_amount, tier_info=None
+):
+    """Handles generate invoice text with tiered savings info."""
+    text = "🧾 <b>پیش‌فاکتور رسمی شما به شرح زیر است:</b>\n\n"
+    text += "خرید اشتراک جدید\nنوع اشتراک: لایسنس کندی کانکت\n"
+    text += f"سطح سرویس: <b>{plan_name}</b>\n\n"
+    text += "📦 <b>مشخصات اشتراک انتخابی:</b>\n"
+    text += f"• حجم: <b>{gb} گیگابایت</b>\n"
+    if tier_info:
+        if tier_info['discount_percent'] > 0:
+            text += (
+                f"• تعرفه پلکانی: <b>هر گیگ {tier_info['unit_price']:,} تومان</b> "
+                f"({tier_info['discount_percent']}٪ تخفیف پلکان حجمی 🔥)\n"
+            )
+        else:
+            text += f"• تعرفه هر گیگ: <b>{tier_info['unit_price']:,} تومان</b>\n"
+    text += f"• مدت زمان: <b>{days} روز</b>\n\n"
+    
     if admin_description:
-        text += f"توضیحات ادمین:\n{admin_description}\n\n"
-    text += f"مبلغ: {base_price:,} تومان\n"
+        text += f"📌 <b>توضیحات سرویس:</b>\n{admin_description}\n\n"
+        
+    if tier_info and tier_info['saved_amount'] > 0:
+        text += f"🎉 <b>سود شما از خرید پلکانی: {tier_info['saved_amount']:,} تومان</b>\n"
+        
+    text += f"💰 مبلغ کل اشتراک: {base_price:,} تومان\n"
     if wallet_deduction > 0:
-        text += f"کسر از کیف پول: -{wallet_deduction:,} تومان\n"
+        text += f"👛 کسر از کیف پول: -{wallet_deduction:,} تومان\n"
     if discount_amount > 0:
-        text += f"تخفیف (کد {discount_code}): -{discount_amount:,} تومان\n"
+        text += f"🎫 تخفیف (کد {discount_code}): -{discount_amount:,} تومان\n"
     if gift_amount > 0:
-        text += f"هدیه (کد {gift_code}): -{gift_amount:,} تومان\n"
-    text += f"------------------------\n"
-    text += f"مبلغ نهایی قابل پرداخت: {final_amount:,} تومان\n"
+        text += f"🎁 هدیه (کد {gift_code}): -{gift_amount:,} تومان\n"
+    text += "------------------------\n"
+    text += f"💳 <b>مبلغ نهایی قابل پرداخت: {final_amount:,} تومان</b>\n"
     return text
 
 
@@ -100,12 +178,60 @@ async def save_license_note(message: types.Message, state: FSMContext):
 
 
 # ============================================================
-# === ROUTER: CALCULATOR ===
+# === ROUTER: DYNAMIC TIERED CALCULATOR ===
 # ============================================================
+
+def build_calculator_marketing_text(plan_name: str, base_gb_price: int, sel_gb: int, tier_info: dict) -> str:
+    """
+    تولید متن بازاریابی حرفه‌ای و جدول پلکان‌های داینامیک در بالای ماشین‌حساب
+    """
+    text = (
+        f"💎 <b>ماشین‌حساب هوشمند اشتراک {plan_name}</b>\n"
+        f"⚡️ <i>قانون طلایی: حجم بیشتر = قیمت بسیار ارزان‌تر برای هر گیگ!</i>\n\n"
+        f"📊 <b>جدول پلکان‌های تخفیف حجمی این سرویس:</b>\n"
+    )
+
+    for i, (min_gb, max_gb, disc, name, emoji) in enumerate(TRAFFIC_TIERS):
+        if disc == 0:
+            t_price = base_gb_price
+            disc_str = "قیمت پایه"
+        else:
+            t_price = int(round((base_gb_price * (100 - disc) / 100) / 10.0) * 10)
+            disc_str = f"<b>{disc}٪ تخفیف</b> 🔥"
+
+        # مشخص کردن پلکانی که کاربر در حال حاضر روی آن قرار دارد
+        is_active = (i == tier_info["tier_index"])
+        active_badge = " 👈 <b>[پلکان فعلی شما ✅]</b>" if is_active else ""
+        
+        text += f"{emoji} {name}: گیگی <b>{t_price:,}</b> تومان ({disc_str}){active_badge}\n"
+
+    text += "\n"
+
+    # پیام‌های ترغیبی هوشمند (Psychological Nudges)
+    if tier_info["saved_amount"] > 0:
+        text += (
+            f"🎉 <b>تبریک!</b> با انتخاب <b>{sel_gb} گیگ</b>، شما وارد "
+            f"<b>{tier_info['tier_name']}</b> شدید و <b>{tier_info['saved_amount']:,} تومان</b> "
+            f"کمتر پرداخت می‌کنید!\n"
+        )
+        if tier_info["next_tier_gb"]:
+            text += (
+                f"💡 <i>پیشنهاد ویژه: با انتخاب حداقل {tier_info['next_tier_gb']} گیگ، "
+                f"تخفیف خود را به {tier_info['next_tier_discount']}٪ (گیگی {tier_info['next_tier_unit_price']:,} تومان) برسانید!</i>"
+            )
+    else:
+        if tier_info["next_tier_gb"]:
+            text += (
+                f"💡 <b>پیشنهاد هوشمند:</b> شما در پلکان پایه هستید. "
+                f"کافیست حجم را روی <b>{tier_info['next_tier_gb']} گیگ یا بالاتر</b> قرار دهید تا "
+                f"قیمت هر گیگ فوراً به <b>{tier_info['next_tier_unit_price']:,} تومان ({tier_info['next_tier_discount']}٪ ارزان‌تر)</b> بشکند!"
+            )
+
+    return text
 
 
 async def render_calculator(message: types.Message, state: FSMContext, plan_id: int):
-    """Handles render calculator."""
+    """Handles render calculator with dynamic tiered pricing."""
     data = await state.get_data()
     
     time_packages = await db_manager.get_time_packages(plan_id)
@@ -133,8 +259,18 @@ async def render_calculator(message: types.Message, state: FSMContext, plan_id: 
     if traffic_packages and sel_gb == 0:
         sel_traffic_id = traffic_packages[0]['id']
         sel_gb = traffic_packages[0]['gb']
+
+    # محاسبه قیمت داینامیک بر اساس پلکان حجم انتخابی
+    tier_info = calculate_tiered_gb_price(data['plan_price_gb'], sel_gb)
+    dynamic_gb_price = tier_info['unit_price']
         
-    await state.update_data(time_id=sel_time_id, days=sel_days, traffic_id=sel_traffic_id, gb=sel_gb)
+    await state.update_data(
+        time_id=sel_time_id,
+        days=sel_days,
+        traffic_id=sel_traffic_id,
+        gb=sel_gb,
+        effective_price_gb=dynamic_gb_price
+    )
     
     builder = InlineKeyboardBuilder()
     
@@ -145,35 +281,46 @@ async def render_calculator(message: types.Message, state: FSMContext, plan_id: 
         # Grid Time (max 3 per row)
         time_buttons = []
         for tp in time_packages:
-            text = f"{tp['days']} روز" + (" ✅" if tp['id'] == sel_time_id else "")
-            time_buttons.append(types.InlineKeyboardButton(text=text, callback_data=f"calc_time_{tp['id']}"))
+            text_btn = f"{tp['days']} روز" + (" ✅" if tp['id'] == sel_time_id else "")
+            time_buttons.append(types.InlineKeyboardButton(text=text_btn, callback_data=f"calc_time_{tp['id']}"))
         builder.row(*time_buttons, width=3)
         
         # Selected Time summary
         builder.row(types.InlineKeyboardButton(text=f"روز انتخاب شده: {sel_days} ✅", callback_data="none"))
         
     if traffic_packages:
-        # Header Traffic
-        builder.row(types.InlineKeyboardButton(text=f"حجم (گیگ) • هر گیگ {data['plan_price_gb']:,} تومان 🔋", callback_data="none"))
+        # Header Traffic (پویا و حساس به پلکان)
+        if tier_info['discount_percent'] > 0:
+            traffic_header_text = f"حجم • هر گیگ {dynamic_gb_price:,} تومان ({tier_info['discount_percent']}٪ تخفیف 🔥) 🔋"
+        else:
+            traffic_header_text = f"حجم (گیگ) • هر گیگ {dynamic_gb_price:,} تومان 🔋"
+            
+        builder.row(types.InlineKeyboardButton(text=traffic_header_text, callback_data="none"))
         
         # Grid Traffic
         traffic_buttons = []
         for tp in traffic_packages:
-            text = f"{tp['gb']} گیگ" + (" ✅" if tp['id'] == sel_traffic_id else "")
-            traffic_buttons.append(types.InlineKeyboardButton(text=text, callback_data=f"calc_traffic_{tp['id']}"))
+            # افزودن نشانگر کوچک برای بسته‌های دارای تخفیف پلکانی
+            gb_val = tp['gb']
+            is_selected = (tp['id'] == sel_traffic_id)
+            btn_label = f"{gb_val} گیگ" + (" ✅" if is_selected else (" 🔥" if gb_val >= 100 else ""))
+            traffic_buttons.append(types.InlineKeyboardButton(text=btn_label, callback_data=f"calc_traffic_{tp['id']}"))
         builder.row(*traffic_buttons, width=3)
         
         # Selected Traffic summary
-        builder.row(types.InlineKeyboardButton(text=f"گیگ انتخاب شده: {sel_gb} ✅", callback_data="none"))
+        summary_gb_text = f"گیگ انتخاب شده: {sel_gb} ✅"
+        if tier_info['saved_amount'] > 0:
+            summary_gb_text += f" (سود شما: {tier_info['saved_amount']:,} ت)"
+        builder.row(types.InlineKeyboardButton(text=summary_gb_text, callback_data="none"))
     
-    # Payment Button
-    base_price = (sel_days * data['plan_price_day']) + (sel_gb * data['plan_price_gb'])
+    # Payment Button (محاسبه با قیمت پلکانی جدید)
+    base_price = (sel_days * data['plan_price_day']) + tier_info['total_traffic_price']
     builder.row(types.InlineKeyboardButton(text=f"💸 پرداخت {base_price:,} تومان", callback_data="checkout_confirm"))
     
     # Back
     builder.row(types.InlineKeyboardButton(text="🔙 برگشت", callback_data="main_menu"))
     
-    text = f"خرید اشتراک جدید\nنوع اشتراک: V2Ray\nسطح: {data['plan_name']} 💎"
+    text = build_calculator_marketing_text(data['plan_name'], data['plan_price_gb'], sel_gb, tier_info)
     
     try:
         await message.edit_text(text, reply_markup=builder.as_markup())
@@ -204,12 +351,14 @@ async def show_pre_payment(callback: types.CallbackQuery, state: FSMContext):
     await prepare_and_send_invoice(callback.message, callback.from_user.id, data, state)
 
 async def prepare_and_send_invoice(message: types.Message, user_id: int, data: dict, state: FSMContext):
-    # Base Values
-    """Handles prepare and send invoice."""
+    """Handles prepare and send invoice with tiered calculation."""
     days = data['days']
     gb = data['gb']
     price_per_day = data['plan_price_day']
-    price_per_gb = data['plan_price_gb']
+    base_price_per_gb = data['plan_price_gb']
+    
+    # محاسبه پلکانی برای فاکتور
+    tier_info = calculate_tiered_gb_price(base_price_per_gb, gb)
     
     # User Profile
     user = await db_manager.get_user(user_id)
@@ -221,8 +370,8 @@ async def prepare_and_send_invoice(message: types.Message, user_id: int, data: d
     gift_code = data.get('gift_code', None)
     gift_amount = data.get('gift_amount', 0)
     
-    # Step 1: Base Price
-    base_price = (days * price_per_day) + (gb * price_per_gb)
+    # Step 1: Base Price (بر اساس قیمت پلکانی)
+    base_price = (days * price_per_day) + tier_info['total_traffic_price']
     current_total = base_price
     
     # Step 2: Discount Code
@@ -246,6 +395,7 @@ async def prepare_and_send_invoice(message: types.Message, user_id: int, data: d
     # Update state with calculated final amounts for invoice creation later
     await state.update_data(
         base_price=base_price,
+        effective_price_gb=tier_info['unit_price'],
         wallet_deduction=wallet_deduction,
         final_amount=final_amount
     )
@@ -261,7 +411,8 @@ async def prepare_and_send_invoice(message: types.Message, user_id: int, data: d
         gift_code, 
         gift_amount, 
         wallet_deduction, 
-        final_amount
+        final_amount,
+        tier_info=tier_info
     )
     
     builder = InlineKeyboardBuilder()
@@ -324,7 +475,8 @@ async def process_discount(message: types.Message, state: FSMContext):
         return await message.answer(f"❌ {err_msg}")
     
     data = await state.get_data()
-    base_price = (data['days'] * data['plan_price_day']) + (data['gb'] * data['plan_price_gb'])
+    tier_info = calculate_tiered_gb_price(data['plan_price_gb'], data['gb'])
+    base_price = (data['days'] * data['plan_price_day']) + tier_info['total_traffic_price']
     
     amount = 0
     if discount['type'] == 'fixed':
@@ -373,6 +525,7 @@ async def cancel_modifier(callback: types.CallbackQuery, state: FSMContext):
 @checkout_router.callback_query(F.data == "pay_free")
 async def pay_free(callback: types.CallbackQuery, state: FSMContext):
     """Handles pay free."""
+    import aiosqlite
     data = await state.get_data()
     invoice_id = str(uuid.uuid4())[:8].upper()
     license_note = data.get('license_note', '')
@@ -384,7 +537,7 @@ async def pay_free(callback: types.CallbackQuery, state: FSMContext):
         if wallet_deduction > 0:
             async with db.execute("SELECT balance FROM users WHERE id = ?", (callback.from_user.id,)) as cursor:
                 user = await cursor.fetchone()
-                if not user or user['balance'] < wallet_deduction:
+                if not user or user[0] < wallet_deduction:
                     return await callback.answer("❌ موجودی کیف پول شما برای این پرداخت کافی نیست.", show_alert=True)
                     
         await db.execute('''
@@ -410,6 +563,7 @@ async def pay_free(callback: types.CallbackQuery, state: FSMContext):
 @checkout_router.callback_query(F.data == "free_test")
 async def process_free_test(callback: types.CallbackQuery):
     """Handles process free test."""
+    import aiosqlite
     user_id = callback.from_user.id
     
     async with aiosqlite.connect(db_manager.DB_PATH) as db:
@@ -447,9 +601,8 @@ async def process_free_test(callback: types.CallbackQuery):
         await db.commit()
         
     text = (
-        f"🎁 **تست رایگان شما آماده است!**\n\n"
-        f"لایسنس:\n`{cargo[1]}`\n\n"
+        f"🎁 <b>تست رایگان شما آماده است!</b>\n\n"
+        f"لایسنس:\n<code>{cargo[1]}</code>\n\n"
         f"با آرزوی بهترین‌ها برای شما!"
     )
-
-
+    await callback.message.edit_text(text)

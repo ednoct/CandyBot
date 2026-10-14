@@ -10,7 +10,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 import aiosqlite
 from database import db_manager
-from utils.ui_helpers import apply_premium_emojis
+from utils.ui_helpers import apply_premium_emojis, send_bottom_message
 from ..states import UserStates
 from bot.services.notifications import NotificationService
 from bot.routers.admin_users import show_user_management_panel
@@ -147,8 +147,10 @@ async def confirm_channel_callback(callback: types.CallbackQuery, bot: Bot):
 
 # === ROUTER: BUY SUBSCRIPTION ===
 @user_router.callback_query(F.data == "buy_subscription")
-async def show_plans(callback: types.CallbackQuery):
-    """Handles show plans."""
+async def show_plans(callback: types.CallbackQuery, state: FSMContext):
+    """Handles show plans with bottom-anchored navigation."""
+    await callback.answer()
+    await state.clear()
     plans = await db_manager.get_plans()
     if not plans:
         return await callback.answer("فعلا پلنی برای خرید موجود نیست.", show_alert=True)
@@ -160,12 +162,13 @@ async def show_plans(callback: types.CallbackQuery):
     builder.button(text="🔙 برگشت", callback_data="main_menu")
     builder.adjust(1)
     
-    await callback.message.edit_text("لطفاً نوع اشتراک را انتخاب کنید:", reply_markup=builder.as_markup())
+    await send_bottom_message(callback, "لطفاً نوع اشتراک را انتخاب کنید:", reply_markup=builder.as_markup(), parse_mode="HTML")
 
 # === ROUTER: PLANS DIFFERENCE INFO ===
 @user_router.callback_query(F.data == "plans_difference_info")
-async def show_plans_difference(callback: types.CallbackQuery):
+async def show_plans_difference(callback: types.CallbackQuery, state: FSMContext):
     """Displays information about the differences between Candy Connect plans."""
+    await callback.answer()
     diff_text = await db_manager.get_setting("plans_difference_text")
     if not diff_text or not diff_text.strip():
         diff_text = (
@@ -177,27 +180,28 @@ async def show_plans_difference(callback: types.CallbackQuery):
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 بازگشت", callback_data="buy_subscription")
 
-    try:
-        await callback.message.edit_text(diff_text, reply_markup=builder.as_markup(), parse_mode="HTML")
-    except Exception:
-        await callback.message.edit_text(diff_text, reply_markup=builder.as_markup(), parse_mode=None)
-    await callback.answer()
+    await send_bottom_message(callback, diff_text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
 # === ROUTER: USER PROFILE ===
 @user_router.callback_query(F.data == "my_profile")
-async def my_profile(callback: types.CallbackQuery):
+async def my_profile(callback: types.CallbackQuery, state: FSMContext):
     """Handles my profile."""
+    await callback.answer()
+    await state.clear()
     user = await db_manager.get_user(callback.from_user.id)
-    text = f"👤 پروفایل کاربری\n\nآیدی: {user['id']}\nموجودی کیف پول: {user['balance']:,} تومان"
+    balance_val = user['balance'] if user and user['balance'] is not None else 0
+    text = f"👤 <b>پروفایل کاربری</b>\n\nآیدی عددی: <code>{callback.from_user.id}</code>\nموجودی کیف پول: <b>{balance_val:,} تومان</b>"
     builder = InlineKeyboardBuilder()
     builder.row(types.InlineKeyboardButton(text="💰 شارژ حساب", callback_data="wallet_charge"))
     builder.row(types.InlineKeyboardButton(text="💳 تاریخچه کیف پول", callback_data="wallet_history"))
     builder.row(types.InlineKeyboardButton(text="🔙 برگشت", callback_data="main_menu"))
-    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+    await send_bottom_message(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
 @user_router.callback_query(F.data == "wallet_history")
-async def show_wallet_history(callback: types.CallbackQuery):
+async def show_wallet_history(callback: types.CallbackQuery, state: FSMContext):
     """Handles show wallet history."""
+    await callback.answer()
+    await state.clear()
     import aiosqlite
     from database.db_manager import DB_PATH
     
@@ -215,33 +219,46 @@ async def show_wallet_history(callback: types.CallbackQuery):
         text = "💳 <b>تاریخچه کیف پول (۱۵ تراکنش آخر):</b>\n\n"
         for tx in txs:
             sign = "+" if tx['amount'] > 0 else ""
-            reason = tx['reason'] or 'تراکنش'
+            reason = tx['type'] or 'تراکنش'
             date_str = str(tx['created_at'])[:16]
             text += f"▪️ {sign}{tx['amount']:,} تومان | {reason} | <code>{date_str}</code>\n"
             
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 بازگشت به پروفایل", callback_data="my_profile")
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    await send_bottom_message(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
+
+# === ROUTER: START FROM NOTIFICATION ===
+@user_router.callback_query(F.data == "start_from_notification")
+async def handle_start_from_notification(callback: types.CallbackQuery, state: FSMContext):
+    """Handles the green start button on notifications, gifts, and broadcasts."""
+    await callback.answer()
+    await state.clear()
+    message_text, markup = await _build_main_menu(callback.from_user.id)
+    await send_bottom_message(callback, message_text, reply_markup=markup, parse_mode="HTML")
 
 # === ROUTER: MAIN MENU ===
 @user_router.callback_query(F.data == "main_menu")
-async def return_main_menu(callback: types.CallbackQuery):
-    """Handles return main menu."""
+async def return_main_menu(callback: types.CallbackQuery, state: FSMContext):
+    """Handles return main menu with Send-Then-Delete and state reset."""
+    await callback.answer()
+    await state.clear()
     message_text, markup = await _build_main_menu(callback.from_user.id)
-    await callback.message.edit_text(message_text, reply_markup=markup, parse_mode="HTML")
-
+    await send_bottom_message(callback, message_text, reply_markup=markup, parse_mode="HTML")
 
 # === ROUTER: RENEWAL (redirect to my_services for selection) ===
 @user_router.callback_query(F.data == "renewal")
-async def renewal_start(callback: types.CallbackQuery):
+async def renewal_start(callback: types.CallbackQuery, state: FSMContext):
     """Handles the renewal shortcut button — redirects user to their services list."""
+    await callback.answer()
+    await state.clear()
     licenses = await db_manager.get_licenses_for_user(callback.from_user.id)
 
     if not licenses:
         builder = InlineKeyboardBuilder()
         builder.row(types.InlineKeyboardButton(text="⭐ خرید لایسنس", callback_data="buy_subscription"))
         builder.row(types.InlineKeyboardButton(text="🔙 برگشت", callback_data="main_menu"))
-        return await callback.message.edit_text(
+        return await send_bottom_message(
+            callback,
             "📦 <b>تمدید لایسنس</b>\n\n"
             "شما هنوز هیچ لایسنسی برای تمدید ندارید.",
             reply_markup=builder.as_markup(),
@@ -256,18 +273,20 @@ async def renewal_start(callback: types.CallbackQuery):
         )
     builder.row(types.InlineKeyboardButton(text="🔙 برگشت", callback_data="main_menu"))
 
-    await callback.message.edit_text(
+    await send_bottom_message(
+        callback,
         f"🌀 <b>تمدید لایسنس</b>\n\n"
         f"شما <b>{len(licenses)}</b> لایسنس دارید. جهت تمدید انتخاب کنید:",
         reply_markup=builder.as_markup(),
         parse_mode="HTML"
     )
 
-
 # === ROUTER: TERMS & CONDITIONS ===
 @user_router.callback_query(F.data == "terms")
-async def show_terms(callback: types.CallbackQuery):
+async def show_terms(callback: types.CallbackQuery, state: FSMContext):
     """Handles display of terms & conditions."""
+    await callback.answer()
+    await state.clear()
     text = (
         "📜 <b>شرایط و قوانین</b>\n\n"
         "١. استفاده از ربات به منزلهٔ پذیرش کامل این شرایط است. قوانین ممکن است در هر زمان به‌روزرسانی شوند و نسخهٔ همین صفحه ملاک است.\n\n"
@@ -280,13 +299,14 @@ async def show_terms(callback: types.CallbackQuery):
     )
     builder = InlineKeyboardBuilder()
     builder.row(types.InlineKeyboardButton(text="🔙 برگشت", callback_data="main_menu"))
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
-
+    await send_bottom_message(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
 # === NEW HANDLERS FOR USER ROUTER ===
 @user_router.callback_query(F.data == "my_services")
-async def my_services(callback: types.CallbackQuery):
+async def my_services(callback: types.CallbackQuery, state: FSMContext):
     """Handles my services."""
+    await callback.answer()
+    await state.clear()
     user_id = callback.from_user.id
     licenses = await db_manager.get_licenses_for_user(user_id)
 
@@ -295,7 +315,8 @@ async def my_services(callback: types.CallbackQuery):
         builder.button(text="🛒 خرید اشتراک", callback_data="buy_subscription")
         builder.button(text="🔙 برگشت", callback_data="main_menu")
         builder.adjust(1)
-        return await callback.message.edit_text(
+        return await send_bottom_message(
+            callback,
             "📦 <b>لایسنس های من</b>\n\n"
             "شما هنوز هیچ لایسنسی ندارید.",
             reply_markup=builder.as_markup(),
@@ -310,7 +331,8 @@ async def my_services(callback: types.CallbackQuery):
     builder.adjust(2) # 2-column grid
     builder.row(types.InlineKeyboardButton(text="🔙 برگشت", callback_data="main_menu"))
 
-    await callback.message.edit_text(
+    await send_bottom_message(
+        callback,
         f"📦 <b>لایسنس های من</b>\n\n"
         f"شما <b>{len(licenses)}</b> لایسنس دارید. برای مشاهده جزئیات روی نام سرویس کلیک کنید:",
         reply_markup=builder.as_markup(),
@@ -319,8 +341,10 @@ async def my_services(callback: types.CallbackQuery):
 
 # === ROUTER: AFFILIATE (REFERRAL) ===
 @user_router.callback_query(F.data == "affiliate")
-async def show_affiliate(callback: types.CallbackQuery):
+async def show_affiliate(callback: types.CallbackQuery, state: FSMContext):
     """Handles affiliate."""
+    await callback.answer()
+    await state.clear()
     user_id = callback.from_user.id
     bot_info = await callback.bot.get_me()
     bot_username = bot_info.username
@@ -344,7 +368,7 @@ async def show_affiliate(callback: types.CallbackQuery):
     builder = InlineKeyboardBuilder()
     builder.row(types.InlineKeyboardButton(text="🔙 برگشت", callback_data="main_menu"))
     
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    await send_bottom_message(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
 
 @user_router.callback_query(F.data.startswith("view_license_"))
@@ -465,39 +489,16 @@ async def renew_license_start(callback: types.CallbackQuery, state: FSMContext):
     await cmd_shop(callback.message, state, callback)
 
 
-@user_router.callback_query(F.data == "affiliate")
-async def affiliate_dashboard(callback: types.CallbackQuery):
-    """Handles affiliate dashboard."""
-    user_id = callback.from_user.id
-    ref_code = await db_manager.get_or_create_referral_code(user_id)
-    stats = await db_manager.get_referral_stats(user_id)
-    bot_info = await callback.bot.me()
-    ref_link = f"https://t.me/{bot_info.username}?start=ref_{ref_code}"
-    
-    text = (
-        f"👥 <b>سیستم زیرمجموعه گیری (بازاریابی)</b>\n\n"
-        f"با دعوت دوستان خود، درصدی از مبلغ خرید آنها را به عنوان پورسانت دریافت کنید!\n\n"
-        f"📊 <b>آمار شما:</b>\n"
-        f"تعداد دعوت شده‌ها: {stats['invited']} نفر\n"
-        f"تعداد خریداران: {stats['buyers']} نفر\n"
-        f"کل پورسانت دریافتی: {stats['earned']:,} تومان\n\n"
-        f"🔗 <b>لینک اختصاصی شما:</b>\n<code>{ref_link}</code>"
-    )
-    
-    builder = InlineKeyboardBuilder()
-    share_url = f"https://t.me/share/url?url={ref_link}&text=برای خرید بهترین کانفیگ ها به این ربات سر بزن!"
-    builder.row(types.InlineKeyboardButton(text="📤 ارسال به دوستان", url=share_url))
-    builder.row(types.InlineKeyboardButton(text="🔙 برگشت", callback_data="main_menu"))
-    
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
-
 @user_router.callback_query(F.data == "wallet_charge")
 async def wallet_charge_start(callback: types.CallbackQuery, state: FSMContext):
-    """Handles wallet charge start."""
+    """Handles wallet charge start with bottom-anchored navigation."""
+    await callback.answer()
+    await state.clear()
     await state.set_state(UserStates.waiting_for_charge_amount)
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 انصراف", callback_data="my_profile")
-    await callback.message.edit_text("💰 لطفاً مبلغ مورد نظر برای شارژ کیف پول را به تومان وارد کنید (مثلاً 50000):", reply_markup=builder.as_markup())
+    text = "💰 لطفاً مبلغ مورد نظر برای شارژ کیف پول را به تومان وارد کنید (مثلاً 50000):"
+    await send_bottom_message(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
 @user_router.message(UserStates.waiting_for_charge_amount)
 async def process_wallet_charge(message: types.Message, state: FSMContext):

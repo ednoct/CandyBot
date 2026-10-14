@@ -39,3 +39,76 @@ def apply_premium_emojis(text: str) -> str:
             tg_emoji_tag = f'<tg-emoji emoji-id="{emoji_id}">{emoji_char}</tg-emoji>'
             text = text.replace(emoji_char, tg_emoji_tag)
     return text
+
+
+# === BOTTOM-ANCHORED NAVIGATION (SEND-THEN-DELETE) ===
+import logging
+from typing import Union, Optional
+from aiogram import types
+from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove, ForceReply
+
+logger = logging.getLogger(__name__)
+
+async def send_bottom_message(
+    event: Union[types.CallbackQuery, types.Message],
+    text: str,
+    reply_markup: Optional[Union[InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove, ForceReply]] = None,
+    parse_mode: Optional[str] = "HTML",
+    delete_prev: bool = True,
+    **kwargs
+) -> types.Message:
+    """
+    Standardized Bottom-Anchored Navigation (Send-Then-Delete pattern).
+    Ensures that menus and messages are always sent at the bottom-most position
+    in the chat history, while cleanly removing the previous message or disabling
+    its inline keyboard if deletion is not possible (e.g. past 48h Telegram restriction).
+    """
+    if isinstance(event, types.CallbackQuery):
+        # Acknowledge callback immediately to eliminate loading spinner
+        try:
+            await event.answer()
+        except Exception:
+            pass
+
+        chat_id = event.message.chat.id if event.message else event.from_user.id
+        bot = event.bot
+
+        new_msg = await bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            reply_markup=reply_markup,
+            parse_mode=parse_mode,
+            **kwargs
+        )
+
+        if delete_prev and event.message:
+            try:
+                await event.message.delete()
+            except Exception as del_err:
+                logger.debug(f"Could not delete previous message {event.message.message_id}: {del_err}")
+                try:
+                    await event.message.edit_reply_markup(reply_markup=None)
+                except Exception:
+                    pass
+
+        return new_msg
+
+    elif isinstance(event, types.Message):
+        new_msg = await event.answer(
+            text=text,
+            reply_markup=reply_markup,
+            parse_mode=parse_mode,
+            **kwargs
+        )
+
+        if delete_prev:
+            try:
+                await event.delete()
+            except Exception as del_err:
+                logger.debug(f"Could not delete message {event.message_id}: {del_err}")
+
+        return new_msg
+
+    else:
+        raise TypeError(f"Unsupported event type: {type(event)}")
+

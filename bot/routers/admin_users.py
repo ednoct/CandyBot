@@ -853,14 +853,18 @@ async def fast_gift_generate(message: types.Message, state: FSMContext):
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 بازگشت به پروفایل کاربر", callback_data=f"user_manage_{target_id}")
     
+    start_btn_markup = types.InlineKeyboardMarkup(inline_keyboard=[[
+        types.InlineKeyboardButton(text="🟢 شروع و خرید از ربات", callback_data="start_from_notification")
+    ]])
+    
     try:
         gift_msg = (
             f"🎁 **هدیه اختصاصی برای شما!**\n\n"
-            f"یک کد هدیه یکبار مصرف به مبلغ **{value}** تومان برای حساب شما صادر شد.\n"
+            f"یک کد هدیه یکبار مصرف به مبلغ **{value:,}** تومان برای حساب شما صادر شد.\n"
             f"کد هدیه: `{code}`\n\n"
             f"می‌توانید در هنگام خرید از این کد استفاده کنید."
         )
-        await message.bot.send_message(target_id, gift_msg, parse_mode="Markdown")
+        await message.bot.send_message(target_id, gift_msg, reply_markup=start_btn_markup, parse_mode="Markdown")
         await message.answer(f"✅ کد هدیه `{code}` تولید و مستقیماً برای کاربر ارسال شد.", reply_markup=builder.as_markup())
     except Exception as e:
         await message.answer(
@@ -921,11 +925,15 @@ async def trial_charge_execute(message: types.Message, state: FSMContext):
             f"همین حالا سبد خریدتان را تکمیل کنید، مبلغ هدیه در مرحله پرداخت به صورت خودکار کسر میشود"
         )
         
+        trial_markup = types.InlineKeyboardMarkup(inline_keyboard=[[
+            types.InlineKeyboardButton(text="🟢 شروع و خرید از ربات", callback_data="start_from_notification")
+        ]])
+        
         async def _send_trial_notifications(bot, user_ids, text):
             sent = 0
             for uid in user_ids:
                 try:
-                    await bot.send_message(chat_id=uid, text=text)
+                    await bot.send_message(chat_id=uid, text=text, reply_markup=trial_markup)
                     sent += 1
                 except Exception:
                     pass

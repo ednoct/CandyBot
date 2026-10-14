@@ -10,7 +10,7 @@ from .response import CandyResponse
 from .validator import CandyInput
 from .error_handler import error_middleware
 from .exchange import get_arz_usdt_rate, get_gram_irt_price
-from .ui_helpers import PREMIUM_EMOJI_MAP, apply_premium_emojis
+from .ui_helpers import PREMIUM_EMOJI_MAP, apply_premium_emojis, send_bottom_message
 
 __all__ = [
     'CandyAuth',
@@ -22,4 +22,5 @@ __all__ = [
     'get_gram_irt_price',
     'PREMIUM_EMOJI_MAP',
     'apply_premium_emojis',
+    'send_bottom_message',
 ]
