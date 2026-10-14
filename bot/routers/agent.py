@@ -47,7 +47,7 @@ async def show_agent_menu(callback: types.CallbackQuery, state: FSMContext):
     settlement_active = bool(stats['settlement_active'])
 
    text = (
-        f"{default_text}\n"
+        f"{default_text}\n\n"
         f"📊 <b>درصد کمیسیون شما:</b> <b>{commission_percent}٪</b>\n"
         f"🎯 <b>حداقل موجودی جهت درخواست تسویه:</b> <b>{min_settle:,} تومان</b>\n"
         f"💰 <b>موجودی کمیسیون نماینده:</b> <b>{commission_balance:,} تومان</b>\n\n"
