@@ -16,8 +16,10 @@ from bot.services.notifications import NotificationService
 from bot.routers.admin_users import show_user_management_panel
 from bot.config import ADMIN_IDS
 
-
 user_router = Router()
+
+# شناسه بنر تلگرامی با بالاترین رزولوشن استخراج‌شده
+AFFILIATE_BANNER_FILE_ID = "AgACAgEAAyEGAAMBC2TATAADCWrPeV_Tl03KE1DQS65O-xcDi1p2AALBDGsb-i94RlhwkSwKLK-IAQADAgADdwADPQQ"
 
 # === HELPER: BUILD MAIN MENU ===
 async def _build_main_menu(user_id: int) -> tuple[str, types.InlineKeyboardMarkup]:
@@ -27,11 +29,9 @@ async def _build_main_menu(user_id: int) -> tuple[str, types.InlineKeyboardMarku
     the keyboard buttons retain raw emoji strings (Telegram renders them
     client-side as Lottie animations automatically).
     """
-    # Fetch user balance
     user = await db_manager.get_user(user_id)
     user_balance = f"{user['balance']:,}" if user else "0"
 
-    # === MESSAGE TEXT (HTML, with premium emoji substitution) ===
     raw_text = (
         "<strong>به ربات کندی کانکت خوش آمدید!</strong>\n\n"
         f"💰 موجودی کیف پول شما <strong>{user_balance} تومان</strong>\n\n"
@@ -39,10 +39,6 @@ async def _build_main_menu(user_id: int) -> tuple[str, types.InlineKeyboardMarku
     )
     message_text = apply_premium_emojis(raw_text)
 
-    # === KEYBOARD LAYOUT ===
-    # NOTE: Do NOT apply apply_premium_emojis() to button texts.
-    # Telegram's Bot API rejects HTML in button labels. The client app
-    # handles Lottie animation substitution for standard emojis automatically.
     builder = InlineKeyboardBuilder()
 
     # Row 1: Renewal | Purchase
@@ -115,7 +111,6 @@ async def cmd_start(message: types.Message, state: FSMContext, command: CommandO
             except ValueError:
                 pass
 
-    # Check force join channels
     from bot.services.channel_service import get_unjoined_channels, build_force_join_markup
     unjoined = await get_unjoined_channels(bot or message.bot, message.from_user.id)
     if unjoined:
@@ -159,7 +154,7 @@ async def show_plans(callback: types.CallbackQuery, state: FSMContext):
     for p in plans:
         builder.button(text=p['name'], callback_data=f"checkout_plan_{p['id']}")
     builder.button(text="تفاوت پلن های کندی کانکت", callback_data="plans_difference_info")
-    builder.button(text="🔙 برگشت", callback_data="main_menu")
+    builder.button(text="🔙 برگشت", callback_data="main_menu", style="danger")
     builder.adjust(1)
     
     await send_bottom_message(callback, "لطفاً نوع اشتراک را انتخاب کنید:", reply_markup=builder.as_markup(), parse_mode="HTML")
@@ -178,7 +173,7 @@ async def show_plans_difference(callback: types.CallbackQuery, state: FSMContext
         )
 
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 بازگشت", callback_data="buy_subscription")
+    builder.button(text="🔙 بازگشت", callback_data="buy_subscription", style="danger")
 
     await send_bottom_message(callback, diff_text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
@@ -194,7 +189,7 @@ async def my_profile(callback: types.CallbackQuery, state: FSMContext):
     builder = InlineKeyboardBuilder()
     builder.row(types.InlineKeyboardButton(text="💰 شارژ حساب", callback_data="wallet_charge"))
     builder.row(types.InlineKeyboardButton(text="💳 تاریخچه کیف پول", callback_data="wallet_history"))
-    builder.row(types.InlineKeyboardButton(text="🔙 برگشت", callback_data="main_menu"))
+    builder.row(types.InlineKeyboardButton(text="🔙 برگشت", callback_data="main_menu", style="danger"))
     await send_bottom_message(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
 @user_router.callback_query(F.data == "wallet_history")
@@ -202,7 +197,6 @@ async def show_wallet_history(callback: types.CallbackQuery, state: FSMContext):
     """Handles show wallet history."""
     await callback.answer()
     await state.clear()
-    import aiosqlite
     from database.db_manager import DB_PATH
     
     async with aiosqlite.connect(DB_PATH) as db:
@@ -224,7 +218,7 @@ async def show_wallet_history(callback: types.CallbackQuery, state: FSMContext):
             text += f"▪️ {sign}{tx['amount']:,} تومان | {reason} | <code>{date_str}</code>\n"
             
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 بازگشت به پروفایل", callback_data="my_profile")
+    builder.button(text="🔙 بازگشت به پروفایل", callback_data="my_profile", style="danger")
     await send_bottom_message(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
 # === ROUTER: START FROM NOTIFICATION ===
@@ -256,7 +250,7 @@ async def renewal_start(callback: types.CallbackQuery, state: FSMContext):
     if not licenses:
         builder = InlineKeyboardBuilder()
         builder.row(types.InlineKeyboardButton(text="⭐ خرید لایسنس", callback_data="buy_subscription"))
-        builder.row(types.InlineKeyboardButton(text="🔙 برگشت", callback_data="main_menu"))
+        builder.row(types.InlineKeyboardButton(text="🔙 برگشت", callback_data="main_menu", style="danger"))
         return await send_bottom_message(
             callback,
             "📦 <b>تمدید لایسنس</b>\n\n"
@@ -271,7 +265,7 @@ async def renewal_start(callback: types.CallbackQuery, state: FSMContext):
         builder.row(
             types.InlineKeyboardButton(text=f"♻️ تمدید | {note}", callback_data=f"renew_lic_{lic['id']}")
         )
-    builder.row(types.InlineKeyboardButton(text="🔙 برگشت", callback_data="main_menu"))
+    builder.row(types.InlineKeyboardButton(text="🔙 برگشت", callback_data="main_menu", style="danger"))
 
     await send_bottom_message(
         callback,
@@ -298,10 +292,10 @@ async def show_terms(callback: types.CallbackQuery, state: FSMContext):
         "٧. در صورت عدم رعایت شرایط و قوانین، حساب کاربر مسدود می‌شود."
     )
     builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text="🔙 برگشت", callback_data="main_menu"))
+    builder.row(types.InlineKeyboardButton(text="🔙 برگشت", callback_data="main_menu", style="danger"))
     await send_bottom_message(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
-# === NEW HANDLERS FOR USER ROUTER ===
+# === ROUTER: MY SERVICES ===
 @user_router.callback_query(F.data == "my_services")
 async def my_services(callback: types.CallbackQuery, state: FSMContext):
     """Handles my services."""
@@ -313,7 +307,7 @@ async def my_services(callback: types.CallbackQuery, state: FSMContext):
     if not licenses:
         builder = InlineKeyboardBuilder()
         builder.button(text="🛒 خرید اشتراک", callback_data="buy_subscription")
-        builder.button(text="🔙 برگشت", callback_data="main_menu")
+        builder.button(text="🔙 برگشت", callback_data="main_menu", style="danger")
         builder.adjust(1)
         return await send_bottom_message(
             callback,
@@ -328,8 +322,8 @@ async def my_services(callback: types.CallbackQuery, state: FSMContext):
         note = lic['license_note'] or 'بدون نام'
         builder.button(text=f"📦 {note}", callback_data=f"view_license_{lic['id']}")
         
-    builder.adjust(2) # 2-column grid
-    builder.row(types.InlineKeyboardButton(text="🔙 برگشت", callback_data="main_menu"))
+    builder.adjust(2)
+    builder.row(types.InlineKeyboardButton(text="🔙 برگشت", callback_data="main_menu", style="danger"))
 
     await send_bottom_message(
         callback,
@@ -366,18 +360,74 @@ async def show_affiliate(callback: types.CallbackQuery, state: FSMContext):
     )
     
     builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text="🔙 برگشت", callback_data="main_menu"))
+    # دکمه اشتراک‌گذاری بنر اختصاصی
+    builder.row(
+        types.InlineKeyboardButton(
+            text="📢 اشتراک‌گذاری بنر اختصاصی شما",
+            switch_inline_query_chosen_chat=types.SwitchInlineQueryChosenChat(
+                query="share_affiliate",
+                allow_user_chats=True,
+                allow_group_chats=True,
+                allow_channel_chats=True
+            )
+        )
+    )
+    # دکمه برگشت
+    builder.row(types.InlineKeyboardButton(text="🔙 برگشت", callback_data="main_menu", style="danger"))
     
     await send_bottom_message(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
+# === ROUTER: INLINE BANNER SHARE HANDLER ===
+@user_router.inline_query(F.query == "share_affiliate")
+async def affiliate_inline_banner_handler(inline_query: types.InlineQuery):
+    """Handles inline sharing of the affiliate promotional banner."""
+    user_id = inline_query.from_user.id
+    bot_info = await inline_query.bot.get_me()
+    invite_link = f"https://t.me/{bot_info.username}?start=ref_{user_id}"
 
+    caption = (
+        "🛑 <b>خداحافظی با کپی‌پیست کانفیگ‌های ناپایدار و آب شدن زودهنگام بسته اینترنت!</b> "
+        "در کندی‌کانکت کانفیگ نمی‌فروشیم؛ با لایسنس اپلیکیشن اختصاصی مان در تمام سیستم‌عامل‌ها به اینترنت آزاد و پایدار متصل شوید.\n\n"
+        "💡 <b>چرا کندی‌کانکت هزینه‌های شما را کاهش می‌دهد؟</b> اپراتورها برای ترافیک بین‌الملل ضریب ۳ برابری اعمال می‌کنند. "
+        "کندی‌کانکت با روتینگ داخلی این معادله را تغییر داده و در ۳ پلن سرویس ارائه می‌کند:\n"
+        "🟢 <b>کندی اکو :</b> اینترنت آزاد و افزایش ۳ برابری عمر بسته اینترنت \n"
+        "💎 <b>کندی پرایم :</b> ترافیک نیم‌بها و کاهش هزینه خرید اینترنت ماهانه تا یک‌ششم!\n"
+        "🎯 <b>کندی پرو:</b> ترافیک نیم‌بها به‌همراه آی‌پی ۱۰۰٪ ثابت، تمیز و اختصاصی ویژه ترید و گیمینگ.\n\n"
+        "⚖️ <b>تضمین شفافیت ۱ به ۱:</b> کسر حجم دقیقا برابر با مصرف واقعی و بدون کوچک‌ترین ضریب مخفی (قابل تست)\n"
+        "📊 <b>ماشین‌حساب هوشمند پلکانی:</b> انتخاب آزادانه روز و حجم دلخواه؛ با انتخاب حجم‌های بالاتر، تعرفه هر گیگ تا ۲۵٪ ارزان‌تر محاسبه می‌شود!\n"
+        "⚡️ <b>زیرساخت با پورت‌های ۱۰ گیگابیت، پینگ پایین و پایداری کامل</b>\n"
+        "💳 <b>درگاه‌های پرداخت کارت‌به‌کارت و کریپتو | امکان اخذ نمایندگی</b>\n\n"
+        f"🎁 <b>همین حالا تست رایگان خود را از ربات دریافت کنید:</b>\n"
+        f"🔗 <code>{invite_link}</code>"
+    )
+
+    results = [
+        types.InlineQueryResultCachedPhoto(
+            id=f"aff_banner_{user_id}",
+            photo_file_id=AFFILIATE_BANNER_FILE_ID,
+            caption=caption,
+            parse_mode="HTML",
+            reply_markup=types.InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [types.InlineKeyboardButton(text="⚡️ ورود و فعال‌سازی اکانت هدیه", url=invite_link)]
+                ]
+            )
+        )
+    ]
+
+    await inline_query.answer(
+        results=results,
+        cache_time=1,
+        is_personal=True
+    )
+
+
+# === ROUTER: VIEW LICENSE ===
 @user_router.callback_query(F.data.startswith("view_license_"))
 async def view_license(callback: types.CallbackQuery):
     """Show full license details: QR code + sub_id copy button."""
     license_id = int(callback.data.split("_")[2])
 
-    # Fetch the license — ensure it belongs to this user
-    import aiosqlite
     from database.db_manager import DB_PATH
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
@@ -396,14 +446,12 @@ async def view_license(callback: types.CallbackQuery):
     note = lic['license_note'] or 'بدون یادداشت'
     note_line = f"\n📝 یادداشت لایسنس: <b>{note}</b>" if lic['license_note'] else ""
 
-    # Fetch Live Status
     from bot.services.sub_stats import fetch_sub_stats
     live_status = "در حال دریافت وضعیت..."
     
     try:
-        sub_link = lic['sub_link'] if 'sub_link' in lic.keys() else None # Need to make sure it's fetched
+        sub_link = lic['sub_link'] if 'sub_link' in lic.keys() else None
         if not sub_link:
-            # Re-fetch panel sub_link if not explicitly joined in query
             async with aiosqlite.connect(DB_PATH) as db:
                 db.row_factory = aiosqlite.Row
                 async with db.execute("SELECT sub_link FROM xui_panels WHERE id = ?", (lic['panel_id'],)) as cur:
@@ -450,28 +498,23 @@ async def view_license(callback: types.CallbackQuery):
         )
     )
     builder.row(types.InlineKeyboardButton(text="♻️ تمدید", callback_data=f"renew_lic_{license_id}"))
-    builder.row(types.InlineKeyboardButton(text="🔙 بازگشت به سرویس‌ها", callback_data="my_services"))
+    builder.row(types.InlineKeyboardButton(text="🔙 بازگشت به سرویس‌ها", callback_data="my_services", style="danger"))
 
-    # Try to send QR code as a new message with photo
     from bot.services.xui_client import generate_qr_bytes
     qr_buf = await generate_qr_bytes(sub_id)
 
     try:
         if qr_buf is not None:
-            # Can't edit a text message into a photo; send QR as new message
             await callback.message.answer_photo(
                 photo=types.BufferedInputFile(qr_buf.read(), filename="license_qr.png"),
                 caption=caption,
                 parse_mode="HTML",
                 reply_markup=builder.as_markup()
             )
-            # Acknowledge callback
             await callback.answer()
         else:
-            # Text-only fallback
             await callback.message.edit_text(caption, reply_markup=builder.as_markup(), parse_mode="HTML")
     except Exception:
-        # Ultimate fallback
         await callback.message.edit_text(caption, reply_markup=builder.as_markup(), parse_mode="HTML")
 
 
@@ -479,12 +522,9 @@ async def view_license(callback: types.CallbackQuery):
 async def renew_license_start(callback: types.CallbackQuery, state: FSMContext):
     """Start renewal flow for an existing license."""
     license_id = int(callback.data.split("_")[2])
-    # Set the state to remember we are renewing this license
     await state.update_data(renew_license_id=license_id)
     
-    # Redirect to the shop to pick a plan
     from bot.routers.user import cmd_shop
-    # Re-route the callback to the shop command
     callback.data = "buy_subscription"
     await cmd_shop(callback.message, state, callback)
 
@@ -496,7 +536,7 @@ async def wallet_charge_start(callback: types.CallbackQuery, state: FSMContext):
     await state.clear()
     await state.set_state(UserStates.waiting_for_charge_amount)
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 انصراف", callback_data="my_profile")
+    builder.button(text="🔙 انصراف", callback_data="my_profile", style="danger")
     text = "💰 لطفاً مبلغ مورد نظر برای شارژ کیف پول را به تومان وارد کنید (مثلاً 50000):"
     await send_bottom_message(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
@@ -508,7 +548,6 @@ async def process_wallet_charge(message: types.Message, state: FSMContext):
         
     amount = int(message.text)
     from database.db_manager import DB_PATH
-    import aiosqlite
     
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute("SELECT value FROM settings WHERE key = 'lim_min_wallet'") as cursor:
@@ -524,7 +563,6 @@ async def process_wallet_charge(message: types.Message, state: FSMContext):
         return await message.answer(f"❌ حداکثر مبلغ شارژ {max_limit:,} تومان است.")
         
     await state.set_state(None)
-    # We create a FSMContext directly for payment.py since this is a pseudo invoice
     await state.update_data(
         final_amount=amount,
         base_price=amount,
@@ -540,9 +578,7 @@ async def process_wallet_charge(message: types.Message, state: FSMContext):
     
     builder = InlineKeyboardBuilder()
     
-    # Show gateways directly
     from database.db_manager import DB_PATH
-    import aiosqlite
     available_gateways = [
         ('گرام (TON)', 'gram', 'pay_gram'),
         ('تتر (BSC)', 'usdt', 'pay_usdt'),
@@ -558,9 +594,8 @@ async def process_wallet_charge(message: types.Message, state: FSMContext):
                 if is_active:
                     builder.row(types.InlineKeyboardButton(text=f"💳 {name}", callback_data=cb_data))
                     
-    builder.row(types.InlineKeyboardButton(text="🔙 انصراف", callback_data="my_profile"))
+    builder.row(types.InlineKeyboardButton(text="🔙 انصراف", callback_data="my_profile", style="danger"))
     
-    from bot.config import ADMIN_IDS
     if message.from_user.id in ADMIN_IDS:
         builder.row(types.InlineKeyboardButton(text="⚙️ ورود به مدیریت", callback_data="admin_panel_start"))
     
@@ -613,7 +648,6 @@ async def handle_feedback_comment(message: types.Message, state: FSMContext, bot
     data = await state.get_data()
     invoice_id = data.get('fb_invoice_id')
     if invoice_id:
-        import aiosqlite
         from database.db_manager import DB_PATH
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("UPDATE customer_feedback SET comment = ? WHERE invoice_id = ?", (message.text, invoice_id))

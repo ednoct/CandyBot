@@ -202,7 +202,7 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
                 
             request_id = result.get('request_id')
             builder.row(types.InlineKeyboardButton(text="بررسی وضعیت پرداخت 🔄", callback_data=f"frenzyex_check_{invoice_id}_{request_id}"))
-            builder.row(types.InlineKeyboardButton(text="انصراف ❌", callback_data=f"frenzyex_cancel_{invoice_id}_{request_id}"))
+            builder.row(types.InlineKeyboardButton(text="انصراف ❌", callback_data=f"frenzyex_cancel_{invoice_id}_{request_id}", style="danger"))
             
             # Store frenzy_request_id in payment_reports
             async with aiosqlite.connect(db_manager.DB_PATH) as db:
@@ -305,7 +305,7 @@ async def prompt_txid(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(PaymentState.waiting_for_txid)
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="❌ انصراف", callback_data="cancel_txid")
+    builder.button(text="❌ انصراف", callback_data="cancel_txid", style="danger")
     
     prompt_text = (
         "📎 <b>ارسال رسید پرداخت</b>\n\n"

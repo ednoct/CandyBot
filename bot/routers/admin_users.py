@@ -46,7 +46,7 @@ async def users_menu(callback: types.CallbackQuery, state: FSMContext):
     builder.row(InlineKeyboardButton(text="🔋 حجم یا زمان همگانی", callback_data="admin_global_traffic"))
     
     # Back button to main admin menu
-    builder.row(InlineKeyboardButton(text="🔙 بازگشت به منوی مدیریت", callback_data="admin_back"))
+    builder.row(InlineKeyboardButton(text="🔙 بازگشت به منوی مدیریت", callback_data="admin_back", style="danger"))
     
     await callback.message.edit_text("📌 از لیست زیر یک گزینه را انتخاب نمایید:", reply_markup=builder.as_markup())
 
@@ -88,13 +88,13 @@ async def show_user_management_panel(message: types.Message, target_id: int):
         
         builder.button(text="🗑 حذف کامل کاربر", callback_data=f"user_delete_confirm_{user['id']}")
         
-        builder.button(text="🔙 بازگشت", callback_data="admin_users")
+        builder.button(text="🔙 بازگشت", callback_data="admin_users", style="danger")
         builder.adjust(2, 1, 2, 2, 2, 1, 1)
 
     else:
         text = "❌ کاربر یافت نشد."
         builder = InlineKeyboardBuilder()
-        builder.button(text="🔙 بازگشت", callback_data="admin_users")
+        builder.button(text="🔙 بازگشت", callback_data="admin_users", style="danger")
         
     await message.answer(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
 
@@ -134,7 +134,7 @@ async def process_wallet_add(message: types.Message, state: FSMContext):
     await state.set_state(None)
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 جستجوی مجدد", callback_data="admin_search_user")
+    builder.button(text="🔙 جستجوی مجدد", callback_data="admin_search_user", style="danger")
     await message.answer(f"✅ مبلغ {amount} تومان به کیف پول کاربر {target_id} اضافه شد.", reply_markup=builder.as_markup())
     
 @admin_users_router.callback_query(F.data.startswith("wallet_reduce_"))
@@ -163,7 +163,7 @@ async def process_wallet_reduce(message: types.Message, state: FSMContext):
     await state.set_state(None)
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 جستجوی مجدد", callback_data="admin_search_user")
+    builder.button(text="🔙 جستجوی مجدد", callback_data="admin_search_user", style="danger")
     await message.answer(f"✅ مبلغ {amount} تومان از کیف پول کاربر {target_id} کسر شد.", reply_markup=builder.as_markup())
 
 # === ROUTER: USER STATUS ===
@@ -214,7 +214,8 @@ async def user_delete_confirm(callback: types.CallbackQuery):
     builder.row(
         types.InlineKeyboardButton(
             text="🔙 انصراف",
-            callback_data=f"user_delcancel_{target_id}"
+            callback_data=f"user_delcancel_{target_id}",
+            style="danger"
         )
     )
 
@@ -268,7 +269,7 @@ async def user_delete_execute(callback: types.CallbackQuery):
         result_text = f"❌ کاربر `{target_id}` یافت نشد یا قبلاً حذف شده است."
 
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 بازگشت به مدیریت کاربران", callback_data="admin_users")
+    builder.button(text="🔙 بازگشت به مدیریت کاربران", callback_data="admin_users", style="danger")
     await callback.message.edit_text(result_text, reply_markup=builder.as_markup(), parse_mode="Markdown")
     await callback.answer()
 
@@ -283,7 +284,7 @@ async def user_payments(callback: types.CallbackQuery):
     text = f"💳 **تراکنش‌های کاربر {target_id}**\n\nتراکنشی یافت نشد."
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 جستجوی مجدد", callback_data="admin_search_user")
+    builder.button(text="🔙 جستجوی مجدد", callback_data="admin_search_user", style="danger")
     
     await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
 @admin_users_router.callback_query(F.data.startswith("wallet_zero_"))
@@ -325,7 +326,7 @@ async def user_transfer_prompt(callback: types.CallbackQuery, state: FSMContext)
     
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 لغو", callback_data="admin_users")
+    builder.button(text="🔙 لغو", callback_data="admin_users", style="danger")
     
     await callback.message.edit_text(f"🔄 **انتقال حساب**\n\nشما در حال انتقال اطلاعات کاربر {target_id} هستید.\nلطفا آیدی عددی کاربر مقصد را بفرستید:", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
@@ -355,7 +356,7 @@ async def user_transfer_process(message: types.Message, state: FSMContext):
     await state.set_state(None)
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 مدیریت کاربران", callback_data="admin_users")
+    builder.button(text="🔙 مدیریت کاربران", callback_data="admin_users", style="danger")
     await message.answer(f"✅ تمامی اطلاعات از {from_id} به {to_id} منتقل شد.", reply_markup=builder.as_markup())
 
 # ============================================================
@@ -377,7 +378,7 @@ async def broadcast_menu(callback: types.CallbackQuery, state: FSMContext):
     builder.row(InlineKeyboardButton(text="فوروارد همگانی", callback_data="bcast_type_fwd"))
     builder.row(InlineKeyboardButton(text="تعداد روزی که استفاده نکردند", callback_data="bcast_inactive_days"))
     builder.row(InlineKeyboardButton(text="لغو پیام های پین شده", callback_data="bcast_unpin_all"))
-    builder.row(InlineKeyboardButton(text="بازگشت به منوی اصلی", callback_data="admin_users"))
+    builder.row(InlineKeyboardButton(text="بازگشت به منوی اصلی", callback_data="admin_users", style="danger"))
     
     await callback.message.edit_text("یک گزینه را انتخاب کنید:", reply_markup=builder.as_markup())
 
@@ -392,7 +393,7 @@ async def broadcast_audience(callback: types.CallbackQuery, state: FSMContext):
     builder.row(InlineKeyboardButton(text="همه کاربران", callback_data="bcast_aud_all"))
     builder.row(InlineKeyboardButton(text="مشتریانی که خرید داشتند", callback_data="bcast_aud_buyers"))
     builder.row(InlineKeyboardButton(text="کاربرانی که خرید نداشتند", callback_data="bcast_aud_nonbuyers"))
-    builder.row(InlineKeyboardButton(text="بازگشت به منوی قبل", callback_data="admin_broadcast_menu"))
+    builder.row(InlineKeyboardButton(text="بازگشت به منوی قبل", callback_data="admin_broadcast_menu", style="danger"))
     
     await callback.message.edit_text("📌 سرویس برای کدام گروه کاربری اعمال شود؟", reply_markup=builder.as_markup())
     
@@ -410,7 +411,7 @@ async def broadcast_message_prompt(callback: types.CallbackQuery, state: FSMCont
     from aiogram.types import InlineKeyboardButton
     builder = InlineKeyboardBuilder()
     # Go back to audience selection is tricky because we need the type. Just go to main broadcast menu
-    builder.row(InlineKeyboardButton(text="بازگشت به منوی قبل", callback_data=f"bcast_type_{bcast_type}"))
+    builder.row(InlineKeyboardButton(text="بازگشت به منوی قبل", callback_data=f"bcast_type_{bcast_type}", style="danger"))
     
     action_text = "فوروارد کنید" if bcast_type == "fwd" else "ارسال کنید (متن، عکس، ویدیو و...)"
     await callback.message.edit_text(f"لطفاً پیام خود را {action_text}:", reply_markup=builder.as_markup())
@@ -433,7 +434,7 @@ async def broadcast_pin_prompt(message: types.Message, state: FSMContext):
     )
     # Since we can't easily go back to waiting_for_message state with edit_text because the user sent a new message, 
     # we just provide a cancel button or back to menu.
-    builder.row(InlineKeyboardButton(text="بازگشت به منوی قبل", callback_data="admin_broadcast_menu"))
+    builder.row(InlineKeyboardButton(text="بازگشت به منوی قبل", callback_data="admin_broadcast_menu", style="danger"))
     
     await message.answer("📌 آیا می خواهید پیام ارسال شده پین شود یا خیر.", reply_markup=builder.as_markup())
 
@@ -516,7 +517,7 @@ def _build_paginated_users_keyboard(users: list, list_type: str, current_page: i
     if nav_buttons:
         builder.row(*nav_buttons)
         
-    builder.row(InlineKeyboardButton(text="🔙 بازگشت به منوی مدیریت", callback_data="admin_users"))
+    builder.row(InlineKeyboardButton(text="🔙 بازگشت به منوی مدیریت", callback_data="admin_users", style="danger"))
     return builder.as_markup()
 
 @admin_users_router.callback_query(F.data.startswith("admin_ulist_"))
@@ -573,7 +574,7 @@ async def search_order_prompt(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_order_id)
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 لغو", callback_data="admin_users")
+    builder.button(text="🔙 لغو", callback_data="admin_users", style="danger")
     await callback.message.edit_text("شناسه سفارش (Invoice ID) را وارد کنید:", reply_markup=builder.as_markup())
 
 @admin_users_router.message(AdminStates.waiting_for_order_id)
@@ -584,7 +585,7 @@ async def search_order_execute(message: types.Message, state: FSMContext):
     
     order = await db_manager.get_invoice_details(invoice_id)
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 بازگشت", callback_data="admin_users")
+    builder.button(text="🔙 بازگشت", callback_data="admin_users", style="danger")
     
     if not order:
         return await message.answer(f"❌ سفارشی با شناسه `{invoice_id}` یافت نشد.", reply_markup=builder.as_markup())
@@ -614,7 +615,7 @@ async def global_charge_prompt(callback: types.CallbackQuery, state: FSMContext)
     await state.set_state(AdminStates.waiting_for_global_charge_amount)
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 لغو", callback_data="admin_users")
+    builder.button(text="🔙 لغو", callback_data="admin_users", style="danger")
     await callback.message.edit_text(
         "مبلغ مورد نظر برای شارژ همگانی کیف پول کاربران فعال با موجودی صفر را به تومان وارد کنید:\n(برای کسر موجودی، مبلغ منفی وارد کنید - حداقل موجودی صفر خواهد بود و نوتیفیکیشنی ارسال نمی‌شود)", 
         reply_markup=builder.as_markup()
@@ -636,7 +637,7 @@ async def global_charge_execute(message: types.Message, state: FSMContext):
     affected_ids = await db_manager.add_global_balance(amount)
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 بازگشت به منوی کاربران", callback_data="admin_users")
+    builder.button(text="🔙 بازگشت به منوی کاربران", callback_data="admin_users", style="danger")
 
     if amount > 0:
         await msg.edit_text(
@@ -686,7 +687,7 @@ async def global_traffic_prompt(callback: types.CallbackQuery, state: FSMContext
     await state.set_state(AdminStates.waiting_for_global_traffic_gb)
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 لغو", callback_data="admin_users")
+    builder.button(text="🔙 لغو", callback_data="admin_users", style="danger")
     await callback.message.edit_text(
         "لطفاً **حجم** مورد نظر برای اضافه شدن به تمامی کانفیگ‌های فعال (بجز تست رایگان) را به گیگابایت وارد کنید:\n(برای عدم تغییر 0 وارد کنید)", 
         reply_markup=builder.as_markup()
@@ -703,7 +704,7 @@ async def global_traffic_days_prompt(message: types.Message, state: FSMContext):
         
     await state.set_state(AdminStates.waiting_for_global_traffic_days)
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 لغو", callback_data="admin_users")
+    builder.button(text="🔙 لغو", callback_data="admin_users", style="danger")
     await message.answer(
         "لطفاً **تعداد روز** مورد نظر برای اضافه شدن به تمامی کانفیگ‌های فعال را وارد کنید:\n(برای عدم تغییر 0 وارد کنید)",
         reply_markup=builder.as_markup()
@@ -771,7 +772,7 @@ async def global_traffic_execute(message: types.Message, state: FSMContext):
     asyncio.create_task(process_global_traffic())
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 بازگشت به منوی کاربران", callback_data="admin_users")
+    builder.button(text="🔙 بازگشت به منوی کاربران", callback_data="admin_users", style="danger")
     await msg.edit_text(f"فرآیند اضافه کردن {gb} گیگابایت و {days} روز به کانفیگ‌ها در پس‌زمینه آغاز شد.", reply_markup=builder.as_markup())
 
 # ============================================================
@@ -785,7 +786,7 @@ async def direct_message_prompt(callback: types.CallbackQuery, state: FSMContext
     await state.set_state(AdminStates.waiting_for_admin_user_msg)
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 لغو", callback_data=f"user_manage_{target_id}")
+    builder.button(text="🔙 لغو", callback_data=f"user_manage_{target_id}", style="danger")
     await callback.message.edit_text(
         f"📩 لطفاً پیام خود را برای ارسال به کاربر `{target_id}` وارد یا فوروارد کنید:\n(می‌توانید عکس یا ویدیو با کپشن ارسال کنید)",
         reply_markup=builder.as_markup()
@@ -799,7 +800,7 @@ async def direct_message_send(message: types.Message, state: FSMContext):
     await state.clear()
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 بازگشت به پروفایل کاربر", callback_data=f"user_manage_{target_id}")
+    builder.button(text="🔙 بازگشت به پروفایل کاربر", callback_data=f"user_manage_{target_id}", style="danger")
     
     try:
         await message.copy_to(chat_id=target_id)
@@ -820,7 +821,7 @@ async def fast_gift_prompt(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_fast_gift_value)
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 لغو", callback_data=f"user_manage_{target_id}")
+    builder.button(text="🔙 لغو", callback_data=f"user_manage_{target_id}", style="danger")
     await callback.message.edit_text(
         f"🎁 مبلغ هدیه اختصاصی برای کاربر `{target_id}` را به تومان وارد کنید:",
         reply_markup=builder.as_markup()
@@ -851,7 +852,7 @@ async def fast_gift_generate(message: types.Message, state: FSMContext):
         await db.commit()
         
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 بازگشت به پروفایل کاربر", callback_data=f"user_manage_{target_id}")
+    builder.button(text="🔙 بازگشت به پروفایل کاربر", callback_data=f"user_manage_{target_id}", style="danger")
     
     start_btn_markup = types.InlineKeyboardMarkup(inline_keyboard=[[
         types.InlineKeyboardButton(text="🟢 شروع و خرید از ربات", callback_data="start_from_notification")
@@ -881,7 +882,7 @@ async def trial_charge_prompt(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_trial_charge_amount)
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 لغو", callback_data="admin_users")
+    builder.button(text="🔙 لغو", callback_data="admin_users", style="danger")
     await callback.message.edit_text(
         "مبلغ مورد نظر برای **شارژ تست‌های رایگان** (کاربرانی که فقط سرویس رایگان گرفته‌اند و موجودی صفر دارند) را به تومان وارد کنید:\n(برای کسر موجودی، مبلغ منفی وارد کنید - حداقل موجودی صفر خواهد بود و نوتیفیکیشنی ارسال نمی‌شود)", 
         reply_markup=builder.as_markup(),
@@ -904,7 +905,7 @@ async def trial_charge_execute(message: types.Message, state: FSMContext):
     affected_ids = await db_manager.add_trial_users_balance(amount)
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 بازگشت به منوی کاربران", callback_data="admin_users")
+    builder.button(text="🔙 بازگشت به منوی کاربران", callback_data="admin_users", style="danger")
 
     if amount > 0:
         await msg.edit_text(

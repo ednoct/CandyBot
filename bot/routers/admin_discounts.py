@@ -25,7 +25,7 @@ async def discounts_menu(callback: types.CallbackQuery):
     builder = InlineKeyboardBuilder()
     builder.button(text="🎫 مدیریت کدهای تخفیف", callback_data="manage_discounts")
     builder.button(text="🎁 مدیریت کدهای هدیه", callback_data="manage_gifts")
-    builder.button(text="🔙 بازگشت", callback_data="admin_finance")
+    builder.button(text="🔙 بازگشت", callback_data="admin_finance", style="danger")
     builder.adjust(1)
 
     await callback.message.edit_text(
@@ -52,7 +52,7 @@ async def manage_discounts(callback: types.CallbackQuery):
         builder.button(text=f"❌ حذف {code['code']}", callback_data=f"del_discount_{code['code']}")
         
     builder.button(text="➕ افزودن کد تخفیف", callback_data="add_discount_start")
-    builder.button(text="🔙 بازگشت", callback_data="admin_discounts")
+    builder.button(text="🔙 بازگشت", callback_data="admin_discounts", style="danger")
     builder.adjust(1)
     
     text = "🎫 <b>لیست کدهای تخفیف (۲۰ مورد آخر)</b>\n\nبرای حذف روی کد مورد نظر کلیک کنید:"
@@ -147,7 +147,7 @@ async def add_discount_save(message: types.Message, state: FSMContext):
     await state.clear()
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 بازگشت به مدیریت", callback_data="manage_discounts")
+    builder.button(text="🔙 بازگشت به مدیریت", callback_data="manage_discounts", style="danger")
     await message.answer(f"✅ کد تخفیف {data['d_code']} با موفقیت ذخیره شد.", reply_markup=builder.as_markup())
 
 
@@ -169,7 +169,7 @@ async def manage_gifts(callback: types.CallbackQuery):
         builder.button(text=f"❌ حذف {code['code']}", callback_data=f"del_gift_{code['code']}")
         
     builder.button(text="➕ افزودن کد هدیه", callback_data="add_gift_start")
-    builder.button(text="🔙 بازگشت", callback_data="admin_discounts")
+    builder.button(text="🔙 بازگشت", callback_data="admin_discounts", style="danger")
     builder.adjust(1)
     
     text = "🎁 <b>لیست کدهای هدیه کیف پول (۲۰ مورد آخر)</b>\n\nبرای حذف روی کد مورد نظر کلیک کنید:"
@@ -249,5 +249,5 @@ async def add_gift_save(message: types.Message, state: FSMContext):
     await state.clear()
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 بازگشت به مدیریت", callback_data="manage_gifts")
+    builder.button(text="🔙 بازگشت به مدیریت", callback_data="manage_gifts", style="danger")
     await message.answer(f"✅ کد هدیه {data['g_code']} با موفقیت ذخیره شد.", reply_markup=builder.as_markup())

@@ -34,7 +34,7 @@ async def agent_reply_start(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(AgentStates.waiting_for_reply)
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 لغو پاسخ", callback_data="cancel_reply")
+    builder.button(text="🔙 لغو پاسخ", callback_data="cancel_reply", style="danger")
     
     prompt_text = (
         f"✍️ <b>پاسخ به تیکت #{ticket_id}</b>\n\n"

@@ -1559,3 +1559,223 @@ async def add_support_message(ticket_id: int, sender_id: int, sender_role: str, 
 
 # Alias for backward compatibility with admin_support.py
 set_department_support_user = set_department_agent
+
+
+# === EXPIRED DATA CLEANUP (TICKETS, LICENSES, INVOICES) ===
+async def cleanup_expired_data(retention_days: int = 14) -> dict:
+    """
+    Cleans up expired data from the bot's database (every 2 weeks or on demand)
+    for storage and performance optimization:
+    1. Support tickets (closed, or answered older than retention_days) and their messages.
+    2. Expired licenses (checked via XUI sub-link stats or invoice validity).
+    3. Expired invoices (status='expired', pending > retention_days, failed/canceled > retention_days)
+       and their payment reports.
+    4. Executes SQLite VACUUM and PRAGMA optimize to defragment and shrink candy.db on disk.
+    
+    NOTE: Operates strictly within the bot's database/memory; no messages in user PVs are deleted.
+    """
+    import os
+    import time
+    import logging
+    import asyncio
+    from utils.date_formatter import get_current_jalali
+    
+    logger = logging.getLogger(__name__)
+    
+    db_size_before = os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0
+    
+    deleted_tickets = 0
+    deleted_ticket_messages = 0
+    deleted_licenses = 0
+    deleted_invoices = 0
+    deleted_payment_reports = 0
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        
+        # -------------------------------------------------------------
+        # 1. CLEANUP SUPPORT TICKETS & MESSAGES
+        # -------------------------------------------------------------
+        try:
+            async with db.execute(f"""
+                SELECT id FROM support_tickets 
+                WHERE status = 'closed'
+                   OR (status = 'answered' AND created_at < datetime('now', '-{retention_days} days'))
+            """) as cur:
+                ticket_rows = await cur.fetchall()
+            
+            ticket_ids = [row['id'] for row in ticket_rows]
+            if ticket_ids:
+                placeholders = ",".join("?" for _ in ticket_ids)
+                cur_msg = await db.execute(
+                    f"DELETE FROM support_messages WHERE ticket_id IN ({placeholders})", 
+                    ticket_ids
+                )
+                deleted_ticket_messages = cur_msg.rowcount if cur_msg.rowcount > 0 else 0
+                
+                cur_tkt = await db.execute(
+                    f"DELETE FROM support_tickets WHERE id IN ({placeholders})", 
+                    ticket_ids
+                )
+                deleted_tickets = cur_tkt.rowcount if cur_tkt.rowcount > 0 else 0
+        except Exception as e:
+            logger.error(f"Error cleaning support tickets: {e}")
+
+        # -------------------------------------------------------------
+        # 2. IDENTIFY AND CLEANUP EXPIRED LICENSES (xui_licenses)
+        # -------------------------------------------------------------
+        expired_license_ids = set()
+        try:
+            async with db.execute("""
+                SELECT l.id, l.user_id, l.sub_id, l.invoice_id, l.created_at,
+                       p.sub_link, p.url as panel_url,
+                       i.days as invoice_days, i.status as invoice_status, i.created_at as invoice_created_at
+                FROM xui_licenses l
+                LEFT JOIN xui_panels p ON l.panel_id = p.id
+                LEFT JOIN invoices i ON l.invoice_id = i.id
+            """) as cur:
+                license_rows = await cur.fetchall()
+
+            from bot.services.sub_stats import fetch_sub_stats
+            
+            async def check_single_license(lic_row):
+                lic_id = lic_row['id']
+                inv_status = lic_row['invoice_status']
+                sub_link = lic_row['sub_link']
+                sub_id = lic_row['sub_id']
+                
+                if inv_status in ('expired', 'canceled', 'failed'):
+                    return lic_id
+
+                if sub_link and sub_id:
+                    try:
+                        stats = await asyncio.wait_for(fetch_sub_stats(sub_link, sub_id), timeout=8.0)
+                        if stats:
+                            if stats.get('is_expired'):
+                                return lic_id
+                            if not stats.get('is_unlimited_time') and stats.get('days_left', 1) <= 0:
+                                return lic_id
+                            if not stats.get('is_unlimited_traffic') and stats.get('remaining_gb', 1) <= 0:
+                                return lic_id
+                    except Exception:
+                        pass
+                return None
+
+            sem = asyncio.Semaphore(10)
+            async def bounded_check(row):
+                async with sem:
+                    return await check_single_license(row)
+
+            if license_rows:
+                tasks = [bounded_check(row) for row in license_rows]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                for res in results:
+                    if isinstance(res, int):
+                        expired_license_ids.add(res)
+
+            # Date-based expiration check for remaining licenses
+            async with db.execute(f"""
+                SELECT l.id FROM xui_licenses l
+                JOIN invoices i ON l.invoice_id = i.id
+                WHERE i.days > 0 
+                  AND datetime(l.created_at, '+' || (i.days + {retention_days}) || ' days') < datetime('now')
+            """) as cur:
+                date_expired = await cur.fetchall()
+                for r in date_expired:
+                    expired_license_ids.add(r[0])
+
+            # Orphaned licenses older than retention period
+            async with db.execute(f"""
+                SELECT l.id FROM xui_licenses l
+                LEFT JOIN invoices i ON l.invoice_id = i.id
+                WHERE i.id IS NULL AND l.created_at < datetime('now', '-{retention_days} days')
+            """) as cur:
+                orphan_lics = await cur.fetchall()
+                for r in orphan_lics:
+                    expired_license_ids.add(r[0])
+
+            if expired_license_ids:
+                lic_id_list = list(expired_license_ids)
+                placeholders = ",".join("?" for _ in lic_id_list)
+                cur_lic = await db.execute(
+                    f"DELETE FROM xui_licenses WHERE id IN ({placeholders})", 
+                    lic_id_list
+                )
+                deleted_licenses = cur_lic.rowcount if cur_lic.rowcount > 0 else 0
+        except Exception as e:
+            logger.error(f"Error cleaning expired licenses: {e}")
+
+        # -------------------------------------------------------------
+        # 3. CLEANUP EXPIRED INVOICES & PAYMENT REPORTS
+        # -------------------------------------------------------------
+        try:
+            async with db.execute(f"""
+                SELECT id FROM invoices 
+                WHERE status = 'expired'
+                   OR (status = 'pending' AND created_at < datetime('now', '-{retention_days} days'))
+                   OR (status IN ('canceled', 'failed') AND created_at < datetime('now', '-{retention_days} days'))
+            """) as cur:
+                inv_rows = await cur.fetchall()
+                
+            expired_inv_ids = [row['id'] for row in inv_rows]
+            
+            if expired_inv_ids:
+                placeholders = ",".join("?" for _ in expired_inv_ids)
+                # First delete any remaining xui_licenses referencing these invoices
+                await db.execute(f"DELETE FROM xui_licenses WHERE invoice_id IN ({placeholders})", expired_inv_ids)
+                
+                # Delete payment reports related to these invoices
+                cur_pr = await db.execute(
+                    f"DELETE FROM payment_reports WHERE invoice_id IN ({placeholders})", 
+                    expired_inv_ids
+                )
+                deleted_payment_reports += cur_pr.rowcount if cur_pr.rowcount > 0 else 0
+                
+                # Delete from invoices
+                cur_inv = await db.execute(
+                    f"DELETE FROM invoices WHERE id IN ({placeholders})", 
+                    expired_inv_ids
+                )
+                deleted_invoices = cur_inv.rowcount if cur_inv.rowcount > 0 else 0
+
+            # Delete any expired offline reports or abandoned unpaid payment reports
+            cur_pr_extra = await db.execute(f"""
+                DELETE FROM payment_reports 
+                WHERE status = 'expire' 
+                   OR (status = 'Unpaid' AND created_at < datetime('now', '-{retention_days} days'))
+            """)
+            deleted_payment_reports += cur_pr_extra.rowcount if cur_pr_extra.rowcount > 0 else 0
+
+        except Exception as e:
+            logger.error(f"Error cleaning expired invoices: {e}")
+
+        await db.commit()
+
+        # -------------------------------------------------------------
+        # 4. OPTIMIZATION & VACUUM (Reclaim storage & optimize queries)
+        # -------------------------------------------------------------
+        try:
+            await db.execute("PRAGMA optimize;")
+            await db.execute("VACUUM;")
+        except Exception as e:
+            logger.error(f"Error executing VACUUM/optimize: {e}")
+
+    db_size_after = os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0
+    freed_bytes = max(0, db_size_before - db_size_after)
+
+    summary = {
+        "deleted_tickets": deleted_tickets,
+        "deleted_ticket_messages": deleted_ticket_messages,
+        "deleted_licenses": deleted_licenses,
+        "deleted_invoices": deleted_invoices,
+        "deleted_payment_reports": deleted_payment_reports,
+        "db_size_before_bytes": db_size_before,
+        "db_size_after_bytes": db_size_after,
+        "freed_bytes": freed_bytes,
+        "timestamp": int(time.time()),
+        "jalali_date": get_current_jalali()
+    }
+    
+    logger.info(f"Database cleanup finished: {summary}")
+    return summary
+

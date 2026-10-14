@@ -63,10 +63,13 @@ async def settings_menu(callback: types.CallbackQuery):
     # Referral
     builder.button(text="🤝 تنظیمات زیرمجموعه‌گیری", callback_data="admin_referral")
     
-    # Back
-    builder.button(text="🔙 بازگشت", callback_data="admin_back")
+    # DB Cleanup
+    builder.button(text="🧹 پاکسازی دوره‌ای دیتابیس", callback_data="admin_db_cleanup")
     
-    builder.adjust(2, 2, 2, 2, 2, 1, 1, 1, 1)
+    # Back
+    builder.button(text="🔙 بازگشت", callback_data="admin_back", style="danger")
+    
+    builder.adjust(2, 2, 2, 2, 2, 1, 1, 1, 1, 1)
     
     await callback.message.edit_text("⚙️ **تنظیمات عمومی ربات**", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
@@ -115,7 +118,7 @@ async def manage_channels(callback: types.CallbackQuery, state: FSMContext = Non
     builder = InlineKeyboardBuilder()
     builder.button(text="➕ اضافه کردن کانال", callback_data="add_channel")
     builder.button(text="❌ حذف کانال", callback_data="del_channel")
-    builder.button(text="🔙 بازگشت", callback_data="admin_settings")
+    builder.button(text="🔙 بازگشت", callback_data="admin_settings", style="danger")
     builder.adjust(2, 1)
     
     await callback.message.edit_text("📯 <b>مدیریت کانال‌های جوین اجباری</b>", reply_markup=builder.as_markup(), parse_mode="HTML")
@@ -127,7 +130,7 @@ async def add_channel_start(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_channel_remark)
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 لغو و بازگشت", callback_data="admin_manage_channels")
+    builder.button(text="🔙 لغو و بازگشت", callback_data="admin_manage_channels", style="danger")
     
     await callback.message.edit_text(
         "📌 <b>یک نام برای دکمه عضویت کانال انتخاب نمایید:</b>\n"
@@ -148,7 +151,7 @@ async def add_channel_remark(message: types.Message, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_channel_id)
 
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 لغو و بازگشت", callback_data="admin_manage_channels")
+    builder.button(text="🔙 لغو و بازگشت", callback_data="admin_manage_channels", style="danger")
 
     await message.answer(
         "📌 <b>یوزرنیم یا آیدی عددی کانال را وارد کنید:</b>\n\n"
@@ -174,7 +177,7 @@ async def add_channel_id(message: types.Message, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_channel_url)
 
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 لغو و بازگشت", callback_data="admin_manage_channels")
+    builder.button(text="🔙 لغو و بازگشت", callback_data="admin_manage_channels", style="danger")
 
     suggested_link = f"https://t.me/{str(parsed_id).replace('@', '')}" if str(parsed_id).startswith("@") else ""
     help_text = f"\n(پیشنهادی: <code>{suggested_link}</code>)" if suggested_link else ""
@@ -211,7 +214,7 @@ async def add_channel_url(message: types.Message, state: FSMContext):
 
     await state.clear()
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 بازگشت به مدیریت کانال‌ها", callback_data="admin_manage_channels")
+    builder.button(text="🔙 بازگشت به مدیریت کانال‌ها", callback_data="admin_manage_channels", style="danger")
     await message.answer(
         f"✅ <b>کانال جوین اجباری با موفقیت ثبت گردید.</b>\n\n"
         f"🏷 نام دکمه: <b>{remark}</b>\n"
@@ -237,7 +240,7 @@ async def del_channel_list(callback: types.CallbackQuery, state: FSMContext = No
     builder = InlineKeyboardBuilder()
 
     if not channels:
-        builder.button(text="🔙 بازگشت", callback_data="admin_manage_channels")
+        builder.button(text="🔙 بازگشت", callback_data="admin_manage_channels", style="danger")
         return await callback.message.edit_text(
             "❌ <b>هیچ کانال جوین اجباری ثبت نشده است.</b>", 
             reply_markup=builder.as_markup(),
@@ -249,7 +252,7 @@ async def del_channel_list(callback: types.CallbackQuery, state: FSMContext = No
         ident = ch['link'] or ch['linkjoin'] or ""
         builder.button(text=f"🗑 {name} ({ident})", callback_data=f"del_chan_{ch['id']}")
 
-    builder.button(text="🔙 بازگشت", callback_data="admin_manage_channels")
+    builder.button(text="🔙 بازگشت", callback_data="admin_manage_channels", style="danger")
     builder.adjust(1)
 
     await callback.message.edit_text(
@@ -282,7 +285,7 @@ async def manage_admins(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_admin_id)
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 بازگشت", callback_data="admin_settings")
+    builder.button(text="🔙 بازگشت", callback_data="admin_settings", style="danger")
     await callback.message.edit_text("👨‍💻 **مدیریت ادمین‌ها**\n\nبرای افزودن ادمین جدید، لطفا آیدی عددی (User ID) تلگرام او را بفرستید:", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
 @admin_settings_router.message(AdminStates.waiting_for_admin_id)
@@ -303,7 +306,7 @@ async def add_admin_save(message: types.Message, state: FSMContext):
         
     await state.set_state(None)
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 بازگشت به تنظیمات", callback_data="admin_settings")
+    builder.button(text="🔙 بازگشت به تنظیمات", callback_data="admin_settings", style="danger")
     await message.answer(f"✅ کاربر {new_admin_id} با موفقیت به عنوان ادمین اضافه شد.", reply_markup=builder.as_markup())
 
 
@@ -317,7 +320,7 @@ async def manage_qr_prompt(callback: types.CallbackQuery, state: FSMContext):
     
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 لغو", callback_data="admin_settings")
+    builder.button(text="🔙 لغو", callback_data="admin_settings", style="danger")
     await callback.message.edit_text("🖼 **پس زمینه کیوآرکد**\nتصویر خود را برای پس زمینه ارسال کنید:", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
 @admin_settings_router.message(AdminStates.waiting_for_qr_background)
@@ -344,7 +347,7 @@ async def manage_qr_process(message: types.Message, state: FSMContext):
     await state.set_state(None)
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 تنظیمات", callback_data="admin_settings")
+    builder.button(text="🔙 تنظیمات", callback_data="admin_settings", style="danger")
     await message.answer("🖼 پس زمینه با موفقیت تنظیم گردید.", reply_markup=builder.as_markup())
 
 # === ROUTER: REFERRAL SYSTEM ===
@@ -371,7 +374,7 @@ async def referral_settings_menu(callback: types.CallbackQuery):
     builder.button(text="مقدار پاداش:", callback_data="none")
     builder.button(text=val_text, callback_data="set_ref_value")
     
-    builder.button(text="🔙 بازگشت به تنظیمات", callback_data="admin_settings")
+    builder.button(text="🔙 بازگشت به تنظیمات", callback_data="admin_settings", style="danger")
     
     builder.adjust(2, 2, 2, 1)
     
@@ -409,7 +412,7 @@ async def set_referral_value_prompt(callback: types.CallbackQuery, state: FSMCon
     await state.set_state(AdminStates.waiting_for_referral_value)
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 لغو", callback_data="admin_referral")
+    builder.button(text="🔙 لغو", callback_data="admin_referral", style="danger")
     await callback.message.edit_text(
         "💰 **تنظیم مقدار پاداش**\n"
         "لطفاً مقدار جدید را به صورت عددی ارسال کنید (بدون کاما):",
@@ -434,5 +437,105 @@ async def set_referral_value_process(message: types.Message, state: FSMContext):
         
     await state.set_state(None)
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 تنظیمات زیرمجموعه‌گیری", callback_data="admin_referral")
+    builder.button(text="🔙 تنظیمات زیرمجموعه‌گیری", callback_data="admin_referral", style="danger")
     await message.answer("✅ مقدار پاداش با موفقیت ثبت شد.", reply_markup=builder.as_markup())
+
+
+# === ROUTER: BI-WEEKLY DATABASE CLEANUP DASHBOARD ===
+@admin_settings_router.callback_query(F.data == "admin_db_cleanup")
+async def admin_db_cleanup_menu(callback: types.CallbackQuery):
+    """Displays periodic database cleanup status and statistics."""
+    if not is_admin(callback.message): return
+    
+    import json
+    import time
+    from utils.date_formatter import get_jalali_date
+    
+    last_cleanup = await db_manager.get_setting("last_biweekly_cleanup")
+    last_result_raw = await db_manager.get_setting("last_biweekly_cleanup_result")
+    interval_days = int(await db_manager.get_setting("biweekly_cleanup_interval_days", "14"))
+    
+    now = int(time.time())
+    
+    if last_cleanup:
+        try:
+            last_ts = int(last_cleanup)
+            last_date_str = get_jalali_date(last_ts)
+            diff = now - last_ts
+            interval_sec = interval_days * 86400
+            rem_sec = max(0, interval_sec - diff)
+            rem_days = rem_sec // 86400
+            rem_hours = (rem_sec % 86400) // 3600
+            next_str = f"حدود {rem_days} روز و {rem_hours} ساعت دیگر" if rem_sec > 0 else "هم‌اکنون در نوبت اجرا"
+        except Exception:
+            last_date_str = "ثبت نشده"
+            next_str = "درحال محاسبه"
+    else:
+        last_date_str = "هنوز اجرا نشده"
+        next_str = "در بررسی بعدی پس‌زمینه"
+        
+    stats_text = "آماری برای نمایش موجود نیست."
+    if last_result_raw:
+        try:
+            res = json.loads(last_result_raw)
+            stats_text = (
+                f"• تیکت‌های پشتیبانی: {res.get('deleted_tickets', 0)} عدد\n"
+                f"• پیام‌های تیکت: {res.get('deleted_ticket_messages', 0)} عدد\n"
+                f"• لایسنس‌های منقضی: {res.get('deleted_licenses', 0)} عدد\n"
+                f"• فاکتورهای منقضی: {res.get('deleted_invoices', 0)} عدد\n"
+                f"• گزارش‌های پرداخت منقضی: {res.get('deleted_payment_reports', 0)} عدد\n"
+                f"• حجم دیتابیس آزاد شده: {res.get('freed_bytes', 0) / 1024:.1f} KB"
+            )
+        except Exception:
+            pass
+
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⚡️ اجرای پاکسازی اکنون", callback_data="admin_db_cleanup_now")
+    builder.button(text="🔄 بروزرسانی صفحه", callback_data="admin_db_cleanup")
+    builder.button(text="🔙 بازگشت به تنظیمات", callback_data="admin_settings", style="danger")
+    builder.adjust(1, 1, 1)
+
+    text = (
+        "🧹 <b>سیستم پاکسازی خودکار و بهینه‌سازی دیتابیس</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        "این سیستم هر دو هفته یک‌بار (۱۴ روز) موارد زیر را برای آزادسازی رم و حافظه دیسک به صورت دائمی پاکسازی می‌کند:\n"
+        "▫️ تیکت‌های پشتیبانی بسته یا پاسخ‌داده‌شده قدیمی\n"
+        "▫️ لایسنس‌های منقضی شده (بررسی زنده ساب‌لینک یا انقضای زمان/حجم)\n"
+        "▫️ فاکتورها و گزارش‌های پرداخت منقضی‌شده\n"
+        "▫️ فشرده‌سازی دیتابیس (SQLite VACUUM & Optimize)\n\n"
+        "<i>(نکته: این عملیات صرفاً در حافظه دیتابیس ربات انجام می‌شود و هیچ پیامی از چت‌های پیوی کاربران حذف نمی‌گردد.)</i>\n\n"
+        "⚙️ <b>وضعیت سیستم:</b>\n"
+        f"• وضعیت سیستم خودکار: <b>فعال (هر ۱۴ روز)</b>\n"
+        f"• آخرین پاکسازی خودکار: <b>{last_date_str}</b>\n"
+        f"• نوبت پاکسازی بعدی: <b>{next_str}</b>\n\n"
+        f"📊 <b>آمار آخرین پاکسازی:</b>\n{stats_text}"
+    )
+
+    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    await callback.answer()
+
+@admin_settings_router.callback_query(F.data == "admin_db_cleanup_now")
+async def admin_db_cleanup_now_handler(callback: types.CallbackQuery):
+    """Manually triggers database cleanup on demand."""
+    if not is_admin(callback.message): return
+    
+    import json
+    import time
+    
+    await callback.answer("⏳ در حال اجرای پاکسازی و فشرده‌سازی دیتابیس...", show_alert=False)
+    
+    now = int(time.time())
+    result = await db_manager.cleanup_expired_data(retention_days=14)
+    await db_manager.set_setting("last_biweekly_cleanup", str(now))
+    await db_manager.set_setting("last_biweekly_cleanup_result", json.dumps(result, ensure_ascii=False))
+    
+    alert_msg = (
+        f"✅ پاکسازی با موفقیت انجام شد:\n"
+        f"• تیکت‌ها: {result['deleted_tickets']}\n"
+        f"• لایسنس‌ها: {result['deleted_licenses']}\n"
+        f"• فاکتورها: {result['deleted_invoices']}\n"
+        f"• فضای آزاد شده: {result['freed_bytes'] / 1024:.1f} KB"
+    )
+    await callback.answer(alert_msg, show_alert=True)
+    await admin_db_cleanup_menu(callback)
+

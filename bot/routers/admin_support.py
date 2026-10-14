@@ -36,8 +36,8 @@ async def admin_support(callback: types.CallbackQuery, state: FSMContext):
     )
     # Row 4
     builder.row(
-        InlineKeyboardButton(text="▶️ بازگشت به منوی قبل", callback_data="admin_settings"),
-        InlineKeyboardButton(text="🏠 بازگشت به منوی مدیریت", callback_data="admin_back")
+        InlineKeyboardButton(text="▶️ بازگشت به منوی قبل", callback_data="admin_settings", style="danger"),
+        InlineKeyboardButton(text="🏠 بازگشت به منوی مدیریت", callback_data="admin_back", style="danger")
     )
     
     text = "🏢 <b>مدیریت دپارتمان‌های پشتیبانی</b>\n\nلطفاً یک گزینه را انتخاب کنید:"
@@ -51,7 +51,7 @@ async def add_dept_start(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(AdminSupportStates.waiting_for_dept_name)
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 انصراف", callback_data="admin_support")
+    builder.button(text="🔙 انصراف", callback_data="admin_support", style="danger")
     
     text = "🏢 لطفاً <b>نام دپارتمان جدید</b> را وارد کنید (مثلاً: فنی، مالی، فروش):"
     await send_bottom_message(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
@@ -63,7 +63,7 @@ async def add_dept_process(message: types.Message, state: FSMContext):
     
     success = await db_manager.add_department(name)
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 بازگشت به مدیریت پشتیبانی", callback_data="admin_support")
+    builder.button(text="🔙 بازگشت به مدیریت پشتیبانی", callback_data="admin_support", style="danger")
     
     if success:
         await message.answer(f"✅ دپارتمان «<b>{name}</b>» با موفقیت اضافه شد.", reply_markup=builder.as_markup(), parse_mode="HTML")
@@ -84,7 +84,7 @@ async def remove_dept_start(callback: types.CallbackQuery, state: FSMContext):
     builder = InlineKeyboardBuilder()
     for d in depts:
         builder.button(text=f"🗑 {d['name']}", callback_data=f"deldept_{d['id']}")
-    builder.button(text="🔙 انصراف", callback_data="admin_support")
+    builder.button(text="🔙 انصراف", callback_data="admin_support", style="danger")
     builder.adjust(1)
     
     text = "🗑 کدام دپارتمان را می‌خواهید حذف کنید؟"
@@ -123,7 +123,7 @@ async def set_agent_start(callback: types.CallbackQuery, state: FSMContext):
         builder = InlineKeyboardBuilder()
         if agent:
             builder.button(text="🗑 حذف پشتیبان فعلی (بدون پشتیبان)", callback_data="clear_agent")
-        builder.button(text="🔙 انصراف", callback_data="admin_support")
+        builder.button(text="🔙 انصراف", callback_data="admin_support", style="danger")
         builder.adjust(1)
         
         text = (
@@ -141,7 +141,7 @@ async def set_agent_start(callback: types.CallbackQuery, state: FSMContext):
         agent = d['support_user_id']
         status = f"(تنظیم شده: {agent})" if agent else "(بدون پشتیبان)"
         builder.button(text=f"🏢 {d['name']} {status}", callback_data=f"setagentdept_{d['id']}")
-    builder.button(text="🔙 انصراف", callback_data="admin_support")
+    builder.button(text="🔙 انصراف", callback_data="admin_support", style="danger")
     builder.adjust(1)
     
     text = "🏢 دپارتمان مورد نظر را برای تنظیم آیدی پشتیبان انتخاب کنید:"
@@ -164,7 +164,7 @@ async def set_agent_dept_selected(callback: types.CallbackQuery, state: FSMConte
     builder = InlineKeyboardBuilder()
     if agent:
         builder.button(text="🗑 حذف پشتیبان فعلی (بدون پشتیبان)", callback_data="clear_agent")
-    builder.button(text="🔙 انصراف", callback_data="admin_support")
+    builder.button(text="🔙 انصراف", callback_data="admin_support", style="danger")
     builder.adjust(1)
     
     text = (
@@ -212,7 +212,7 @@ async def set_agent_process(message: types.Message, state: FSMContext):
         dept_name = dept['name'] if dept else "مربوطه"
         
         builder = InlineKeyboardBuilder()
-        builder.button(text="🔙 بازگشت به مدیریت پشتیبانی", callback_data="admin_support")
+        builder.button(text="🔙 بازگشت به مدیریت پشتیبانی", callback_data="admin_support", style="danger")
         
         await message.answer(
             f"✅ آیدی عددی <code>{user_id}</code> با موفقیت به‌عنوان پشتیبان دپارتمان «<b>{dept_name}</b>» ذخیره شد.",
@@ -222,7 +222,7 @@ async def set_agent_process(message: types.Message, state: FSMContext):
         await state.clear()
     except ValueError:
         builder = InlineKeyboardBuilder()
-        builder.button(text="🔙 انصراف", callback_data="admin_support")
+        builder.button(text="🔙 انصراف", callback_data="admin_support", style="danger")
         await message.answer("❌ لطفاً یک آیدی عددی معتبر ارسال کنید (فقط اعداد انگلیسی):", reply_markup=builder.as_markup())
 
 # Set FAQ
@@ -233,7 +233,7 @@ async def set_faq_start(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(AdminSupportStates.waiting_for_faq_text)
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 انصراف", callback_data="admin_support")
+    builder.button(text="🔙 انصراف", callback_data="admin_support", style="danger")
     
     text = "📝 متن جدید سوالات متداول (FAQ) را به صورت کامل تایپ کرده و ارسال کنید (پشتیبانی از فرمت‌های تلگرام مجاز است):"
     await send_bottom_message(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
@@ -245,7 +245,7 @@ async def set_faq_process(message: types.Message, state: FSMContext):
     await db_manager.api_update_setting("faq_text", faq_text)
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 بازگشت به مدیریت پشتیبانی", callback_data="admin_support")
+    builder.button(text="🔙 بازگشت به مدیریت پشتیبانی", callback_data="admin_support", style="danger")
     
     await message.answer("✅ متن سوالات متداول با موفقیت بروزرسانی شد.", reply_markup=builder.as_markup())
     await state.clear()

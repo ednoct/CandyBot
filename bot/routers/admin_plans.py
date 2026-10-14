@@ -34,7 +34,7 @@ async def manage_plans_menu(callback: types.CallbackQuery, state: FSMContext = N
 
     builder.button(text="➕ افزودن پلن جدید", callback_data="add_plan_start")
     builder.button(text="📝 تنظیم متن دکمه تفاوت پلن ها", callback_data="admin_set_plans_diff_text")
-    builder.button(text="🔙 بازگشت", callback_data="admin_back")
+    builder.button(text="🔙 بازگشت", callback_data="admin_back", style="danger")
     builder.adjust(1)
 
     await callback.message.edit_text(
@@ -62,7 +62,7 @@ async def set_plans_diff_text_start(callback: types.CallbackQuery, state: FSMCon
     await state.set_state(AdminStates.waiting_for_plans_difference_text)
 
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 انصراف و بازگشت", callback_data="admin_manage_plans")
+    builder.button(text="🔙 انصراف و بازگشت", callback_data="admin_manage_plans", style="danger")
 
     text = (
         "📝 <b>تنظیم متن دکمه تفاوت پلن‌ها</b>\n\n"
@@ -90,7 +90,7 @@ async def set_plans_diff_text_save(message: types.Message, state: FSMContext):
     await state.clear()
 
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 بازگشت به مدیریت پلن‌ها", callback_data="admin_manage_plans")
+    builder.button(text="🔙 بازگشت به مدیریت پلن‌ها", callback_data="admin_manage_plans", style="danger")
 
     response_text = (
         "✅ <b>متن دکمه تفاوت پلن‌ها با موفقیت ذخیره شد.</b>\n\n"
@@ -138,7 +138,7 @@ async def add_plan_desc(message: types.Message, state: FSMContext):
     await state.set_state(None)
 
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 بازگشت به پلن‌ها", callback_data="admin_manage_plans")
+    builder.button(text="🔙 بازگشت به پلن‌ها", callback_data="admin_manage_plans", style="danger")
     await message.answer(
         f"✅ پلن <b>{data['plan_name']}</b> با موفقیت ساخته شد.",
         reply_markup=builder.as_markup(),
@@ -182,7 +182,7 @@ async def plan_dashboard(callback: types.CallbackQuery):
     builder.button(text="💰 تنظیم قیمت سریع", callback_data=f"fastprice_{plan_id}")
     builder.button(text="📦 اتصال مخزن", callback_data=f"connect_panel_{plan_id}")
     builder.button(text="❌ حذف پلن", callback_data=f"delplan_{plan_id}")
-    builder.button(text="🔙 بازگشت", callback_data="admin_manage_plans")
+    builder.button(text="🔙 بازگشت", callback_data="admin_manage_plans", style="danger")
     builder.adjust(2, 2, 1, 1)
 
     await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
@@ -219,7 +219,7 @@ async def fast_price_save(message: types.Message, state: FSMContext):
         await state.set_state(None)
 
         builder = InlineKeyboardBuilder()
-        builder.button(text="🔙 بازگشت", callback_data=f"manageplan_{plan_id}")
+        builder.button(text="🔙 بازگشت", callback_data=f"manageplan_{plan_id}", style="danger")
         await message.answer("✅ قیمت‌های پایه با موفقیت بروزرسانی شد.", reply_markup=builder.as_markup())
     except Exception:
         await message.answer("❌ فرمت نامعتبر است. باید دو عدد با فاصله باشند (مثال: 1200 7000)")
@@ -240,7 +240,7 @@ async def connect_panel_menu(callback: types.CallbackQuery):
     if not panels:
         builder = InlineKeyboardBuilder()
         builder.button(text="🖥 رفتن به مدیریت ثنا", callback_data="admin_xui")
-        builder.button(text="🔙 بازگشت", callback_data=f"manageplan_{plan_id}")
+        builder.button(text="🔙 بازگشت", callback_data=f"manageplan_{plan_id}", style="danger")
         builder.adjust(1)
         return await callback.message.edit_text(
             "❌ هیچ پنلی تعریف نشده است.\n"
@@ -262,7 +262,7 @@ async def connect_panel_menu(callback: types.CallbackQuery):
             callback_data=f"bind_panel_{plan_id}_{p['id']}"
         )
 
-    builder.button(text="🔙 بازگشت", callback_data=f"manageplan_{plan_id}")
+    builder.button(text="🔙 بازگشت", callback_data=f"manageplan_{plan_id}", style="danger")
     builder.adjust(1)
 
     await callback.message.edit_text(
@@ -312,7 +312,7 @@ async def manage_time_packages(callback: types.CallbackQuery, state: FSMContext)
         builder.button(text=f"❌ {tp['days']} روز", callback_data=f"deltime_{tp['id']}_{plan_id}")
 
     builder.button(text="➕ افزودن / جایگزینی زمان‌ها", callback_data=f"addtime_{plan_id}")
-    builder.button(text="🔙 بازگشت", callback_data=f"manageplan_{plan_id}")
+    builder.button(text="🔙 بازگشت", callback_data=f"manageplan_{plan_id}", style="danger")
     builder.adjust(2)
 
     await callback.message.edit_text(
@@ -349,7 +349,7 @@ async def add_time_start(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_time_days)
 
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 لغو", callback_data=f"pkgtime_{plan_id}")
+    builder.button(text="🔙 لغو", callback_data=f"pkgtime_{plan_id}", style="danger")
     await callback.message.edit_text(
         "⏱ <b>افزودن پکیج‌های زمان</b>\n\n"
         "تعداد روزها را با ویرگول جدا کنید:\n"
@@ -397,7 +397,7 @@ async def add_time_save(message: types.Message, state: FSMContext):
     await state.set_state(None)
 
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 مدیریت پکیج‌های زمان", callback_data=f"pkgtime_{plan_id}")
+    builder.button(text="🔙 مدیریت پکیج‌های زمان", callback_data=f"pkgtime_{plan_id}", style="danger")
     await message.answer(
         f"✅ پکیج‌های زمانی اضافه شدند: <code>{', '.join(str(d) + ' روز' for d in valid)}</code>",
         reply_markup=builder.as_markup(),
@@ -423,7 +423,7 @@ async def manage_traffic_packages(callback: types.CallbackQuery, state: FSMConte
         builder.button(text=f"❌ {tp['gb']} گیگ", callback_data=f"deltraffic_{tp['id']}_{plan_id}")
 
     builder.button(text="➕ افزودن / جایگزینی حجم‌ها", callback_data=f"addtraffic_{plan_id}")
-    builder.button(text="🔙 بازگشت", callback_data=f"manageplan_{plan_id}")
+    builder.button(text="🔙 بازگشت", callback_data=f"manageplan_{plan_id}", style="danger")
     builder.adjust(2)
 
     await callback.message.edit_text(
@@ -460,7 +460,7 @@ async def add_traffic_start(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_traffic_gb)
 
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 لغو", callback_data=f"pkgtraffic_{plan_id}")
+    builder.button(text="🔙 لغو", callback_data=f"pkgtraffic_{plan_id}", style="danger")
     await callback.message.edit_text(
         "🔋 <b>افزودن پکیج‌های حجم</b>\n\n"
         "مقادیر حجم را به گیگابایت با ویرگول جدا کنید:\n"
@@ -506,7 +506,7 @@ async def add_traffic_save(message: types.Message, state: FSMContext):
     await state.set_state(None)
 
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 مدیریت پکیج‌های حجم", callback_data=f"pkgtraffic_{plan_id}")
+    builder.button(text="🔙 مدیریت پکیج‌های حجم", callback_data=f"pkgtraffic_{plan_id}", style="danger")
     await message.answer(
         f"✅ پکیج‌های حجم اضافه شدند: <code>{', '.join(str(g) + ' گیگ' for g in valid)}</code>",
         reply_markup=builder.as_markup(),

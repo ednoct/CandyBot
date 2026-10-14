@@ -57,7 +57,7 @@ async def reports_menu(callback: types.CallbackQuery):
     # CRM
     builder.button(text="👥 پیگیری تست (CRM)", callback_data="crm_trial_followup")
     
-    builder.button(text="🔙 بازگشت", callback_data="admin_back")
+    builder.button(text="🔙 بازگشت", callback_data="admin_back", style="danger")
     builder.adjust(1, 1, 3, 1, 1)
     
     await callback.message.edit_text("📈 **آمار و گزارشات کندی**\n\nلطفا بخش مورد نظر را انتخاب کنید:", reply_markup=builder.as_markup(), parse_mode="Markdown")
@@ -224,7 +224,7 @@ async def fetch_stats(callback: types.CallbackQuery):
     # Row 5
     builder.row(InlineKeyboardButton(text="🗓 مشاهده آمار در تاریخ مشخص", callback_data="stats_custom"))
     # Row 6
-    builder.row(InlineKeyboardButton(text="❌ بستن", callback_data="admin_reports"))
+    builder.row(InlineKeyboardButton(text="❌ بستن", callback_data="admin_reports", style="danger"))
     
     try:
         await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
@@ -325,6 +325,6 @@ async def crm_trial_followup(callback: types.CallbackQuery):
         text += "\n*فقط ۲۰ مورد اول نمایش داده شد.*"
         
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 بازگشت", callback_data="admin_reports")
+    builder.button(text="🔙 بازگشت", callback_data="admin_reports", style="danger")
     
     await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")

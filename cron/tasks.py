@@ -205,6 +205,73 @@ async def cron_housekeeping():
             logging.error(f"Cron Housekeeping Error: {e}")
         await asyncio.sleep(3600)
 
+# === BACKGROUND TASK: BI-WEEKLY EXPIRED DATA CLEANUP (TICKETS, LICENSES, INVOICES) ===
+async def cron_biweekly_cleanup(bot=None):
+    """
+    Bi-weekly background loop to clean up:
+    - Support tickets (closed, or answered older than 14 days) and messages
+    - Expired licenses (checked via sub_link stats or invoice validity)
+    - Expired invoices and payment reports
+    - Reclaims memory & disk via SQLite VACUUM and PRAGMA optimize.
+    Runs every 2 weeks (14 days). Periodically checks every hour to survive bot restarts.
+    Operates strictly within the bot's database/memory; no messages in user PVs are deleted.
+    """
+    import time
+    import json
+    while True:
+        try:
+            last_cleanup = await db_manager.get_setting("last_biweekly_cleanup")
+            interval_days = int(await db_manager.get_setting("biweekly_cleanup_interval_days", "14"))
+            interval_seconds = interval_days * 86400
+            now = int(time.time())
+
+            should_run = False
+            if not last_cleanup:
+                should_run = True
+            else:
+                try:
+                    last_time = int(last_cleanup)
+                    if (now - last_time) >= interval_seconds:
+                        should_run = True
+                except ValueError:
+                    should_run = True
+
+            if should_run:
+                logging.info("Starting bi-weekly database cleanup of expired tickets, licenses, and invoices...")
+                result = await db_manager.cleanup_expired_data(retention_days=interval_days)
+                await db_manager.set_setting("last_biweekly_cleanup", str(now))
+                await db_manager.set_setting("last_biweekly_cleanup_result", json.dumps(result, ensure_ascii=False))
+                logging.info(
+                    f"Bi-weekly database cleanup executed: {result['deleted_tickets']} tickets, "
+                    f"{result['deleted_licenses']} licenses, {result['deleted_invoices']} invoices cleaned. "
+                    f"Freed {result['freed_bytes'] / 1024:.1f} KB."
+                )
+
+                if bot:
+                    try:
+                        notif_service = NotificationService(bot)
+                        report_text = (
+                            "🧹 <b>گزارش پاکسازی خودکار دیتابیس (دو هفته یکبار)</b>\n"
+                            "━━━━━━━━━━━━━━━━━━\n"
+                            f"🎟 تیکت‌های پشتیبانی پاکسازی شده: <b>{result['deleted_tickets']}</b> عدد\n"
+                            f"💬 پیام‌های تیکت حذف شده: <b>{result['deleted_ticket_messages']}</b> عدد\n"
+                            f"🔑 لایسنس‌های منقضی پاکسازی شده: <b>{result['deleted_licenses']}</b> عدد\n"
+                            f"🧾 فاکتورهای منقضی پاکسازی شده: <b>{result['deleted_invoices']}</b> عدد\n"
+                            f"💳 گزارش‌های پرداخت منقضی: <b>{result['deleted_payment_reports']}</b> عدد\n"
+                            f"💾 حجم آزاد شده دیتابیس: <b>{result['freed_bytes'] / 1024:.1f} KB</b>\n"
+                            f"🕒 تاریخ اجرا: <b>{result['jalali_date']}</b>\n\n"
+                            "<i>(پاکسازی صرفاً در حافظه دیتابیس ربات جهت بهینه‌سازی انجام شد و چت‌های پیوی کاربران دست‌نخورده باقی ماندند)</i>"
+                        )
+                        await notif_service.send_report(topic_key="nightly_report", text=report_text)
+                    except Exception as ne:
+                        logging.debug(f"Could not send cleanup notification: {ne}")
+
+        except Exception as e:
+            logging.error(f"Cron Bi-Weekly Cleanup Error: {e}")
+
+        # Check every 1 hour (3600 seconds)
+        await asyncio.sleep(3600)
+
 # === CRON SETUP ===
 def setup_cron_tasks(bot=None, loop=None):
     """Handles setup cron tasks."""
@@ -215,3 +282,4 @@ def setup_cron_tasks(bot=None, loop=None):
     loop.create_task(cron_database_cleanup(bot))
     loop.create_task(cron_broadcast())
     loop.create_task(cron_housekeeping())
+    loop.create_task(cron_biweekly_cleanup(bot))

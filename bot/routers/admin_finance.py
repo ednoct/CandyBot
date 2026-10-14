@@ -66,7 +66,7 @@ async def finance_menu(callback: types.CallbackQuery):
     builder.button(text="📈 محدودیت‌های شارژ کیف پول", callback_data="fin_limits_menu")
     
     # Back
-    builder.button(text="🔙 بازگشت", callback_data="admin_back")
+    builder.button(text="🔙 بازگشت", callback_data="admin_back", style="danger")
     
     builder.adjust(2, 2, 2, 1, 1, 1, 1)
     
@@ -110,7 +110,7 @@ async def crypto_wallets_menu(callback: types.CallbackQuery):
     builder.button(text="تنظیم API Key FrenzyEx", callback_data="set_frenzyex_api_key")
     builder.button(text="تنظیم Base URL FrenzyEx", callback_data="set_frenzyex_base_url")
     builder.button(text="تنظیم Webhook Secret FrenzyEx", callback_data="set_frenzyex_callback_secret")
-    builder.button(text="🔙 بازگشت", callback_data="admin_finance")
+    builder.button(text="🔙 بازگشت", callback_data="admin_finance", style="danger")
     builder.adjust(1)
     await callback.message.edit_text("🪙 **مدیریت متغیر درگاه ها**", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
@@ -138,7 +138,7 @@ async def set_crypto_wallet_prompt(callback: types.CallbackQuery, state: FSMCont
                 current_val_text = f"\nمقدار فعلی: `{val}`\n"
                 
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 لغو", callback_data="fin_crypto_wallets")
+    builder.button(text="🔙 لغو", callback_data="fin_crypto_wallets", style="danger")
     await callback.message.edit_text(f"لطفا مقدار جدید برای `{key_name}` را ارسال کنید:{current_val_text}", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
 @admin_finance_router.message(FinanceStates.waiting_for_crypto_setting)
@@ -157,7 +157,7 @@ async def set_crypto_wallet_process(message: types.Message, state: FSMContext):
         
     await state.set_state(None)
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 بازگشت", callback_data="fin_crypto_wallets")
+    builder.button(text="🔙 بازگشت", callback_data="fin_crypto_wallets", style="danger")
     await message.answer(f"✅ تنظیمات با موفقیت ذخیره شد.", reply_markup=builder.as_markup())
 
 
@@ -180,7 +180,7 @@ async def pending_receipts_menu(callback: types.CallbackQuery):
     builder = InlineKeyboardBuilder()
     
     if not pending:
-        builder.button(text="🔙 بازگشت", callback_data="admin_finance")
+        builder.button(text="🔙 بازگشت", callback_data="admin_finance", style="danger")
         return await callback.message.edit_text("💵 **رسیدهای تایید نشده**\n\nدر حال حاضر رسید تایید نشده‌ای وجود ندارد.", reply_markup=builder.as_markup(), parse_mode="Markdown")
         
     for p in pending:
@@ -189,7 +189,7 @@ async def pending_receipts_menu(callback: types.CallbackQuery):
         builder.button(text="❌", callback_data=f"reject_receipt_{p['id']}")
         
     builder.button(text="❌ حذف همه رسیدها", callback_data="del_all_receipts")
-    builder.button(text="🔙 بازگشت", callback_data="admin_finance")
+    builder.button(text="🔙 بازگشت", callback_data="admin_finance", style="danger")
     builder.adjust(3, *([3]*len(pending)), 1, 1)
     
     await callback.message.edit_text(f"💵 **رسیدهای تایید نشده ({len(pending)} مورد)**\n\nلطفاً رسیدها را بررسی و تایید یا رد کنید:", reply_markup=builder.as_markup(), parse_mode="Markdown")
@@ -207,7 +207,7 @@ async def limits_menu(callback: types.CallbackQuery):
         builder.button(text=f"⬇️ حداقل {name}", callback_data=f"lim_min_{code}")
         builder.button(text=f"⬆️ حداکثر {name}", callback_data=f"lim_max_{code}")
         
-    builder.button(text="🔙 بازگشت", callback_data="admin_finance")
+    builder.button(text="🔙 بازگشت", callback_data="admin_finance", style="danger")
     builder.adjust(2)
     
     await callback.message.edit_text("📈 **تنظیم محدودیت‌های شارژ کیف پول**", reply_markup=builder.as_markup(), parse_mode="Markdown")
@@ -224,7 +224,7 @@ async def set_limit_prompt(callback: types.CallbackQuery, state: FSMContext):
     
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 لغو", callback_data="fin_limits_menu")
+    builder.button(text="🔙 لغو", callback_data="fin_limits_menu", style="danger")
     typ_str = "حداقل" if limit_type == 'min' else "حداکثر"
     await callback.message.edit_text(f"📌 مبلغ {typ_str} برای درگاه {gateway} را ارسال کنید:", reply_markup=builder.as_markup())
 
@@ -249,7 +249,7 @@ async def set_limit_process(message: types.Message, state: FSMContext):
     await state.set_state(None)
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 مدیریت محدودیت‌ها", callback_data="fin_limits_menu")
+    builder.button(text="🔙 مدیریت محدودیت‌ها", callback_data="fin_limits_menu", style="danger")
     await message.answer("✅ محدودیت با موفقیت تنظیم شد.", reply_markup=builder.as_markup())
 
 

@@ -47,7 +47,7 @@ async def free_trial_menu(callback: types.CallbackQuery):
     builder.button(text=f"زمان: {days} روز", callback_data="ft_set_days")
     builder.button(text=f"ظرفیت روزانه: {limit} عدد", callback_data="ft_set_limit")
     builder.button(text=f"انتخاب پنل (ID: {panel_id})", callback_data="ft_select_panel")
-    builder.button(text="🔙 بازگشت", callback_data="admin_settings")
+    builder.button(text="🔙 بازگشت", callback_data="admin_settings", style="danger")
     builder.adjust(1)
     
     await callback.message.edit_text(
@@ -120,7 +120,7 @@ async def free_trial_select_panel(callback: types.CallbackQuery):
     builder = InlineKeyboardBuilder()
     for p in panels:
         builder.button(text=f"پنل {p['id']} - {p['url']}", callback_data=f"ft_set_panel_{p['id']}")
-    builder.button(text="🔙 بازگشت", callback_data="admin_free_trial")
+    builder.button(text="🔙 بازگشت", callback_data="admin_free_trial", style="danger")
     builder.adjust(1)
     await callback.message.edit_text("لطفا پنلی که اکانت های تست روی آن ساخته میشوند را انتخاب کنید:", reply_markup=builder.as_markup())
 

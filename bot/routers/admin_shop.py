@@ -18,7 +18,7 @@ async def shop_menu(callback: types.CallbackQuery):
     if not is_admin(callback.message): return
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 بازگشت", callback_data="admin_back")
+    builder.button(text="🔙 بازگشت", callback_data="admin_back", style="danger")
     builder.adjust(1)
     
     await callback.message.edit_text("🏬 **تنظیمات فروشگاه**", reply_markup=builder.as_markup(), parse_mode="Markdown")

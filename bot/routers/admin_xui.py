@@ -28,7 +28,7 @@ async def admin_xui_menu(callback: types.CallbackQuery, state: FSMContext):
     builder = InlineKeyboardBuilder()
     builder.button(text="➕ اضافه کردن پنل", callback_data="xui_add_panel")
     builder.button(text="📋 لیست پنل های تعریف شده", callback_data="xui_list_panels")
-    builder.button(text="🔙 بازگشت", callback_data="admin_back")
+    builder.button(text="🔙 بازگشت", callback_data="admin_back", style="danger")
     builder.adjust(1)
 
     await callback.message.edit_text(
@@ -51,7 +51,7 @@ async def add_panel_start(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_panel_name)
 
     builder = InlineKeyboardBuilder()
-    builder.button(text="❌ انصراف", callback_data="admin_xui")
+    builder.button(text="❌ انصراف", callback_data="admin_xui", style="danger")
     await callback.message.edit_text(
         "🖥 <b>مرحله ۱/۶ — نام پنل</b>\n\n"
         "یک نام دلخواه برای این پنل وارد کنید.\n"
@@ -68,7 +68,7 @@ async def add_panel_name(message: types.Message, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_panel_url)
 
     builder = InlineKeyboardBuilder()
-    builder.button(text="❌ انصراف", callback_data="admin_xui")
+    builder.button(text="❌ انصراف", callback_data="admin_xui", style="danger")
     await message.answer(
         "🌐 <b>مرحله ۲/۶ — آدرس پنل</b>\n\n"
         "آدرس کامل پنل ثنا خود را وارد کنید.\n"
@@ -95,7 +95,7 @@ async def add_panel_url(message: types.Message, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_panel_sub_link)
 
     builder = InlineKeyboardBuilder()
-    builder.button(text="❌ انصراف", callback_data="admin_xui")
+    builder.button(text="❌ انصراف", callback_data="admin_xui", style="danger")
     await message.answer(
         "🔗 <b>مرحله ۳/۶ — آدرس ساب لینک</b>\n\n"
         "آدرس ساب لینک پنل ثنا خود را برای دریافت حجم مصرفی لایسنس وارد کنید.\n"
@@ -116,7 +116,7 @@ async def add_panel_sub_link(message: types.Message, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_panel_token)
 
     builder = InlineKeyboardBuilder()
-    builder.button(text="❌ انصراف", callback_data="admin_xui")
+    builder.button(text="❌ انصراف", callback_data="admin_xui", style="danger")
     await message.answer(
         "🔑 <b>مرحله ۴/۶ — توکن ورود (Bearer Token)</b>\n\n"
         "توکن API پنل ثنا را وارد کنید.\n"
@@ -140,7 +140,7 @@ async def add_panel_token(message: types.Message, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_panel_inbound_ids)
 
     builder = InlineKeyboardBuilder()
-    builder.button(text="❌ انصراف", callback_data="admin_xui")
+    builder.button(text="❌ انصراف", callback_data="admin_xui", style="danger")
     await message.answer(
         "📡 <b>مرحله ۵/۶ — آیدی اینباند(ها)</b>\n\n"
         "آیدی اینباند یا اینباندهایی که لایسنس‌های خریداری شده روی آن‌ها ساخته خواهند شد را وارد کنید.\n\n"
@@ -173,7 +173,7 @@ async def add_panel_inbound_ids(message: types.Message, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_panel_ip_limit)
 
     builder = InlineKeyboardBuilder()
-    builder.button(text="❌ انصراف", callback_data="admin_xui")
+    builder.button(text="❌ انصراف", callback_data="admin_xui", style="danger")
     await message.answer(
         "👥 <b>مرحله ۶/۶ — محدودیت IP (IP Limit)</b>\n\n"
         "حداکثر تعداد کاربران همزمان برای اشتراک‌هایی که روی این پنل ساخته می‌شوند را وارد کنید.\n"
@@ -209,7 +209,7 @@ async def add_panel_ip_limit(message: types.Message, state: FSMContext):
 
     builder = InlineKeyboardBuilder()
     builder.button(text="📋 مشاهده لیست پنل‌ها", callback_data="xui_list_panels")
-    builder.button(text="🔙 بازگشت به ثنا", callback_data="admin_xui")
+    builder.button(text="🔙 بازگشت به ثنا", callback_data="admin_xui", style="danger")
     builder.adjust(1)
 
     url_display = data["panel_url"]
@@ -241,7 +241,7 @@ async def list_panels(callback: types.CallbackQuery):
     if not panels:
         builder = InlineKeyboardBuilder()
         builder.button(text="➕ اضافه کردن پنل", callback_data="xui_add_panel")
-        builder.button(text="🔙 بازگشت", callback_data="admin_xui")
+        builder.button(text="🔙 بازگشت", callback_data="admin_xui", style="danger")
         builder.adjust(1)
         return await callback.message.edit_text(
             "📋 <b>لیست پنل‌های ثنا</b>\n\n"
@@ -260,7 +260,7 @@ async def list_panels(callback: types.CallbackQuery):
         )
 
     builder.button(text="➕ اضافه کردن پنل", callback_data="xui_add_panel")
-    builder.button(text="🔙 بازگشت", callback_data="admin_xui")
+    builder.button(text="🔙 بازگشت", callback_data="admin_xui", style="danger")
     builder.adjust(1)
 
     await callback.message.edit_text(
@@ -304,7 +304,7 @@ async def panel_detail(callback: types.CallbackQuery):
 
     builder = InlineKeyboardBuilder()
     builder.button(text="🗑 حذف این پنل", callback_data=f"xui_del_panel_{panel_id}")
-    builder.button(text="🔙 بازگشت به لیست", callback_data="xui_list_panels")
+    builder.button(text="🔙 بازگشت به لیست", callback_data="xui_list_panels", style="danger")
     builder.adjust(1)
 
     await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")

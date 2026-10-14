@@ -13,7 +13,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import InlineKeyboardButton
 from database import db_manager
 from utils.ui_helpers import send_bottom_message
-import jdatetime
+from utils.date_formatter import get_current_jalali
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ async def support_menu(callback: types.CallbackQuery, state: FSMContext):
         InlineKeyboardButton(text="❓ سوالات متداول", callback_data="support_faq")
     )
     # Row 2
-    builder.row(InlineKeyboardButton(text="🔙 بازگشت به منوی اصلی", callback_data="main_menu"))
+    builder.row(InlineKeyboardButton(text="🔙 بازگشت به منوی اصلی", callback_data="main_menu", style="danger"))
     
     text = (
         "💬 <b>مرکز پشتیبانی و ارتباط با کارشناسان</b>\n\n"
@@ -51,7 +51,7 @@ async def support_faq(callback: types.CallbackQuery, state: FSMContext):
     faq_text = await db_manager.get_setting("faq_text", "متن سوالات متداول هنوز تنظیم نشده است.")
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 بازگشت", callback_data="support")
+    builder.button(text="🔙 بازگشت", callback_data="support", style="danger")
     
     await send_bottom_message(callback, faq_text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
@@ -73,7 +73,7 @@ async def support_send_msg_start(callback: types.CallbackQuery, state: FSMContex
         await state.set_state(SupportStates.waiting_for_user_message)
         
         builder = InlineKeyboardBuilder()
-        builder.button(text="🔙 انصراف", callback_data="support")
+        builder.button(text="🔙 انصراف", callback_data="support", style="danger")
         
         text = f"✍️ لطفاً پیام خود (متن، عکس، فایل، ویدیو یا وویس) را برای واحد پشتیبانی <b>{dept_name}</b> ارسال کنید:"
         await send_bottom_message(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
@@ -82,7 +82,7 @@ async def support_send_msg_start(callback: types.CallbackQuery, state: FSMContex
         builder = InlineKeyboardBuilder()
         for d in depts:
             builder.button(text=f"🏢 {d['name']}", callback_data=f"seldept_{d['id']}")
-        builder.button(text="🔙 انصراف", callback_data="support")
+        builder.button(text="🔙 انصراف", callback_data="support", style="danger")
         builder.adjust(1)
         
         text = "🏢 <b>انتخاب دپارتمان پشتیبانی</b>\n\nلطفاً واحد مربوطه برای دریافت پیام خود را انتخاب نمایید:"
@@ -101,7 +101,7 @@ async def support_dept_selected(callback: types.CallbackQuery, state: FSMContext
     await state.set_state(SupportStates.waiting_for_user_message)
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 انصراف", callback_data="support")
+    builder.button(text="🔙 انصراف", callback_data="support", style="danger")
     
     text = f"✍️ لطفاً پیام خود (متن، عکس، فایل، ویدیو یا وویس) را برای واحد پشتیبانی <b>{dept_name}</b> ارسال کنید:"
     await send_bottom_message(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
@@ -127,7 +127,7 @@ async def user_reply_ticket_handler(callback: types.CallbackQuery, state: FSMCon
     dept_name = dept['name'] if dept else "عمومی"
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 انصراف", callback_data="support")
+    builder.button(text="🔙 انصراف", callback_data="support", style="danger")
     
     prompt_text = (
         f"✍️ <b>ارسال پاسخ به تیکت #{ticket_id} (دپارتمان {dept_name})</b>\n\n"
@@ -220,7 +220,7 @@ async def process_support_msg(message: types.Message, state: FSMContext):
         return
         
     # 5. Format notification for support agent
-    now_shamsi = jdatetime.datetime.now().strftime("%Y/%m/%d - %H:%M")
+    now_shamsi = get_current_jalali()
     username = f"@{message.from_user.username}" if message.from_user.username else "ندارد"
     escaped_content = html.escape(str(text_or_caption))
     
@@ -264,7 +264,7 @@ async def process_support_msg(message: types.Message, state: FSMContext):
             
     # 7. User feedback
     conf_builder = InlineKeyboardBuilder()
-    conf_builder.button(text="🔙 بازگشت به منوی اصلی", callback_data="main_menu")
+    conf_builder.button(text="🔙 بازگشت به منوی اصلی", callback_data="main_menu", style="danger")
     
     if sent_successfully:
         await message.answer(

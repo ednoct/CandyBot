@@ -153,7 +153,7 @@ async def prompt_license_note(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(CheckoutStates.waiting_for_license_note)
 
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 انصراف", callback_data="main_menu")
+    builder.button(text="🔙 انصراف", callback_data="main_menu", style="danger")
 
     await callback.message.edit_text(
         LICENSE_NOTE_TEXT,
@@ -239,7 +239,7 @@ async def render_calculator(message: types.Message, state: FSMContext, plan_id: 
     
     if not time_packages and not traffic_packages:
         builder = InlineKeyboardBuilder()
-        builder.button(text="🔙 برگشت", callback_data="main_menu")
+        builder.button(text="🔙 برگشت", callback_data="main_menu", style="danger")
         return await message.edit_text("متاسفانه هیچ بسته‌ای برای این پلن تعریف نشده است.", reply_markup=builder.as_markup())
         
     sel_time_id = data.get('time_id', time_packages[0]['id'] if time_packages else 0)
@@ -318,7 +318,7 @@ async def render_calculator(message: types.Message, state: FSMContext, plan_id: 
     builder.row(types.InlineKeyboardButton(text=f"💸 پرداخت {base_price:,} تومان", callback_data="checkout_confirm"))
     
     # Back
-    builder.row(types.InlineKeyboardButton(text="🔙 برگشت", callback_data="main_menu"))
+    builder.row(types.InlineKeyboardButton(text="🔙 برگشت", callback_data="main_menu", style="danger"))
     
     text = build_calculator_marketing_text(data['plan_name'], data['plan_price_gb'], sel_gb, tier_info)
     
@@ -447,7 +447,7 @@ async def prepare_and_send_invoice(message: types.Message, user_id: int, data: d
     else:
         builder.row(types.InlineKeyboardButton(text="✅ تکمیل خرید (رایگان)", callback_data="pay_free"))
         
-    builder.row(types.InlineKeyboardButton(text="برگشت ⬅️", callback_data=f"checkout_plan_{data['plan_id']}"))
+    builder.row(types.InlineKeyboardButton(text="برگشت ⬅️", callback_data=f"checkout_plan_{data['plan_id']}", style="danger"))
     
     if isinstance(message, types.Message):
         try:
@@ -461,7 +461,7 @@ async def ask_discount(callback: types.CallbackQuery, state: FSMContext):
     """Handles ask discount."""
     await state.set_state(CheckoutStates.waiting_for_discount_code)
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 انصراف", callback_data="cancel_modifier")
+    builder.button(text="🔙 انصراف", callback_data="cancel_modifier", style="danger")
     await callback.message.edit_text("لطفا کد تخفیف خود را ارسال کنید:", reply_markup=builder.as_markup())
 
 @checkout_router.message(CheckoutStates.waiting_for_discount_code)
@@ -497,7 +497,7 @@ async def ask_gift(callback: types.CallbackQuery, state: FSMContext):
     """Handles ask gift."""
     await state.set_state(CheckoutStates.waiting_for_gift_code)
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 انصراف", callback_data="cancel_modifier")
+    builder.button(text="🔙 انصراف", callback_data="cancel_modifier", style="danger")
     await callback.message.edit_text("لطفا کد هدیه خود را ارسال کنید:", reply_markup=builder.as_markup())
 
 @checkout_router.message(CheckoutStates.waiting_for_gift_code)
