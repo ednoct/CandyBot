@@ -72,7 +72,7 @@ async def show_agent_menu(callback: types.CallbackQuery, state: FSMContext):
         )
     else:
         btn_action = types.InlineKeyboardButton(
-            text="🔓 درخواست فعالسازی برداشت برداشت برداشت برداشت برداشت برداشت برداشت برداشت برداشت برداشت برداشت",
+            text="🔓 درخواست فعالسازی برداشت",
             callback_data="agent_req_activation",
             style="default"
         )
@@ -184,7 +184,7 @@ async def handle_agent_activation_request(callback: types.CallbackQuery):
     # Check if a pending request is already waiting
     if await db_manager.has_pending_activation_request(user_id):
         await callback.answer(
-            "⚠️ درخواست فعالسازی برداشت برداشت برداشت برداشت برداشت برداشت برداشت برداشت برداشت برداشت برداشت شما قبلاً ثبت شده و در انتظار بررسی مدیریت است.",
+            "⚠️ درخواست فعالسازی برداشت شما قبلاً ثبت شده و در انتظار بررسی مدیریت است.",
             show_alert=True
         )
         return
@@ -222,7 +222,7 @@ async def handle_agent_activation_request(callback: types.CallbackQuery):
             logger.error(f"Failed to notify admin {admin_id} for activation request: {e}")
 
     await callback.answer(
-        "✅ درخواست فعالسازی برداشت برداشت برداشت برداشت برداشت برداشت برداشت برداشت برداشت برداشت برداشت دکمه تسویه برای مدیریت ارسال شد.\nنتیجه بررسی از طریق پیام به شما اطلاع داده خواهد شد.",
+        "✅ درخواست فعالسازی دکمه تسویه برای مدیریت ارسال شد.\nنتیجه بررسی از طریق پیام به شما اطلاع داده خواهد شد.",
         show_alert=True
     )
 
