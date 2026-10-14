@@ -4,6 +4,7 @@ user.py
 Module containing functionalities for user.
 """
 # === IMPORTS ===
+import logging
 from aiogram import Router, F, types, Bot
 from aiogram.filters import CommandStart, StateFilter, CommandObject
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -16,6 +17,7 @@ from bot.services.notifications import NotificationService
 from bot.routers.admin_users import show_user_management_panel
 from bot.config import ADMIN_IDS
 
+logger = logging.getLogger(__name__)
 user_router = Router()
 
 # شناسه بنر تلگرامی با بالاترین رزولوشن استخراج‌شده
@@ -381,48 +383,83 @@ async def show_affiliate(callback: types.CallbackQuery, state: FSMContext):
 @user_router.inline_query()
 async def affiliate_inline_banner_handler(inline_query: types.InlineQuery):
     """Handles inline sharing of the affiliate promotional banner."""
-    # اگر کوئری مربوط به افیلیت بود یا کادر خالی بود بنر را نشان بده
     query_text = (inline_query.query or "").strip()
+    
+    # اگر کوئری مربوط به افیلیت نبود، یک لیست خالی پاسخ بده تا تلگرام در وضعیت لودینگ گیر نکند
     if query_text and query_text != "share_affiliate":
+        await inline_query.answer(results=[], cache_time=5)
         return
 
     user_id = inline_query.from_user.id
     bot_info = await inline_query.bot.get_me()
     invite_link = f"https://t.me/{bot_info.username}?start=ref_{user_id}"
 
+    # متن کپشن تبلیغاتی (باید کمتر از 1024 کاراکتر باشد تا محدودیت کپشن تلگرام نقض نشود)
     caption = (
-        "🛑 <b>خداحافظی با کپی‌پیست کانفیگ‌های ناپایدار و آب شدن زودهنگام بسته اینترنت!</b> "
+        "🛑 <b>خداحافظی با کانفیگ‌های ناپایدار و مصرف زودهنگام اینترنت!</b>\n"
         "در کندی‌کانکت کانفیگ نمی‌فروشیم؛ با لایسنس اپلیکیشن اختصاصی ما در تمام سیستم‌عامل‌ها به اینترنت آزاد و پایدار متصل شوید.\n\n"
-        "💡 <b>چرا کندی‌کانکت هزینه‌های شما را کاهش می‌دهد؟</b> اپراتورها برای ترافیک بین‌الملل ضریب ۳ برابری اعمال می‌کنند. "
-        "کندی‌کانکت با روتینگ داخلی این معادله را تغییر داده و در ۳ پلن سرویس ارائه می‌کند:\n"
-        "🟢 <b>کندی اکو :</b> اینترنت آزاد و افزایش ۳ برابری عمر بسته اینترنت \n"
-        "💎 <b>کندی پرایم :</b> ترافیک نیم‌بها و کاهش هزینه خرید اینترنت ماهانه تا یک‌ششم!\n"
-        "🎯 <b>کندی پرو:</b> ترافیک نیم‌بها به‌همراه آی‌پی ۱۰۰٪ ثابت، تمیز و اختصاصی ویژه ترید و گیمینگ.\n\n"
-        "⚖️ <b>تضمین شفافیت ۱ به ۱:</b> کسر حجم دقیقا برابر با مصرف واقعی و بدون کوچک‌ترین ضریب مخفی (قابل تست)\n"
-        "📊 <b>ماشین‌حساب هوشمند پلکانی:</b> انتخاب آزادانه روز و حجم دلخواه؛ با انتخاب حجم‌های بالاتر، تعرفه هر گیگ تا ۲۵٪ ارزان‌تر محاسبه می‌شود!\n"
-        "⚡️ <b>زیرساخت با پورت‌های ۱۰ گیگابیت، پینگ پایین و پایداری کامل</b>\n"
-        "💳 <b>درگاه‌های پرداخت کارت‌به‌کارت و کریپتو | امکان اخذ نمایندگی</b>\n\n"
+        "💡 <b>چرا کندی‌کانکت هزینه‌های شما را کاهش می‌دهد؟</b>\n"
+        "اپراتورها ترافیک بین‌الملل را با ضریب ۳ برابری محاسبه می‌کنند. کندی‌کانکت در ۳ پلن ارائه می‌شود:\n"
+        "🟢 <b>کندی اکو:</b> اینترنت آزاد و افزایش ۳ برابری ماندگاری بسته اینترنت\n"
+        "💎 <b>کندی پرایم:</b> ترافیک نیم‌بها و کاهش هزینه خرید اینترنت تا یک‌ششم!\n"
+        "🎯 <b>کندی پرو:</b> ترافیک نیم‌بها + آی‌پی ۱۰۰٪ ثابت و اختصاصی ویژه ترید و گیمینگ\n\n"
+        "⚖️ <b>شفافیت ۱ به ۱:</b> کسر حجم دقیقا برابر با مصرف واقعی بدون ضریب مخفی\n"
+        "📊 <b>تعرفه پلکانی:</b> با افزایش حجم، تعرفه هر گیگ تا ۲۵٪ ارزان‌تر محاسبه می‌شود!\n"
+        "⚡️ <b>زیرساخت با پورت ۱۰ گیگابیت، پینگ پایین و پایداری کامل</b>\n"
+        "💳 <b>پرداخت کارت‌به‌کارت و کریپتو | امکان اخذ نمایندگی</b>\n\n"
+        f"🎁 <b>همین حالا تست رایگان خود را از ربات دریافت کنید:</b>\n"
+        f"🔗 <code>{invite_link}</code>"
+    )
+    # ضمانت قطعی عدم عبور از سقف ۱۰۲۴ کاراکتر کپشن مدیا
+    if len(caption) > 1024:
+        caption = caption[:1020] + "..."
+
+    reply_markup = types.InlineKeyboardMarkup(
+        inline_keyboard=[
+            [types.InlineKeyboardButton(text="⚡️ ورود و فعال‌سازی اکانت هدیه", url=invite_link)]
+        ]
     )
 
-    results = [
-        types.InlineQueryResultCachedPhoto(
-            id=f"aff_banner_{user_id}",
-            photo_file_id=AFFILIATE_BANNER_FILE_ID,
-            caption=caption,
-            parse_mode="HTML",
-            reply_markup=types.InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [types.InlineKeyboardButton(text="⚡️ ورود و فعال‌سازی اکانت هدیه", url=invite_link)]
-                ]
-            )
+    banner_file_id = await db_manager.get_setting("affiliate_banner_file_id", AFFILIATE_BANNER_FILE_ID)
+
+    photo_result = types.InlineQueryResultCachedPhoto(
+        id=f"aff_p_{user_id}",
+        photo_file_id=banner_file_id,
+        title="📢 اشتراک‌گذاری بنر اختصاصی",
+        description="ارسال بنر تصویری به همراه لینک دعوت اختصاصی شما",
+        caption=caption,
+        parse_mode="HTML",
+        reply_markup=reply_markup
+    )
+
+    article_result = types.InlineQueryResultArticle(
+        id=f"aff_a_{user_id}",
+        title="📢 اشتراک‌گذاری بنر متنی اختصاصی",
+        description="ارسال پیام معرفی به همراه لینک دعوت اختصاصی شما",
+        input_message_content=types.InputTextMessageContent(
+            message_text=caption,
+            parse_mode="HTML"
+        ),
+        reply_markup=reply_markup
+    )
+
+    try:
+        await inline_query.answer(
+            results=[photo_result],
+            cache_time=1,
+            is_personal=True
         )
-    ]
-
-    await inline_query.answer(
-        results=results,
-        cache_time=1,
-        is_personal=True
-    )
+    except Exception as e:
+        logger.warning(f"Inline query photo failed ({e}). Falling back to article...")
+        try:
+            await inline_query.answer(
+                results=[article_result],
+                cache_time=1,
+                is_personal=True
+            )
+        except Exception as e2:
+            logger.error(f"Inline query fallback article failed: {e2}")
+            await inline_query.answer(results=[], cache_time=1)
 
 
 # === ROUTER: VIEW LICENSE ===
