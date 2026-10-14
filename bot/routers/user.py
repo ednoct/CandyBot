@@ -55,7 +55,7 @@ async def _build_main_menu(user_id: int) -> tuple[str, types.InlineKeyboardMarku
     )
     # Row 3: My Subscriptions
     builder.row(
-        types.InlineKeyboardButton(text="🔗 لایسنسهای من", callback_data="my_services", style="primary"),
+        types.InlineKeyboardButton(text="🔗 لایسنس های من", callback_data="my_services", style="primary"),
     )
     # Row 4: News | FAQ
     builder.row(
