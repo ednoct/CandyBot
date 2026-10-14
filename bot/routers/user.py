@@ -55,7 +55,7 @@ async def _build_main_menu(user_id: int) -> tuple[str, types.InlineKeyboardMarku
     )
     # Row 3: My Subscriptions
     builder.row(
-        types.InlineKeyboardButton(text="🔗 اشتراکهای من", callback_data="my_services", style="primary"),
+        types.InlineKeyboardButton(text="🔗 لایسنسهای من", callback_data="my_services", style="primary"),
     )
     # Row 4: News | FAQ
     builder.row(
@@ -159,7 +159,7 @@ async def show_plans(callback: types.CallbackQuery, state: FSMContext):
     builder.button(text="🔙 برگشت", callback_data="main_menu", style="danger")
     builder.adjust(1)
     
-    await send_bottom_message(callback, "لطفاً نوع اشتراک را انتخاب کنید:", reply_markup=builder.as_markup(), parse_mode="HTML")
+    await send_bottom_message(callback, "لطفاً نوع لایسنس را انتخاب کنید:", reply_markup=builder.as_markup(), parse_mode="HTML")
 
 # === ROUTER: PLANS DIFFERENCE INFO ===
 @user_router.callback_query(F.data == "plans_difference_info")
@@ -289,7 +289,7 @@ async def show_terms(callback: types.CallbackQuery, state: FSMContext):
         "٢. تمام پرداخت‌ها و بازگشت‌وجه‌ها فقط داخل ربات (کیف پول) انجام می‌شود؛ امکان برداشت وجه از ربات به کارت بانکی یا کیف پول ارز دیجیتال وجود ندارد.\n\n"
         "٣. اگر پرداختی انجام دادید و فاکتور تأیید نشد یا لایسنس را تحویل نگرفتید، لازم است حداکثر تا ۲۴ ساعت به پشتیبانی اطلاع دهید؛ پس از این مهلت، رسیدگی تضمین نمی‌شود.\n\n"
         "٤. لایسنس‌ها حکم مالکیت شما را دارد؛ در نگهداری آن دقت کنید. مسئولیت در اختیار گذاشتن لایسنس به دیگران بر عهدهٔ خود کاربر است.\n\n"
-        "٥. اطلاعات حساب شما در اختیار هیچ کاربر دیگری قرار نمی‌گیرد. پشتیبانی نیز اشتراک یا موجودی را بین حساب‌ها جابه‌جا نمی‌کند — حتی با ادعای مالکیت، چون این ادعا قابل بررسی نیست. انتقال موجودی فقط توسط خود شما از طریق «انتقال وجه» در کیف پول امکان‌پذیر است.\n\n"
+        "٥. اطلاعات حساب شما در اختیار هیچ کاربر دیگری قرار نمی‌گیرد. پشتیبانی نیز لایسنس یا موجودی را بین حساب‌ها جابه‌جا نمی‌کند — حتی با ادعای مالکیت، چون این ادعا قابل بررسی نیست. انتقال موجودی فقط توسط خود شما از طریق «انتقال وجه» در کیف پول امکان‌پذیر است.\n\n"
         "٦. از ارسال پیام‌های نامرتبط به پشتیبانی خودداری کنید.\n\n"
         "٧. در صورت عدم رعایت شرایط و قوانین، حساب کاربر مسدود می‌شود."
     )
@@ -308,7 +308,7 @@ async def my_services(callback: types.CallbackQuery, state: FSMContext):
 
     if not licenses:
         builder = InlineKeyboardBuilder()
-        builder.button(text="🛒 خرید اشتراک", callback_data="buy_subscription")
+        builder.button(text="🛒 خرید لایسنس", callback_data="buy_subscription")
         builder.button(text="🔙 برگشت", callback_data="main_menu", style="danger")
         builder.adjust(1)
         return await send_bottom_message(
@@ -370,7 +370,8 @@ async def show_affiliate(callback: types.CallbackQuery, state: FSMContext):
                 query="share_affiliate",
                 allow_user_chats=True,
                 allow_group_chats=True,
-                allow_channel_chats=True
+                allow_channel_chats=True,
+                style="primary"
             )
         )
     )
