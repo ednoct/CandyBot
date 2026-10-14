@@ -129,10 +129,32 @@ async def show_plans(callback: types.CallbackQuery):
     builder = InlineKeyboardBuilder()
     for p in plans:
         builder.button(text=p['name'], callback_data=f"checkout_plan_{p['id']}")
+    builder.button(text="تفاوت پلن های کندی کانکت", callback_data="plans_difference_info")
     builder.button(text="🔙 برگشت", callback_data="main_menu")
     builder.adjust(1)
     
     await callback.message.edit_text("لطفاً نوع اشتراک را انتخاب کنید:", reply_markup=builder.as_markup())
+
+# === ROUTER: PLANS DIFFERENCE INFO ===
+@user_router.callback_query(F.data == "plans_difference_info")
+async def show_plans_difference(callback: types.CallbackQuery):
+    """Displays information about the differences between Candy Connect plans."""
+    diff_text = await db_manager.get_setting("plans_difference_text")
+    if not diff_text or not diff_text.strip():
+        diff_text = (
+            "📊 <b>تفاوت پلن‌های کندی کانکت</b>\n\n"
+            "هنوز متنی برای معرفی تفاوت پلن‌ها ثبت نشده است.\n"
+            "برای کسب اطلاعات بیشتر با پشتیبانی در ارتباط باشید."
+        )
+
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 بازگشت", callback_data="buy_subscription")
+
+    try:
+        await callback.message.edit_text(diff_text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    except Exception:
+        await callback.message.edit_text(diff_text, reply_markup=builder.as_markup(), parse_mode=None)
+    await callback.answer()
 
 # === ROUTER: USER PROFILE ===
 @user_router.callback_query(F.data == "my_profile")

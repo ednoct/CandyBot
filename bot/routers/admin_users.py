@@ -86,8 +86,11 @@ async def show_user_management_panel(message: types.Message, target_id: int):
         builder.button(text="📩 ارسال پیام مستقیم", callback_data=f"user_msg_{user['id']}")
         builder.button(text="🎁 ارسال کد هدیه", callback_data=f"user_gift_{user['id']}")
         
+        builder.button(text="🗑 حذف کامل کاربر", callback_data=f"user_delete_confirm_{user['id']}")
+        
         builder.button(text="🔙 بازگشت", callback_data="admin_users")
         builder.adjust(2, 1, 2, 2, 2, 1, 1)
+
     else:
         text = "❌ کاربر یافت نشد."
         builder = InlineKeyboardBuilder()
@@ -188,7 +191,89 @@ async def user_unban(callback: types.CallbackQuery):
         
     await callback.message.edit_text(f"✅ مسدودی کاربر {target_id} برطرف شد.")
 
+# === ROUTER: DELETE USER (2-STEP CONFIRMATION) ===
+@admin_users_router.callback_query(F.data.startswith("user_delete_confirm_"))
+async def user_delete_confirm(callback: types.CallbackQuery):
+    """Step 1: Ask admin to confirm permanent deletion."""
+    if not is_admin(callback.message): return
+    target_id = callback.data.split("_")[3]
+
+    user = await db_manager.get_user(target_id)
+    if not user:
+        return await callback.answer("❌ کاربر یافت نشد.", show_alert=True)
+
+    username_display = f"@{user['username']}" if user.get('username') else "بدون یوزرنیم"
+
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        types.InlineKeyboardButton(
+            text="⚠️ بله، کاربر را حذف کن",
+            callback_data=f"user_delete_exec_{target_id}"
+        )
+    )
+    builder.row(
+        types.InlineKeyboardButton(
+            text="🔙 انصراف",
+            callback_data=f"user_delcancel_{target_id}"
+        )
+    )
+
+    await callback.message.edit_text(
+        f"⚠️ **هشدار: این عملیات غیرقابل بازگشت است!**\n\n"
+        f"آیا مطمئن هستید که می‌خواهید کاربر زیر را **کاملاً** از دیتابیس پاک کنید؟\n\n"
+        f"🆔 آیدی: `{user['id']}`\n"
+        f"👤 نام کاربری: {username_display}\n"
+        f"💰 موجودی: {user.get('balance', 0):,} تومان\n\n"
+        "تمام سفارشات، لایسنس‌ها، پرداخت‌ها، کیف پول و اطلاعات این کاربر حذف می‌شود.",
+        reply_markup=builder.as_markup(),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+@admin_users_router.callback_query(F.data.startswith("user_delcancel_"))
+async def user_delete_back(callback: types.CallbackQuery):
+    """Cancel delete and go back to user panel."""
+    if not is_admin(callback.message): return
+    target_id = callback.data.split("_")[2]
+    await show_user_management_panel(callback.message, target_id)
+    await callback.answer()
+
+@admin_users_router.callback_query(F.data.startswith("user_delete_exec_"))
+async def user_delete_execute(callback: types.CallbackQuery):
+    """Step 2: Execute the permanent deletion and report to admin."""
+    if not is_admin(callback.message): return
+    target_id = int(callback.data.split("_")[3])
+
+    await callback.message.edit_text("⏳ در حال حذف کاربر از دیتابیس...")
+
+    summary = await db_manager.delete_user_completely(target_id)
+
+    deleted_invoices = summary.get("invoices.user_id", 0)
+    deleted_licenses = summary.get("xui_licenses.user_id", 0)
+    deleted_payments = summary.get("payment_reports.user_id", 0)
+    deleted_wallet = summary.get("wallet_transactions.user_id", 0)
+    deleted_user = summary.get("users.id", 0)
+
+    if deleted_user:
+        result_text = (
+            f"✅ **کاربر `{target_id}` با موفقیت حذف شد.**\n\n"
+            f"📋 **خلاصه حذف:**\n"
+            f"• سفارشات: {deleted_invoices} ردیف\n"
+            f"• لایسنس‌ها: {deleted_licenses} ردیف\n"
+            f"• پرداخت‌ها: {deleted_payments} ردیف\n"
+            f"• تراکنش‌های کیف پول: {deleted_wallet} ردیف\n"
+            f"• ردیف کاربر: {deleted_user} ردیف"
+        )
+    else:
+        result_text = f"❌ کاربر `{target_id}` یافت نشد یا قبلاً حذف شده است."
+
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 بازگشت به مدیریت کاربران", callback_data="admin_users")
+    await callback.message.edit_text(result_text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+    await callback.answer()
+
 # === ROUTER: VIEW PAYMENTS ===
+
 @admin_users_router.callback_query(F.data.startswith("user_payments_"))
 async def user_payments(callback: types.CallbackQuery):
     if not is_admin(callback.message): return
@@ -545,11 +630,40 @@ async def global_charge_execute(message: types.Message, state: FSMContext):
         
     await state.clear()
     msg = await message.answer("⏳ در حال اعمال تغییرات در دیتابیس...")
-    await db_manager.add_global_balance(amount)
+    affected_ids = await db_manager.add_global_balance(amount)
     
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 بازگشت به منوی کاربران", callback_data="admin_users")
-    await msg.edit_text(f"✅ مبلغ {amount} تومان به کیف پول تمامی کاربران فعال افزوده شد.", reply_markup=builder.as_markup())
+    await msg.edit_text(
+        f"✅ مبلغ {amount:,} تومان به کیف پول {len(affected_ids)} کاربر فعال افزوده شد.\n"
+        "⏳ در حال ارسال نوتیفیکیشن به کاربران...",
+        reply_markup=builder.as_markup()
+    )
+    
+    # Send gift notification to each user in background
+    import asyncio
+    bot = message.bot
+    notif_text = (
+        f"سلام کندی کانکتی عزیز 🌱\n"
+        f"کیف پولت رو چک کردی؟ 👀🎁\n"
+        f"✨ یک غافلگیری کوچک برای همراه همیشگی ما!\n\n"
+        f"بخشی از خرید بعدی شما مهمان ماست! "
+        f"{amount:,} تومان هدیه به کیف پولتان اضافه شد تا تجربه خرید لذتبخشتری داشته باشید. "
+        f"همین حالا سبد خریدتان را تکمیل کنید، مبلغ هدیه در مرحله پرداخت به صورت خودکار کسر میشود"
+    )
+    
+    async def _send_notifications(bot, user_ids, text):
+        sent = 0
+        for uid in user_ids:
+            try:
+                await bot.send_message(chat_id=uid, text=text)
+                sent += 1
+            except Exception:
+                pass
+            await asyncio.sleep(0.05)  # Rate-limit safe
+    
+    asyncio.create_task(_send_notifications(bot, affected_ids, notif_text))
+
 
 # ============================================================
 # GLOBAL TRAFFIC / TIME
@@ -767,8 +881,37 @@ async def trial_charge_execute(message: types.Message, state: FSMContext):
         
     await state.clear()
     msg = await message.answer("⏳ در حال جستجو و شارژ کاربران هدف...")
-    await db_manager.add_trial_users_balance(amount)
+    affected_ids = await db_manager.add_trial_users_balance(amount)
     
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 بازگشت به منوی کاربران", callback_data="admin_users")
-    await msg.edit_text(f"✅ مبلغ {amount} تومان به کیف پول تمام کاربرانی که فقط از تست رایگان استفاده کرده بودند افزوده شد.", reply_markup=builder.as_markup())
+    await msg.edit_text(
+        f"✅ مبلغ {amount:,} تومان به کیف پول {len(affected_ids)} کاربر تریال افزوده شد.\n"
+        "⏳ در حال ارسال نوتیفیکیشن به کاربران...",
+        reply_markup=builder.as_markup()
+    )
+    
+    # Send gift notification to each user in background
+    import asyncio
+    bot = message.bot
+    notif_text = (
+        f"سلام کندی کانکتی عزیز 🌱\n"
+        f"کیف پولت رو چک کردی؟ 👀🎁\n"
+        f"✨ یک غافلگیری کوچک برای همراه همیشگی ما!\n\n"
+        f"بخشی از خرید بعدی شما مهمان ماست! "
+        f"{amount:,} تومان هدیه به کیف پولتان اضافه شد تا تجربه خرید لذتبخشتری داشته باشید. "
+        f"همین حالا سبد خریدتان را تکمیل کنید، مبلغ هدیه در مرحله پرداخت به صورت خودکار کسر میشود"
+    )
+    
+    async def _send_trial_notifications(bot, user_ids, text):
+        sent = 0
+        for uid in user_ids:
+            try:
+                await bot.send_message(chat_id=uid, text=text)
+                sent += 1
+            except Exception:
+                pass
+            await asyncio.sleep(0.05)  # Rate-limit safe
+    
+    asyncio.create_task(_send_trial_notifications(bot, affected_ids, notif_text))
+

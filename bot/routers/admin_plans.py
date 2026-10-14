@@ -20,9 +20,11 @@ admin_plans_router = Router()
 # ============================================================
 
 @admin_plans_router.callback_query(F.data == "admin_manage_plans")
-async def manage_plans_menu(callback: types.CallbackQuery):
+async def manage_plans_menu(callback: types.CallbackQuery, state: FSMContext = None):
     """Handles manage plans menu."""
     if not is_admin(callback.message): return
+    if state:
+        await state.clear()
 
     plans = await db_manager.get_plans()
     builder = InlineKeyboardBuilder()
@@ -31,6 +33,7 @@ async def manage_plans_menu(callback: types.CallbackQuery):
         builder.button(text=f"📁 {p['name']}", callback_data=f"manageplan_{p['id']}")
 
     builder.button(text="➕ افزودن پلن جدید", callback_data="add_plan_start")
+    builder.button(text="📝 تنظیم متن دکمه تفاوت پلن ها", callback_data="admin_set_plans_diff_text")
     builder.button(text="🔙 بازگشت", callback_data="admin_back")
     builder.adjust(1)
 
@@ -39,6 +42,65 @@ async def manage_plans_menu(callback: types.CallbackQuery):
         reply_markup=builder.as_markup(),
         parse_mode="HTML"
     )
+
+
+# ============================================================
+# === ROUTER: SET PLANS DIFFERENCE TEXT ===
+# ============================================================
+
+@admin_plans_router.callback_query(F.data == "admin_set_plans_diff_text")
+async def set_plans_diff_text_start(callback: types.CallbackQuery, state: FSMContext):
+    """Handles starting the configuration of plans difference text."""
+    if not is_admin(callback.message): return
+
+    current_text = await db_manager.get_setting("plans_difference_text")
+    if not current_text or not current_text.strip():
+        display_current = "<i>(هنوز متنی تنظیم نشده است)</i>"
+    else:
+        display_current = current_text
+
+    await state.set_state(AdminStates.waiting_for_plans_difference_text)
+
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 انصراف و بازگشت", callback_data="admin_manage_plans")
+
+    text = (
+        "📝 <b>تنظیم متن دکمه تفاوت پلن‌ها</b>\n\n"
+        "این متن زمانی که کاربر در مرحله انتخاب پلن روی دکمه «تفاوت پلن های کندی کانکت» می‌زند نمایش داده می‌شود.\n\n"
+        f"📄 <b>متن فعلی:</b>\n{display_current}\n\n"
+        "✍️ لطفاً متن جدید را ارسال کنید (امکان استفاده از فرمت HTML وجود دارد):"
+    )
+
+    try:
+        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    except Exception:
+        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode=None)
+
+
+@admin_plans_router.message(AdminStates.waiting_for_plans_difference_text)
+async def set_plans_diff_text_save(message: types.Message, state: FSMContext):
+    """Saves the new plans difference text in settings."""
+    if not is_admin(message): return
+
+    new_text = message.text or message.caption or ""
+    if not new_text.strip():
+        return await message.answer("⚠️ لطفاً یک متن معتبر ارسال کنید.")
+
+    await db_manager.set_setting("plans_difference_text", new_text)
+    await state.clear()
+
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 بازگشت به مدیریت پلن‌ها", callback_data="admin_manage_plans")
+
+    response_text = (
+        "✅ <b>متن دکمه تفاوت پلن‌ها با موفقیت ذخیره شد.</b>\n\n"
+        f"📄 <b>متن ذخیره شده:</b>\n{new_text}"
+    )
+
+    try:
+        await message.answer(response_text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    except Exception:
+        await message.answer(response_text, reply_markup=builder.as_markup(), parse_mode=None)
 
 
 # ============================================================

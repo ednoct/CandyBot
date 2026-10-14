@@ -11,6 +11,7 @@ class AdminStates(StatesGroup):
     """Class representing AdminStates."""
     waiting_for_plan_name = State()
     waiting_for_admin_description = State()
+    waiting_for_plans_difference_text = State()
     waiting_for_time_days = State()
     waiting_for_traffic_gb = State()
     waiting_for_fast_pricing = State()

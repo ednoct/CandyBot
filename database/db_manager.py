@@ -112,6 +112,9 @@ async def init_db():
         await db.execute(
             "INSERT OR IGNORE INTO settings (key, value) VALUES ('frenzyex_base_url', 'https://frenzy.fastsnap.info')"
         )
+        await db.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES ('plans_difference_text', '')"
+        )
         await db.commit()
 
 async def cleanup_miniapp_migration():
@@ -200,7 +203,46 @@ async def get_report_setting(key: str):
     val = await get_setting(key)
     return int(val) if val and val.isdigit() else (int(val) if val else None)
 
-# === AUTH DB OPERATIONS ===
+async def delete_user_completely(user_id: int) -> dict:
+    """
+    Permanently removes a user and all their associated data from every table.
+    Returns a summary dict of how many rows were deleted from each table.
+    """
+    summary = {}
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute('PRAGMA foreign_keys = OFF')  # Manual cascade
+
+        # Tables and their user_id column name
+        deletions = [
+            ("support_tickets",        "user_id"),
+            ("wallet_transactions",     "user_id"),
+            ("cashback_rewards",        "user_id"),
+            ("customer_feedback",       "user_id"),
+            ("user_acquisition",        "user_id"),
+            ("free_trial_usage",        "user_id"),
+            ("referral_codes",          "user_id"),
+            ("referral_commissions",    "referrer_id"),
+            ("referral_commissions",    "referred_id"),
+            ("xui_licenses",            "user_id"),
+            ("payment_reports",         "user_id"),
+            ("invoices",                "user_id"),
+            ("users",                   "id"),
+        ]
+
+        for table, col in deletions:
+            try:
+                cursor = await db.execute(f"DELETE FROM {table} WHERE {col} = ?", (user_id,))
+                key = f"{table}.{col}"
+                summary[key] = summary.get(key, 0) + cursor.rowcount
+            except Exception:
+                pass
+
+        await db.execute('PRAGMA foreign_keys = ON')
+        await db.commit()
+
+    return summary
+
+
 async def user_from_token(token: str):
     """Handles user from token."""
     return await fetch_one("SELECT * FROM users WHERE token = ?", (token,))
@@ -1271,11 +1313,16 @@ async def get_users_with_referrals():
         """) as cur:
             return await cur.fetchall()
 
-async def add_global_balance(amount: int):
-    """Adds balance to all active users."""
+async def add_global_balance(amount: int) -> list:
+    """Adds balance to all active users. Returns list of affected user IDs."""
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE users SET balance = balance + ? WHERE is_active = 1", (amount,))
-        await db.commit()
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT id FROM users WHERE is_active = 1") as cur:
+            user_ids = [row['id'] for row in await cur.fetchall()]
+        if user_ids:
+            await db.execute("UPDATE users SET balance = balance + ? WHERE is_active = 1", (amount,))
+            await db.commit()
+        return user_ids
 
 async def get_invoice_details(invoice_id: str):
     """Fetch complete details of an invoice for search."""
@@ -1318,11 +1365,12 @@ async def get_users_with_active_licenses():
         """) as cur:
             return await cur.fetchall()
 
-async def add_trial_users_balance(amount: int):
-    """Adds balance to users who received a free trial but didn't buy anything."""
+async def add_trial_users_balance(amount: int) -> list:
+    """Adds balance to users who received a free trial but didn't buy anything. Returns list of affected user IDs."""
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("""
-            UPDATE users SET balance = balance + ?
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT id FROM users
             WHERE is_active = 1
             AND id IN (
                 SELECT user_id FROM free_trial_usage
@@ -1332,6 +1380,139 @@ async def add_trial_users_balance(amount: int):
             AND id NOT IN (
                 SELECT user_id FROM invoices WHERE base_price > 0 AND status = 'approved'
             )
-        """, (amount,))
+        """) as cur:
+            user_ids = [row['id'] for row in await cur.fetchall()]
+        if user_ids:
+            await db.execute("""
+                UPDATE users SET balance = balance + ?
+                WHERE is_active = 1
+                AND id IN (
+                    SELECT user_id FROM free_trial_usage
+                    UNION
+                    SELECT user_id FROM invoices WHERE base_price = 0
+                )
+                AND id NOT IN (
+                    SELECT user_id FROM invoices WHERE base_price > 0 AND status = 'approved'
+                )
+            """, (amount,))
+            await db.commit()
+        return user_ids
+
+# ============================================================
+# DEPARTMENT MANAGEMENT
+# ============================================================
+
+async def get_departments(active_only: bool = False):
+    """Returns all departments (or only active ones)."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        query = "SELECT * FROM departments"
+        if active_only:
+            query += " WHERE is_active = 1"
+        query += " ORDER BY id ASC"
+        async with db.execute(query) as cur:
+            return await cur.fetchall()
+
+async def get_department(dept_id: int):
+    """Returns a single department by ID."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM departments WHERE id = ?", (dept_id,)) as cur:
+            return await cur.fetchone()
+
+async def add_department(name: str) -> bool:
+    """Adds a new department. Returns True on success, False if name already exists."""
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "INSERT INTO departments (name) VALUES (?)", (name,)
+            )
+            await db.commit()
+        return True
+    except Exception:
+        return False
+
+async def remove_department(dept_id: int):
+    """Removes a department by ID."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM departments WHERE id = ?", (dept_id,))
         await db.commit()
 
+async def set_department_agent(dept_id: int, agent_id):
+    """Sets the support agent (user_id) for a department. Pass None to clear."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE departments SET support_user_id = ? WHERE id = ?",
+            (agent_id, dept_id)
+        )
+        await db.commit()
+
+async def toggle_department_active(dept_id: int, is_active: bool):
+    """Activates or deactivates a department."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE departments SET is_active = ? WHERE id = ?",
+            (1 if is_active else 0, dept_id)
+        )
+        await db.commit()
+
+# ============================================================
+# SUPPORT TICKETS
+# ============================================================
+
+async def create_support_ticket(user_id: int, department_id: int = None, subject: str = None) -> int:
+    """Creates a new support ticket and returns its ID."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "INSERT INTO support_tickets (user_id, department_id, subject) VALUES (?, ?, ?)",
+            (user_id, department_id, subject)
+        )
+        await db.commit()
+        return cur.lastrowid
+
+async def get_support_ticket(ticket_id: int):
+    """Returns a single support ticket by ID."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM support_tickets WHERE id = ?", (ticket_id,)) as cur:
+            return await cur.fetchone()
+
+async def get_open_tickets_for_dept(department_id: int):
+    """Returns all open tickets for a given department."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM support_tickets WHERE department_id = ? AND status = 'open' ORDER BY created_at ASC",
+            (department_id,)
+        ) as cur:
+            return await cur.fetchall()
+
+async def get_user_open_ticket(user_id: int):
+    """Returns the user's latest open ticket, if any."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM support_tickets WHERE user_id = ? AND status = 'open' ORDER BY created_at DESC LIMIT 1",
+            (user_id,)
+        ) as cur:
+            return await cur.fetchone()
+
+async def close_support_ticket(ticket_id: int):
+    """Closes a support ticket."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE support_tickets SET status = 'closed' WHERE id = ?", (ticket_id,)
+        )
+        await db.commit()
+
+async def add_support_message(ticket_id: int, sender_id: int, sender_role: str, message_id: int = None, text: str = None):
+    """Appends a message to a support ticket."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO support_messages (ticket_id, sender_id, sender_role, message_id, text) VALUES (?, ?, ?, ?, ?)",
+            (ticket_id, sender_id, sender_role, message_id, text)
+        )
+        await db.commit()
+
+# Alias for backward compatibility with admin_support.py
+set_department_support_user = set_department_agent
