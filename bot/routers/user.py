@@ -67,9 +67,10 @@ async def _build_main_menu(user_id: int) -> tuple[str, types.InlineKeyboardMarku
         types.InlineKeyboardButton(text="❔ آموزش‌ها", url="https://t.me/CandyConnectHelp"),
         types.InlineKeyboardButton(text="📥 دانلودها", url="https://t.me/CandyConnectDownload"),
     )
-    # Row 6: Support
+    # Row 6: Support | Agency
     builder.row(
         types.InlineKeyboardButton(text="💬 پشتیبانی", callback_data="support", style="success"),
+        types.InlineKeyboardButton(text="💼 نمایندگی", callback_data="agent_menu", style="success"),
     )
     # Row 7: Free Trial
     builder.row(
@@ -110,6 +111,13 @@ async def cmd_start(message: types.Message, state: FSMContext, command: CommandO
                 ref_code = int(command.args[4:])
                 if is_new_user and ref_code != message.from_user.id:
                     await db_manager.set_referred_by(message.from_user.id, ref_code)
+            except ValueError:
+                pass
+        elif command.args.startswith("agent_"):
+            try:
+                agent_id = int(command.args[6:])
+                if is_new_user and agent_id != message.from_user.id:
+                    await db_manager.set_agent_referrer(message.from_user.id, agent_id)
             except ValueError:
                 pass
 
@@ -386,14 +394,19 @@ async def affiliate_inline_banner_handler(inline_query: types.InlineQuery):
     """Handles inline sharing of the affiliate promotional banner."""
     query_text = (inline_query.query or "").strip()
     
-    # اگر کوئری مربوط به افیلیت نبود، یک لیست خالی پاسخ بده تا تلگرام در وضعیت لودینگ گیر نکند
-    if query_text and query_text != "share_affiliate":
+    # اگر کوئری مربوط به افیلیت یا نمایندگی نبود، لیست خالی برگردان
+    if query_text not in ("share_affiliate", "share_agent"):
         await inline_query.answer(results=[], cache_time=5)
         return
 
     user_id = inline_query.from_user.id
     bot_info = await inline_query.bot.get_me()
-    invite_link = f"https://t.me/{bot_info.username}?start=ref_{user_id}"
+    if query_text == "share_agent":
+        invite_link = f"https://t.me/{bot_info.username}?start=agent_{user_id}"
+        prefix_id = "agent"
+    else:
+        invite_link = f"https://t.me/{bot_info.username}?start=ref_{user_id}"
+        prefix_id = "aff"
 
     # متن کپشن تبلیغاتی (باید کمتر از 1024 کاراکتر باشد تا محدودیت کپشن تلگرام نقض نشود)
     caption = (
@@ -424,7 +437,7 @@ async def affiliate_inline_banner_handler(inline_query: types.InlineQuery):
     banner_file_id = await db_manager.get_setting("affiliate_banner_file_id", AFFILIATE_BANNER_FILE_ID)
 
     photo_result = types.InlineQueryResultCachedPhoto(
-        id=f"aff_p_{user_id}",
+        id=f"{prefix_id}_p_{user_id}",
         photo_file_id=banner_file_id,
         title="📢 اشتراک‌گذاری بنر اختصاصی",
         description="ارسال بنر تصویری به همراه لینک دعوت اختصاصی شما",
@@ -434,7 +447,7 @@ async def affiliate_inline_banner_handler(inline_query: types.InlineQuery):
     )
 
     article_result = types.InlineQueryResultArticle(
-        id=f"aff_a_{user_id}",
+        id=f"{prefix_id}_a_{user_id}",
         title="📢 اشتراک‌گذاری بنر متنی اختصاصی",
         description="ارسال پیام معرفی به همراه لینک دعوت اختصاصی شما",
         input_message_content=types.InputTextMessageContent(

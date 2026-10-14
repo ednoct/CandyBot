@@ -22,6 +22,8 @@ from .user import user_router
 from .user_free_trial import user_free_trial_router
 from .admin_support import admin_support_router
 from .agent_support import agent_support_router
+from .agent import agent_router
+from .admin_agent import admin_agent_router
 
 __all__ = [
     "admin_router",
@@ -40,5 +42,8 @@ __all__ = [
     "user_router",
     "user_free_trial_router",
     "admin_support_router",
-    "agent_support_router"
+    "agent_support_router",
+    "agent_router",
+    "admin_agent_router"
 ]
+

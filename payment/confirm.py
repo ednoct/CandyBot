@@ -101,6 +101,26 @@ class PaymentConfirmationManager:
                 except Exception as e:
                     logging.error(f"Failed to send referral commission message: {e}")
 
+            # Agent commission (نمایندگی کمیسیونی)
+            agent_res = await db_manager.credit_agent_commission(invoice_id)
+            if agent_res:
+                agent_id = agent_res['agent_id']
+                try:
+                    await self.bot.send_message(
+                        chat_id=agent_id,
+                        text=(
+                            "💼 <b>کمیسیون نمایندگی جدید دریافت شد!</b>\n\n"
+                            f"کاربر زیرمجموعه شما خریدی به مبلغ <b>{agent_res['order_amount']:,} تومان</b> انجام داد.\n"
+                            f"💰 <b>مبلغ پورسانت شما:</b> <b>{agent_res['commission_amount']:,} تومان</b> ({agent_res['commission_percent']}٪)\n"
+                            f"💳 <b>موجودی فعلی کمیسیون شما:</b> <b>{agent_res['new_balance']:,} تومان</b>\n\n"
+                            "جهت مشاهده جزئیات یا درخواست تسویه به بخش «نمایندگی» در منوی اصلی مراجعه فرمایید."
+                        ),
+                        parse_mode="HTML"
+                    )
+                except Exception as e:
+                    logging.error(f"Failed to send agent commission notification: {e}")
+
+
             if invoice['plan_id'] == 0:
                 try:
                     await self.bot.send_message(

@@ -104,3 +104,17 @@ class BroadcastStates(StatesGroup):
     waiting_for_audience = State()
     waiting_for_message = State()
     waiting_for_pin_decision = State()
+
+# === FSM STATES: COMMISSION AGENT USER ===
+class AgentUserStates(StatesGroup):
+    waiting_for_withdraw_amount = State()
+    waiting_for_wallet_address = State()
+
+# === FSM STATES: COMMISSION AGENT ADMIN ===
+class AdminAgentStates(StatesGroup):
+    waiting_for_default_text = State()
+    waiting_for_commission_percent = State()
+    waiting_for_min_settlement = State()
+    waiting_for_reject_reason = State()
+    waiting_for_settlement_tx_hash = State()
+

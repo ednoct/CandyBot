@@ -53,12 +53,13 @@ async def reports_menu(callback: types.CallbackQuery):
     builder.button(text="📑 خروجی کاربران", callback_data="export_users")
     builder.button(text="📑 خروجی سفارشات", callback_data="export_orders")
     builder.button(text="📑 خروجی تراکنش‌ها", callback_data="export_payments")
+    builder.button(text="📑 خروجی تسویه‌های نمایندگی", callback_data="export_agent_settlements")
     
     # CRM
     builder.button(text="👥 پیگیری تست (CRM)", callback_data="crm_trial_followup")
     
-    builder.button(text="🔙 بازگشت", callback_data="admin_back", style="danger")
-    builder.adjust(1, 1, 3, 1, 1)
+    builder.button(text="🔙 بازگشت", callback_data="admin_back", style="primary")
+    builder.adjust(1, 1, 4, 1, 1)
     
     await callback.message.edit_text("📈 **آمار و گزارشات کندی**\n\nلطفا بخش مورد نظر را انتخاب کنید:", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
@@ -282,6 +283,64 @@ async def export_data(callback: types.CallbackQuery):
             file = BufferedInputFile(output.getvalue().encode('utf-8-sig'), filename=f"{table}_{date_str}.csv")
             
             await callback.message.answer_document(file, caption=f"🪪 خروجی دیتای {table}")
+
+# === ROUTER: EXPORT AGENT SETTLEMENTS (IMMUNE TO CLEANUPS) ===
+@admin_reports_router.callback_query(F.data == "export_agent_settlements")
+async def export_agent_settlements_handler(callback: types.CallbackQuery):
+    """Exports all settled agent payouts from day 1 with full details."""
+    if not is_admin(callback.message):
+        return await callback.answer("❌ دسترسی غیرمجاز.", show_alert=True)
+
+    await callback.answer("در حال ساخت فایل خروجی تسویه‌های نمایندگی...", show_alert=False)
+
+    rows = await db_manager.get_all_settled_settlements()
+    if not rows:
+        return await callback.message.answer("❌ هیچ تسویه حسابی با وضعیت «تسویه شده» در دیتابیس ثبت نشده است.")
+
+    headers = [
+        "شناسه تسویه",
+        "آیدی عددی نماینده",
+        "نام کاربری",
+        "مبلغ تومانی",
+        "مقدار گرام (TON)",
+        "نرخ هر گرام (تومان)",
+        "آدرس کیف پول TON",
+        "لینک هش تراکنش (TxHash)",
+        "تاریخ ثبت درخواست",
+        "تاریخ و زمان تسویه"
+    ]
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(headers)
+
+    for r in rows:
+        writer.writerow([
+            r['id'],
+            r['agent_id'],
+            r['username'] or '',
+            r['amount_irt'],
+            r['amount_gram'],
+            r['gram_price'],
+            r['wallet_address'],
+            r['tx_hash'] or '',
+            r['created_at'],
+            r['settled_at'] or ''
+        ])
+
+    output.seek(0)
+    from aiogram.types import BufferedInputFile
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    file = BufferedInputFile(
+        output.getvalue().encode('utf-8-sig'),
+        filename=f"agent_settlements_{date_str}.csv"
+    )
+
+    await callback.message.answer_document(
+        file,
+        caption="📑 <b>خروجی کامل تسویه‌های انجام‌شده نمایندگی (از روز اول)</b>\n\nاین رکوردها در دیتابیس محفوظ بوده و از پاکسازی‌های دوره‌ای مصون می‌باشند.",
+        parse_mode="HTML"
+    )
 
 # === ROUTER: CRM TRIAL FOLLOW-UP ===
 @admin_reports_router.callback_query(F.data == "crm_trial_followup")

@@ -290,4 +290,48 @@ CREATE TABLE IF NOT EXISTS free_trial_usage (
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- ============================================================
+-- COMMISSION AGENT / AGENCY SYSTEM (نمایندگی کمیسیونی)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS agent_commissions (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id            INTEGER NOT NULL,          -- Who gets the commission
+    buyer_id            INTEGER NOT NULL,          -- The sub-user who bought
+    invoice_id          TEXT NOT NULL UNIQUE,      -- Idempotency key
+    order_amount        INTEGER NOT NULL,          -- Purchase amount in IRT
+    commission_percent  REAL NOT NULL,             -- Percent applied
+    commission_amount   INTEGER NOT NULL,          -- Credited IRT
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_agent_commissions_agent ON agent_commissions(agent_id);
+
+CREATE TABLE IF NOT EXISTS agent_activation_requests (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id             INTEGER NOT NULL,
+    commission_balance  INTEGER NOT NULL,
+    sub_users_count     INTEGER NOT NULL,
+    status              TEXT DEFAULT 'pending',     -- 'pending', 'approved', 'rejected'
+    reject_reason       TEXT,
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_agent_act_user ON agent_activation_requests(user_id);
+CREATE INDEX IF NOT EXISTS idx_agent_act_status ON agent_activation_requests(status);
+
+CREATE TABLE IF NOT EXISTS agent_settlements (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id            INTEGER NOT NULL,
+    amount_irt          INTEGER NOT NULL,
+    amount_gram         REAL NOT NULL,
+    gram_price          INTEGER NOT NULL,
+    wallet_address      TEXT NOT NULL,
+    status              TEXT DEFAULT 'pending',     -- 'pending', 'waiting', 'settled', 'rejected'
+    tx_hash             TEXT,
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    settled_at          TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_agent_settlements_agent ON agent_settlements(agent_id);
+CREATE INDEX IF NOT EXISTS idx_agent_settlements_status ON agent_settlements(status);
+
 

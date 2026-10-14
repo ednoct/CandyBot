@@ -158,11 +158,15 @@ async def main():
         user_router,
         user_free_trial_router,
         admin_support_router,
-        agent_support_router
+        agent_support_router,
+        agent_router,
+        admin_agent_router
     )
     
     dp.include_router(user_router)
+    dp.include_router(agent_router)
     dp.include_router(admin_router)
+    dp.include_router(admin_agent_router)
     dp.include_router(admin_reports_router)
     dp.include_router(admin_settings_router)
     dp.include_router(admin_finance_router)

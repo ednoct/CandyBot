@@ -57,6 +57,10 @@ async def init_db():
             "ALTER TABLE support_tickets ADD COLUMN text_or_caption TEXT",
             "ALTER TABLE support_tickets ADD COLUMN subject TEXT",
             "ALTER TABLE departments ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+            # Commission Agency system columns
+            "ALTER TABLE users ADD COLUMN agent_referrer_id INTEGER",
+            "ALTER TABLE users ADD COLUMN agent_commission_balance INTEGER DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN agent_settlement_active INTEGER DEFAULT 0",
         ]:
             try:
                 await db.execute(migration_sql)
@@ -130,6 +134,16 @@ async def init_db():
         )
         await db.execute(
             "INSERT OR IGNORE INTO settings (key, value) VALUES ('plans_difference_text', '')"
+        )
+        # Agency settings
+        await db.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES ('agent_default_text', '💼 به بخش نمایندگی کندی کانکت خوش آمدید!\n\nبا دعوت دوستان و کاربران خود، از هر خرید آن‌ها کمیسیون نقدی دریافت کنید و درآمد پایدار داشته باشید.')"
+        )
+        await db.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES ('agent_commission_percent', '15')"
+        )
+        await db.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES ('agent_min_settlement_amount', '1000000')"
         )
         await db.commit()
 
@@ -1778,4 +1792,372 @@ async def cleanup_expired_data(retention_days: int = 14) -> dict:
     
     logger.info(f"Database cleanup finished: {summary}")
     return summary
+
+
+# ============================================================
+# COMMISSION AGENT / AGENCY (نمایندگی کمیسیونی)
+# ============================================================
+
+async def set_agent_referrer(user_id: int, agent_id: int) -> bool:
+    """
+    Set agent_referrer_id on a user atomically — only if not already set and not self-referral.
+    Returns True if successfully set, False otherwise.
+    """
+    if user_id == agent_id:
+        return False
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT agent_referrer_id FROM users WHERE id = ?", (user_id,)) as cur:
+            row = await cur.fetchone()
+        if not row or row['agent_referrer_id'] is not None:
+            return False
+        await db.execute(
+            "UPDATE users SET agent_referrer_id = ? WHERE id = ? AND agent_referrer_id IS NULL",
+            (agent_id, user_id)
+        )
+        await db.commit()
+        return True
+
+
+async def get_agent_stats(user_id: int) -> dict:
+    """
+    Fetch comprehensive agent statistics:
+    - invited: total users referred via agent link
+    - buyers: unique referred users who purchased
+    - total_earned: total commissions ever credited
+    - commission_balance: current spendable/withdrawable commission balance
+    - settlement_active: whether settlement button is permanently activated
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT COUNT(*) AS cnt FROM users WHERE agent_referrer_id = ?", (user_id,)) as cur:
+            row = await cur.fetchone()
+            invited = int(row['cnt']) if row else 0
+
+        async with db.execute("""
+            SELECT COUNT(DISTINCT buyer_id) AS buyers,
+                   COALESCE(SUM(commission_amount), 0) AS earned
+            FROM agent_commissions WHERE agent_id = ?
+        """, (user_id,)) as cur:
+            row = await cur.fetchone()
+            buyers = int(row['buyers']) if row else 0
+            earned = int(row['earned']) if row else 0
+
+        async with db.execute(
+            "SELECT agent_commission_balance, agent_settlement_active FROM users WHERE id = ?",
+            (user_id,)
+        ) as cur:
+            row = await cur.fetchone()
+            balance = int(row['agent_commission_balance']) if row and row['agent_commission_balance'] is not None else 0
+            settlement_active = int(row['agent_settlement_active']) if row and row['agent_settlement_active'] is not None else 0
+
+    return {
+        'invited': invited,
+        'buyers': buyers,
+        'total_earned': earned,
+        'commission_balance': balance,
+        'settlement_active': settlement_active
+    }
+
+
+async def credit_agent_commission(invoice_id: str) -> dict | None:
+    """
+    Credit the agent's commission balance for a purchase made by their sub-user.
+    Idempotent — one commission per invoice_id (enforced by UNIQUE constraint).
+    Returns {'agent_id', 'buyer_id', 'order_amount', 'commission_amount', 'commission_percent', 'new_balance'} or None.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT user_id, final_amount, status FROM invoices WHERE id = ?", (invoice_id,)) as cur:
+            inv = await cur.fetchone()
+        if not inv or inv['status'] not in ('paid', 'approved'):
+            return None
+
+        buyer_id = inv['user_id']
+        paid_amount = int(inv['final_amount'])
+        if paid_amount <= 0:
+            return None
+
+        # Check if buyer has an agent referrer
+        async with db.execute("SELECT agent_referrer_id FROM users WHERE id = ?", (buyer_id,)) as cur:
+            u = await cur.fetchone()
+        if not u or not u['agent_referrer_id']:
+            return None
+
+        agent_id = int(u['agent_referrer_id'])
+        if agent_id == buyer_id:
+            return None
+
+        # Idempotency check: already credited?
+        async with db.execute("SELECT id FROM agent_commissions WHERE invoice_id = ?", (invoice_id,)) as cur:
+            if await cur.fetchone():
+                return None
+
+        # Fetch commission percentage
+        async with db.execute("SELECT value FROM settings WHERE key = 'agent_commission_percent'") as cur:
+            pct_row = await cur.fetchone()
+        try:
+            percent = float(pct_row['value']) if pct_row and pct_row['value'] else 15.0
+        except ValueError:
+            percent = 15.0
+
+        if percent <= 0:
+            return None
+
+        commission_amount = int(paid_amount * (percent / 100.0))
+        if commission_amount <= 0:
+            return None
+
+        await db.execute("""
+            INSERT INTO agent_commissions (agent_id, buyer_id, invoice_id, order_amount, commission_percent, commission_amount)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (agent_id, buyer_id, invoice_id, paid_amount, percent, commission_amount))
+
+        await db.execute("""
+            UPDATE users SET agent_commission_balance = COALESCE(agent_commission_balance, 0) + ? WHERE id = ?
+        """, (commission_amount, agent_id))
+
+        async with db.execute("SELECT agent_commission_balance FROM users WHERE id = ?", (agent_id,)) as cur:
+            bal_row = await cur.fetchone()
+            new_balance = int(bal_row['agent_commission_balance']) if bal_row else commission_amount
+
+        await db.commit()
+        return {
+            'agent_id': agent_id,
+            'buyer_id': buyer_id,
+            'order_amount': paid_amount,
+            'commission_amount': commission_amount,
+            'commission_percent': percent,
+            'new_balance': new_balance
+        }
+
+
+async def create_agent_activation_request(user_id: int, commission_balance: int, sub_users_count: int) -> int:
+    """Creates a new agent settlement activation request."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("""
+            INSERT INTO agent_activation_requests (user_id, commission_balance, sub_users_count, status)
+            VALUES (?, ?, ?, 'pending')
+        """, (user_id, commission_balance, sub_users_count))
+        await db.commit()
+        return cursor.lastrowid
+
+
+async def has_pending_activation_request(user_id: int) -> bool:
+    """Returns True if the user already has a pending activation request."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT id FROM agent_activation_requests WHERE user_id = ? AND status = 'pending'",
+            (user_id,)
+        ) as cur:
+            return bool(await cur.fetchone())
+
+
+async def get_agent_activation_request(req_id: int) -> dict | None:
+    """Fetch an activation request by ID with user info."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT r.*, u.username
+            FROM agent_activation_requests r
+            LEFT JOIN users u ON r.user_id = u.id
+            WHERE r.id = ?
+        """, (req_id,)) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+
+async def get_pending_activation_requests(limit: int = 5, offset: int = 0) -> list[dict]:
+    """Fetch pending activation requests ordered by commission balance descending."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT r.*, u.username
+            FROM agent_activation_requests r
+            LEFT JOIN users u ON r.user_id = u.id
+            WHERE r.status = 'pending'
+            ORDER BY r.commission_balance DESC, r.id DESC
+            LIMIT ? OFFSET ?
+        """, (limit, offset)) as cur:
+            rows = await cur.fetchall()
+            return [dict(r) for r in rows]
+
+
+async def count_pending_activation_requests() -> int:
+    """Count pending activation requests."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT COUNT(*) FROM agent_activation_requests WHERE status = 'pending'") as cur:
+            row = await cur.fetchone()
+            return row[0] if row else 0
+
+
+async def approve_agent_activation_request(req_id: int) -> dict | None:
+    """Approve activation request and permanently activate settlement button for agent."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM agent_activation_requests WHERE id = ?", (req_id,)) as cur:
+            req = await cur.fetchone()
+        if not req:
+            return None
+        user_id = req['user_id']
+        await db.execute(
+            "UPDATE agent_activation_requests SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (req_id,)
+        )
+        await db.execute(
+            "UPDATE users SET agent_settlement_active = 1 WHERE id = ?",
+            (user_id,)
+        )
+        await db.commit()
+        return dict(req)
+
+
+async def reject_agent_activation_request(req_id: int, reason: str) -> dict | None:
+    """Reject activation request with admin reason."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM agent_activation_requests WHERE id = ?", (req_id,)) as cur:
+            req = await cur.fetchone()
+        if not req:
+            return None
+        await db.execute("""
+            UPDATE agent_activation_requests 
+            SET status = 'rejected', reject_reason = ?, updated_at = CURRENT_TIMESTAMP 
+            WHERE id = ?
+        """, (reason, req_id))
+        await db.commit()
+        return dict(req)
+
+
+async def create_agent_settlement(agent_id: int, amount_irt: int, amount_gram: float, gram_price: int, wallet_address: str) -> int | None:
+    """
+    Atomically deducts amount_irt from agent_commission_balance and creates a settlement record.
+    Returns settlement ID on success, None if balance is insufficient.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("""
+            UPDATE users 
+            SET agent_commission_balance = agent_commission_balance - ? 
+            WHERE id = ? AND agent_commission_balance >= ?
+        """, (amount_irt, agent_id, amount_irt))
+        if cursor.rowcount == 0:
+            return None  # Insufficient balance or race condition
+
+        cur = await db.execute("""
+            INSERT INTO agent_settlements (agent_id, amount_irt, amount_gram, gram_price, wallet_address, status)
+            VALUES (?, ?, ?, ?, ?, 'pending')
+        """, (agent_id, amount_irt, amount_gram, gram_price, wallet_address))
+        await db.commit()
+        return cur.lastrowid
+
+
+async def get_agent_settlement(settlement_id: int) -> dict | None:
+    """Fetch settlement record with agent user details."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT s.*, u.username
+            FROM agent_settlements s
+            LEFT JOIN users u ON s.agent_id = u.id
+            WHERE s.id = ?
+        """, (settlement_id,)) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+
+async def get_unsettled_settlements(limit: int = 5, offset: int = 0) -> list[dict]:
+    """
+    Fetch unsettled (pending or waiting) settlements,
+    sorted by amount_irt from highest to lowest.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT s.*, u.username
+            FROM agent_settlements s
+            LEFT JOIN users u ON s.agent_id = u.id
+            WHERE s.status IN ('pending', 'waiting')
+            ORDER BY s.amount_irt DESC, s.id DESC
+            LIMIT ? OFFSET ?
+        """, (limit, offset)) as cur:
+            rows = await cur.fetchall()
+            return [dict(r) for r in rows]
+
+
+async def count_unsettled_settlements() -> int:
+    """Count unsettled settlements."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT COUNT(*) FROM agent_settlements WHERE status IN ('pending', 'waiting')") as cur:
+            row = await cur.fetchone()
+            return row[0] if row else 0
+
+
+async def set_settlement_waiting(settlement_id: int) -> bool:
+    """Mark a settlement as waiting."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "UPDATE agent_settlements SET status = 'waiting' WHERE id = ? AND status != 'settled'",
+            (settlement_id,)
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+
+
+async def set_settlement_done(settlement_id: int, tx_hash: str) -> dict | None:
+    """
+    Mark a settlement as settled with tx_hash and timestamp.
+    Returns updated settlement dictionary.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM agent_settlements WHERE id = ?", (settlement_id,)) as cur:
+            row = await cur.fetchone()
+        if not row:
+            return None
+        if row['status'] == 'settled':
+            return dict(row)
+
+        await db.execute("""
+            UPDATE agent_settlements 
+            SET status = 'settled', tx_hash = ?, settled_at = CURRENT_TIMESTAMP 
+            WHERE id = ?
+        """, (tx_hash, settlement_id))
+        await db.commit()
+
+        async with db.execute("""
+            SELECT s.*, u.username
+            FROM agent_settlements s
+            LEFT JOIN users u ON s.agent_id = u.id
+            WHERE s.id = ?
+        """, (settlement_id,)) as cur:
+            updated = await cur.fetchone()
+            return dict(updated) if updated else None
+
+
+async def get_all_settled_settlements() -> list[dict]:
+    """
+    Fetch all settled records from day 1 for reporting and CSV exports.
+    This table is immune from periodic cleanups.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT s.id,
+                   s.agent_id,
+                   u.username,
+                   s.amount_irt,
+                   s.amount_gram,
+                   s.gram_price,
+                   s.wallet_address,
+                   s.tx_hash,
+                   s.created_at,
+                   s.settled_at
+            FROM agent_settlements s
+            LEFT JOIN users u ON s.agent_id = u.id
+            WHERE s.status = 'settled'
+            ORDER BY s.id ASC
+        """) as cur:
+            rows = await cur.fetchall()
+            return [dict(r) for r in rows]
+
 
