@@ -35,15 +35,19 @@ CREATE TABLE IF NOT EXISTS departments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
     support_user_id INTEGER,
-    is_active INTEGER DEFAULT 1
+    is_active INTEGER DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS support_tickets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
     department_id INTEGER,
+    user_message_id INTEGER,
+    agent_message_id INTEGER,
     subject TEXT,
-    status TEXT DEFAULT 'open',
+    status TEXT DEFAULT 'unanswered',
+    text_or_caption TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(department_id) REFERENCES departments(id)
 );
@@ -286,27 +290,4 @@ CREATE TABLE IF NOT EXISTS free_trial_usage (
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- ============================================================
--- SUPPORT SYSTEM
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS departments (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL UNIQUE,
-    support_user_id INTEGER,
-    is_active INTEGER DEFAULT 1,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS support_tickets (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    department_id INTEGER,
-    user_message_id INTEGER NOT NULL,
-    agent_message_id INTEGER,
-    status TEXT DEFAULT 'unanswered', -- unanswered, answered
-    text_or_caption TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(department_id) REFERENCES departments(id)
-);
 

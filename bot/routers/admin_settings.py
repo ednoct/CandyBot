@@ -106,9 +106,11 @@ async def handle_toggles(callback: types.CallbackQuery):
 
 # === ROUTER: CHANNELS MANAGEMENT ===
 @admin_settings_router.callback_query(F.data == "admin_manage_channels")
-async def manage_channels(callback: types.CallbackQuery):
-    """Handles manage channels."""
+async def manage_channels(callback: types.CallbackQuery, state: FSMContext = None):
+    """Handles manage channels menu."""
     if not is_admin(callback.message): return
+    if state:
+        await state.clear()
     
     builder = InlineKeyboardBuilder()
     builder.button(text="➕ اضافه کردن کانال", callback_data="add_channel")
@@ -116,40 +118,161 @@ async def manage_channels(callback: types.CallbackQuery):
     builder.button(text="🔙 بازگشت", callback_data="admin_settings")
     builder.adjust(2, 1)
     
-    await callback.message.edit_text("📯 **مدیریت کانال‌های جوین اجباری**", reply_markup=builder.as_markup(), parse_mode="Markdown")
+    await callback.message.edit_text("📯 <b>مدیریت کانال‌های جوین اجباری</b>", reply_markup=builder.as_markup(), parse_mode="HTML")
 
 @admin_settings_router.callback_query(F.data == "add_channel")
 async def add_channel_start(callback: types.CallbackQuery, state: FSMContext):
     """Handles add channel start."""
+    if not is_admin(callback.message): return
     await state.set_state(AdminStates.waiting_for_channel_remark)
-    await callback.message.edit_text("📌 یک نام برای دکمه عضویت چنل انتخاب نمایید (مثلا: کانال پشتیبانی):")
+    
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 لغو و بازگشت", callback_data="admin_manage_channels")
+    
+    await callback.message.edit_text(
+        "📌 <b>یک نام برای دکمه عضویت کانال انتخاب نمایید:</b>\n"
+        "(مثلاً: <code>به جمع ما بپیوند</code>)",
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
+    )
 
 @admin_settings_router.message(AdminStates.waiting_for_channel_remark)
 async def add_channel_remark(message: types.Message, state: FSMContext):
     """Handles add channel remark."""
     if not is_admin(message): return
-    await state.update_data(channel_remark=message.text)
+    remark = message.text.strip() if message.text else ""
+    if not remark:
+        return await message.answer("❌ نام نمی‌تواند خالی باشد. لطفاً یک نام معتبر ارسال کنید:")
+
+    await state.update_data(channel_remark=remark)
+    await state.set_state(AdminStates.waiting_for_channel_id)
+
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 لغو و بازگشت", callback_data="admin_manage_channels")
+
+    await message.answer(
+        "📌 <b>یوزرنیم یا آیدی عددی کانال را وارد کنید:</b>\n\n"
+        "• برای کانال‌های عمومی: یوزرنیم با @ مانند <code>@CandyConnect</code>\n"
+        "• برای کانال‌های خصوصی: آیدی عددی کانال که با <code>-100</code> شروع می‌شود\n\n"
+        "⚠️ <i>توجه: ربات باید در کانال عضو یا ادمین باشد تا بتواند عضویت کاربر را بررسی کند.</i>",
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
+    )
+
+@admin_settings_router.message(AdminStates.waiting_for_channel_id)
+async def add_channel_id(message: types.Message, state: FSMContext):
+    """Handles add channel identifier."""
+    if not is_admin(message): return
+    raw_input = (message.text or "").strip()
+    
+    from bot.services.channel_service import extract_chat_id
+    parsed_id = extract_chat_id(raw_input)
+    if not parsed_id:
+        parsed_id = raw_input
+
+    await state.update_data(channel_id=str(parsed_id))
     await state.set_state(AdminStates.waiting_for_channel_url)
-    await message.answer("📌 لینک جوین کانال را ارسال کنید (باید با https شروع شود):")
+
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 لغو و بازگشت", callback_data="admin_manage_channels")
+
+    suggested_link = f"https://t.me/{str(parsed_id).replace('@', '')}" if str(parsed_id).startswith("@") else ""
+    help_text = f"\n(پیشنهادی: <code>{suggested_link}</code>)" if suggested_link else ""
+
+    await message.answer(
+        f"📌 <b>لینک جوین کانال را ارسال کنید:</b>{help_text}\n\n"
+        "این لینک بر روی دکمه قرار می‌گیرد و کاربر برای عضویت به آن هدایت می‌شود (باید با https:// شروع شود):",
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
+    )
 
 @admin_settings_router.message(AdminStates.waiting_for_channel_url)
 async def add_channel_url(message: types.Message, state: FSMContext):
     """Handles add channel url."""
     if not is_admin(message): return
-    url = message.text
-    if not url.startswith("http"):
-        return await message.answer("❌ لینک نامعتبر است.")
-        
+    url = (message.text or "").strip()
+    if not url.startswith("http://") and not url.startswith("https://") and not url.startswith("t.me/"):
+        return await message.answer("❌ لینک نامعتبر است. باید با https:// شروع شود:")
+
+    if url.startswith("t.me/"):
+        url = "https://" + url
+
     data = await state.get_data()
+    remark = data.get('channel_remark', 'کانال')
+    channel_id = data.get('channel_id', url)
+
     from database.db_manager import DB_PATH
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("INSERT INTO channels (remark, linkjoin, link) VALUES (?, ?, ?)", (data['channel_remark'], url, url))
+        await db.execute(
+            "INSERT INTO channels (remark, link, linkjoin) VALUES (?, ?, ?)",
+            (remark, channel_id, url)
+        )
         await db.commit()
-        
-    await state.set_state(None)
+
+    await state.clear()
     builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 بازگشت به مدیریت کانال‌ها", callback_data="admin_manage_channels")
+    await message.answer(
+        f"✅ <b>کانال جوین اجباری با موفقیت ثبت گردید.</b>\n\n"
+        f"🏷 نام دکمه: <b>{remark}</b>\n"
+        f"🆔 شناسه چنل: <code>{channel_id}</code>\n"
+        f"🔗 لینک عضویت: {url}",
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
+    )
+
+@admin_settings_router.callback_query(F.data == "del_channel")
+async def del_channel_list(callback: types.CallbackQuery, state: FSMContext = None):
+    """Shows the list of force join channels to delete."""
+    if not is_admin(callback.message): return
+    if state:
+        await state.clear()
+
+    from database.db_manager import DB_PATH
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM channels ORDER BY id DESC") as cur:
+            channels = await cur.fetchall()
+
+    builder = InlineKeyboardBuilder()
+
+    if not channels:
+        builder.button(text="🔙 بازگشت", callback_data="admin_manage_channels")
+        return await callback.message.edit_text(
+            "❌ <b>هیچ کانال جوین اجباری ثبت نشده است.</b>", 
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
+        )
+
+    for ch in channels:
+        name = ch['remark'] or "کانال"
+        ident = ch['link'] or ch['linkjoin'] or ""
+        builder.button(text=f"🗑 {name} ({ident})", callback_data=f"del_chan_{ch['id']}")
+
     builder.button(text="🔙 بازگشت", callback_data="admin_manage_channels")
-    await message.answer("✅ کانال جوین اجباری با موفقیت ثبت گردید.", reply_markup=builder.as_markup())
+    builder.adjust(1)
+
+    await callback.message.edit_text(
+        "🗑 <b>حذف کانال‌های جوین اجباری</b>\n\n"
+        "جهت حذف هر کانال، روی دکمه آن کلیک کنید:",
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
+    )
+
+@admin_settings_router.callback_query(F.data.startswith("del_chan_"))
+async def del_channel_exec(callback: types.CallbackQuery):
+    """Deletes a selected force join channel."""
+    if not is_admin(callback.message): return
+    
+    chan_id = int(callback.data.split("_")[2])
+    from database.db_manager import DB_PATH
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM channels WHERE id = ?", (chan_id,))
+        await db.commit()
+
+    await callback.answer("✅ کانال با موفقیت حذف شد.", show_alert=True)
+    await del_channel_list(callback)
+
 
 # === ROUTER: ADMIN MANAGEMENT ===
 @admin_settings_router.callback_query(F.data == "admin_manage_admins")

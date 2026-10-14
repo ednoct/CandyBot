@@ -17,6 +17,7 @@ class AdminStates(StatesGroup):
     waiting_for_fast_pricing = State()
     waiting_for_cargo_stock = State()
     waiting_for_channel_remark = State()
+    waiting_for_channel_id = State()
     waiting_for_channel_url = State()
     waiting_for_admin_id = State()
     waiting_for_user_id = State()

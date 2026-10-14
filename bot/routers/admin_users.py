@@ -616,7 +616,7 @@ async def global_charge_prompt(callback: types.CallbackQuery, state: FSMContext)
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 لغو", callback_data="admin_users")
     await callback.message.edit_text(
-        "مبلغ مورد نظر برای شارژ همگانی کیف پول تمام کاربران فعال را به تومان وارد کنید:\n(برای کسر موجودی، مبلغ منفی وارد کنید)", 
+        "مبلغ مورد نظر برای شارژ همگانی کیف پول کاربران فعال با موجودی صفر را به تومان وارد کنید:\n(برای کسر موجودی، مبلغ منفی وارد کنید - حداقل موجودی صفر خواهد بود و نوتیفیکیشنی ارسال نمی‌شود)", 
         reply_markup=builder.as_markup()
     )
 
@@ -629,40 +629,52 @@ async def global_charge_execute(message: types.Message, state: FSMContext):
         return await message.answer("❌ لطفا یک عدد معتبر وارد کنید.")
         
     await state.clear()
+    if amount == 0:
+        return await message.answer("❌ مبلغ وارد شده صفر است و تغییری ایجاد نشد.")
+
     msg = await message.answer("⏳ در حال اعمال تغییرات در دیتابیس...")
     affected_ids = await db_manager.add_global_balance(amount)
     
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 بازگشت به منوی کاربران", callback_data="admin_users")
-    await msg.edit_text(
-        f"✅ مبلغ {amount:,} تومان به کیف پول {len(affected_ids)} کاربر فعال افزوده شد.\n"
-        "⏳ در حال ارسال نوتیفیکیشن به کاربران...",
-        reply_markup=builder.as_markup()
-    )
-    
-    # Send gift notification to each user in background
-    import asyncio
-    bot = message.bot
-    notif_text = (
-        f"سلام کندی کانکتی عزیز 🌱\n"
-        f"کیف پولت رو چک کردی؟ 👀🎁\n"
-        f"✨ یک غافلگیری کوچک برای همراه همیشگی ما!\n\n"
-        f"بخشی از خرید بعدی شما مهمان ماست! "
-        f"{amount:,} تومان هدیه به کیف پولتان اضافه شد تا تجربه خرید لذتبخشتری داشته باشید. "
-        f"همین حالا سبد خریدتان را تکمیل کنید، مبلغ هدیه در مرحله پرداخت به صورت خودکار کسر میشود"
-    )
-    
-    async def _send_notifications(bot, user_ids, text):
-        sent = 0
-        for uid in user_ids:
-            try:
-                await bot.send_message(chat_id=uid, text=text)
-                sent += 1
-            except Exception:
-                pass
-            await asyncio.sleep(0.05)  # Rate-limit safe
-    
-    asyncio.create_task(_send_notifications(bot, affected_ids, notif_text))
+
+    if amount > 0:
+        await msg.edit_text(
+            f"✅ مبلغ {amount:,} تومان به کیف پول {len(affected_ids)} کاربر فعال (با موجودی صفر) افزوده شد.\n"
+            "⏳ در حال ارسال نوتیفیکیشن به کاربران...",
+            reply_markup=builder.as_markup()
+        )
+        
+        # Send gift notification to each user in background
+        import asyncio
+        bot = message.bot
+        notif_text = (
+            f"سلام کندی کانکتی عزیز 🌱\n"
+            f"کیف پولت رو چک کردی؟ 👀🎁\n"
+            f"✨ یک غافلگیری کوچک برای همراه همیشگی ما!\n\n"
+            f"بخشی از خرید بعدی شما مهمان ماست! "
+            f"{amount:,} تومان هدیه به کیف پولتان اضافه شد تا تجربه خرید لذتبخشتری داشته باشید. "
+            f"همین حالا سبد خریدتان را تکمیل کنید، مبلغ هدیه در مرحله پرداخت به صورت خودکار کسر میشود"
+        )
+        
+        async def _send_notifications(bot, user_ids, text):
+            sent = 0
+            for uid in user_ids:
+                try:
+                    await bot.send_message(chat_id=uid, text=text)
+                    sent += 1
+                except Exception:
+                    pass
+                await asyncio.sleep(0.05)  # Rate-limit safe
+        
+        asyncio.create_task(_send_notifications(bot, affected_ids, notif_text))
+    else:
+        # Negative amount: deduction, NO notifications sent, balance never drops below zero
+        await msg.edit_text(
+            f"✅ مبلغ {abs(amount):,} تومان از کیف پول {len(affected_ids)} کاربر کسر شد (هیچ موجودی منفی نشد).\n"
+            "ℹ️ هیچ نوتیفیکیشنی برای کسر موجودی ارسال نگردید.",
+            reply_markup=builder.as_markup()
+        )
 
 
 # ============================================================
@@ -867,8 +879,9 @@ async def trial_charge_prompt(callback: types.CallbackQuery, state: FSMContext):
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 لغو", callback_data="admin_users")
     await callback.message.edit_text(
-        "مبلغ مورد نظر برای **شارژ تست‌های رایگان** (کاربرانی که فقط سرویس رایگان گرفته‌اند) را به تومان وارد کنید:", 
-        reply_markup=builder.as_markup()
+        "مبلغ مورد نظر برای **شارژ تست‌های رایگان** (کاربرانی که فقط سرویس رایگان گرفته‌اند و موجودی صفر دارند) را به تومان وارد کنید:\n(برای کسر موجودی، مبلغ منفی وارد کنید - حداقل موجودی صفر خواهد بود و نوتیفیکیشنی ارسال نمی‌شود)", 
+        reply_markup=builder.as_markup(),
+        parse_mode="Markdown"
     )
 
 @admin_users_router.message(AdminStates.waiting_for_trial_charge_amount)
@@ -880,38 +893,50 @@ async def trial_charge_execute(message: types.Message, state: FSMContext):
         return await message.answer("❌ لطفا یک عدد معتبر وارد کنید.")
         
     await state.clear()
-    msg = await message.answer("⏳ در حال جستجو و شارژ کاربران هدف...")
+    if amount == 0:
+        return await message.answer("❌ مبلغ وارد شده صفر است و تغییری ایجاد نشد.")
+
+    msg = await message.answer("⏳ در حال جستجو و اعمال تغییرات روی کاربران هدف...")
     affected_ids = await db_manager.add_trial_users_balance(amount)
     
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 بازگشت به منوی کاربران", callback_data="admin_users")
-    await msg.edit_text(
-        f"✅ مبلغ {amount:,} تومان به کیف پول {len(affected_ids)} کاربر تریال افزوده شد.\n"
-        "⏳ در حال ارسال نوتیفیکیشن به کاربران...",
-        reply_markup=builder.as_markup()
-    )
-    
-    # Send gift notification to each user in background
-    import asyncio
-    bot = message.bot
-    notif_text = (
-        f"سلام کندی کانکتی عزیز 🌱\n"
-        f"کیف پولت رو چک کردی؟ 👀🎁\n"
-        f"✨ یک غافلگیری کوچک برای همراه همیشگی ما!\n\n"
-        f"بخشی از خرید بعدی شما مهمان ماست! "
-        f"{amount:,} تومان هدیه به کیف پولتان اضافه شد تا تجربه خرید لذتبخشتری داشته باشید. "
-        f"همین حالا سبد خریدتان را تکمیل کنید، مبلغ هدیه در مرحله پرداخت به صورت خودکار کسر میشود"
-    )
-    
-    async def _send_trial_notifications(bot, user_ids, text):
-        sent = 0
-        for uid in user_ids:
-            try:
-                await bot.send_message(chat_id=uid, text=text)
-                sent += 1
-            except Exception:
-                pass
-            await asyncio.sleep(0.05)  # Rate-limit safe
-    
-    asyncio.create_task(_send_trial_notifications(bot, affected_ids, notif_text))
+
+    if amount > 0:
+        await msg.edit_text(
+            f"✅ مبلغ {amount:,} تومان به کیف پول {len(affected_ids)} کاربر تریال (با موجودی صفر) افزوده شد.\n"
+            "⏳ در حال ارسال نوتیفیکیشن به کاربران...",
+            reply_markup=builder.as_markup()
+        )
+        
+        # Send gift notification to each user in background
+        import asyncio
+        bot = message.bot
+        notif_text = (
+            f"سلام کندی کانکتی عزیز 🌱\n"
+            f"کیف پولت رو چک کردی؟ 👀🎁\n"
+            f"✨ یک غافلگیری کوچک برای همراه همیشگی ما!\n\n"
+            f"بخشی از خرید بعدی شما مهمان ماست! "
+            f"{amount:,} تومان هدیه به کیف پولتان اضافه شد تا تجربه خرید لذتبخشتری داشته باشید. "
+            f"همین حالا سبد خریدتان را تکمیل کنید، مبلغ هدیه در مرحله پرداخت به صورت خودکار کسر میشود"
+        )
+        
+        async def _send_trial_notifications(bot, user_ids, text):
+            sent = 0
+            for uid in user_ids:
+                try:
+                    await bot.send_message(chat_id=uid, text=text)
+                    sent += 1
+                except Exception:
+                    pass
+                await asyncio.sleep(0.05)  # Rate-limit safe
+        
+        asyncio.create_task(_send_trial_notifications(bot, affected_ids, notif_text))
+    else:
+        # Negative amount: deduction, NO notifications sent, balance never drops below zero
+        await msg.edit_text(
+            f"✅ مبلغ {abs(amount):,} تومان از کیف پول {len(affected_ids)} کاربر تریال کسر شد (هیچ موجودی منفی نشد).\n"
+            "ℹ️ هیچ نوتیفیکیشنی برای کسر موجودی ارسال نگردید.",
+            reply_markup=builder.as_markup()
+        )
 

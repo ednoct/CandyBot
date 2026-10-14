@@ -3,10 +3,13 @@ agent_support.py
 ----------------
 Module containing functionalities for agent support management.
 """
+import logging
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 from bot.states import AgentStates
 from database import db_manager
+
+logger = logging.getLogger(__name__)
 
 agent_support_router = Router()
 
@@ -72,6 +75,7 @@ async def agent_reply_process(message: types.Message, state: FSMContext):
         # but we can try to infer it or just leave it. If we wanted to, we could store it in the DB when we send it to the agent.
         
     except Exception as e:
+        logger.error(f"Error forwarding agent reply to user {user_id} for ticket {ticket_id}: {e}", exc_info=True)
         await message.answer(f"❌ خطا در ارسال پاسخ: {e}")
         
     await state.clear()

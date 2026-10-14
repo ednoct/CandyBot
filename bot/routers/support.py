@@ -3,6 +3,7 @@ support.py
 ----------
 Module containing functionalities for user support.
 """
+import logging
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 from bot.states import SupportStates
@@ -10,6 +11,8 @@ from bot.config import ADMIN_IDS
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from database import db_manager
 import jdatetime
+
+logger = logging.getLogger(__name__)
 
 support_router = Router()
 
@@ -141,4 +144,5 @@ async def process_support_msg(message: types.Message, state: FSMContext):
         )
         await message.answer("✅ پیام شما با موفقیت برای تیم پشتیبانی ارسال شد.")
     except Exception as e:
+        logger.error(f"Error sending support ticket {ticket_id} to agent {agent_id}: {e}", exc_info=True)
         await message.answer(f"❌ خطا در ارسال پیام به پشتیبان.")

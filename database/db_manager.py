@@ -51,11 +51,27 @@ async def init_db():
             "ALTER TABLE users ADD COLUMN referred_by INTEGER",
             "ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1",
             "ALTER TABLE payment_reports ADD COLUMN gateway_request_id TEXT",
+            # Support system columns
+            "ALTER TABLE support_tickets ADD COLUMN user_message_id INTEGER",
+            "ALTER TABLE support_tickets ADD COLUMN agent_message_id INTEGER",
+            "ALTER TABLE support_tickets ADD COLUMN text_or_caption TEXT",
+            "ALTER TABLE support_tickets ADD COLUMN subject TEXT",
+            "ALTER TABLE departments ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
         ]:
             try:
                 await db.execute(migration_sql)
             except Exception:
                 pass  # Column already exists
+
+        # Ensure channels table exists
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS channels (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                remark TEXT,
+                linkjoin TEXT,
+                link TEXT
+            )
+        """)
 
         # Seed default operating mode if not set
         await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('operating_mode', 'api')")
@@ -1460,15 +1476,33 @@ async def toggle_department_active(dept_id: int, is_active: bool):
 # SUPPORT TICKETS
 # ============================================================
 
-async def create_support_ticket(user_id: int, department_id: int = None, subject: str = None) -> int:
+async def create_support_ticket(
+    user_id: int,
+    department_id: int = None,
+    user_message_id: int = None,
+    text_or_caption: str = None,
+    subject: str = None,
+    status: str = 'unanswered'
+) -> int:
     """Creates a new support ticket and returns its ID."""
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute(
-            "INSERT INTO support_tickets (user_id, department_id, subject) VALUES (?, ?, ?)",
-            (user_id, department_id, subject)
+            """INSERT INTO support_tickets 
+               (user_id, department_id, user_message_id, text_or_caption, subject, status) 
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (user_id, department_id, user_message_id, text_or_caption, subject, status)
         )
         await db.commit()
         return cur.lastrowid
+
+async def update_support_ticket_answered(ticket_id: int, agent_message_id: int = None):
+    """Marks a support ticket as answered and records the agent's response message ID."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE support_tickets SET status = 'answered', agent_message_id = ? WHERE id = ?",
+            (agent_message_id, ticket_id)
+        )
+        await db.commit()
 
 async def get_support_ticket(ticket_id: int):
     """Returns a single support ticket by ID."""
@@ -1478,21 +1512,21 @@ async def get_support_ticket(ticket_id: int):
             return await cur.fetchone()
 
 async def get_open_tickets_for_dept(department_id: int):
-    """Returns all open tickets for a given department."""
+    """Returns all open or unanswered tickets for a given department."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
-            "SELECT * FROM support_tickets WHERE department_id = ? AND status = 'open' ORDER BY created_at ASC",
+            "SELECT * FROM support_tickets WHERE department_id = ? AND status IN ('open', 'unanswered') ORDER BY created_at ASC",
             (department_id,)
         ) as cur:
             return await cur.fetchall()
 
 async def get_user_open_ticket(user_id: int):
-    """Returns the user's latest open ticket, if any."""
+    """Returns the user's latest open or unanswered ticket, if any."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
-            "SELECT * FROM support_tickets WHERE user_id = ? AND status = 'open' ORDER BY created_at DESC LIMIT 1",
+            "SELECT * FROM support_tickets WHERE user_id = ? AND status IN ('open', 'unanswered') ORDER BY created_at DESC LIMIT 1",
             (user_id,)
         ) as cur:
             return await cur.fetchone()

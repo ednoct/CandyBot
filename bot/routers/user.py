@@ -115,8 +115,35 @@ async def cmd_start(message: types.Message, state: FSMContext, command: CommandO
             except ValueError:
                 pass
 
+    # Check force join channels
+    from bot.services.channel_service import get_unjoined_channels, build_force_join_markup
+    unjoined = await get_unjoined_channels(bot or message.bot, message.from_user.id)
+    if unjoined:
+        text, markup = build_force_join_markup(unjoined)
+        await message.answer(text, reply_markup=markup, parse_mode="HTML")
+        return
+
     message_text, markup = await _build_main_menu(message.from_user.id)
     await message.answer(message_text, reply_markup=markup, parse_mode="HTML")
+
+# === ROUTER: CONFIRM FORCE JOIN CHANNEL ===
+@user_router.callback_query(F.data == "confirm_channel")
+async def confirm_channel_callback(callback: types.CallbackQuery, bot: Bot):
+    """Verifies that the user has joined all required channels."""
+    from bot.services.channel_service import get_unjoined_channels, build_force_join_markup
+    unjoined = await get_unjoined_channels(bot, callback.from_user.id)
+    if unjoined:
+        await callback.answer("❌ هنوز عضو کانال نشده‌اید.", show_alert=True)
+        text, markup = build_force_join_markup(unjoined)
+        try:
+            await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+        except Exception:
+            pass
+        return
+
+    await callback.answer("عضویت شما با موفقیت تایید گردید با تشکر از شما❤️", show_alert=False)
+    message_text, markup = await _build_main_menu(callback.from_user.id)
+    await callback.message.edit_text(message_text, reply_markup=markup, parse_mode="HTML")
 
 # === ROUTER: BUY SUBSCRIPTION ===
 @user_router.callback_query(F.data == "buy_subscription")

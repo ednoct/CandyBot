@@ -135,6 +135,11 @@ async def main():
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
 
+    # === MIDDLEWARES ===
+    from bot.middlewares import ForceJoinMiddleware
+    dp.message.middleware(ForceJoinMiddleware())
+    dp.callback_query.middleware(ForceJoinMiddleware())
+
     # === ROUTER REGISTRATION ===
     from bot.routers import (
         admin_router, 
