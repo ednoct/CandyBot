@@ -24,7 +24,7 @@ def _admin_keyboard():
     builder.button(text="👥 مدیریت کاربران", callback_data="admin_users")
     builder.button(text="💎 مالی و درگاه‌ها", callback_data="admin_finance")
     builder.button(text="⚙️ تنظیمات عمومی", callback_data="admin_settings")
-    builder.button(text="🏬 تنظیمات فروشگاه", callback_data="admin_shop")
+    builder.button(text="🏬 تنظیمات نمایندگان", callback_data="admin_agent")
     builder.button(text="💬 پشتیبانی", callback_data="admin_support")
     builder.button(text="📈 آمار و گزارشات", callback_data="admin_reports")
     builder.button(text="🖥 مدیریت ثنا", callback_data="admin_xui")
