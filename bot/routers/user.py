@@ -378,16 +378,21 @@ async def show_affiliate(callback: types.CallbackQuery, state: FSMContext):
     await send_bottom_message(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
 # === ROUTER: INLINE BANNER SHARE HANDLER ===
-@user_router.inline_query(F.query == "share_affiliate")
+@user_router.inline_query()
 async def affiliate_inline_banner_handler(inline_query: types.InlineQuery):
     """Handles inline sharing of the affiliate promotional banner."""
+    # اگر کوئری مربوط به افیلیت بود یا کادر خالی بود بنر را نشان بده
+    query_text = (inline_query.query or "").strip()
+    if query_text and query_text != "share_affiliate":
+        return
+
     user_id = inline_query.from_user.id
     bot_info = await inline_query.bot.get_me()
     invite_link = f"https://t.me/{bot_info.username}?start=ref_{user_id}"
 
     caption = (
         "🛑 <b>خداحافظی با کپی‌پیست کانفیگ‌های ناپایدار و آب شدن زودهنگام بسته اینترنت!</b> "
-        "در کندی‌کانکت کانفیگ نمی‌فروشیم؛ با لایسنس اپلیکیشن اختصاصی مان در تمام سیستم‌عامل‌ها به اینترنت آزاد و پایدار متصل شوید.\n\n"
+        "در کندی‌کانکت کانفیگ نمی‌فروشیم؛ با لایسنس اپلیکیشن اختصاصی ما در تمام سیستم‌عامل‌ها به اینترنت آزاد و پایدار متصل شوید.\n\n"
         "💡 <b>چرا کندی‌کانکت هزینه‌های شما را کاهش می‌دهد؟</b> اپراتورها برای ترافیک بین‌الملل ضریب ۳ برابری اعمال می‌کنند. "
         "کندی‌کانکت با روتینگ داخلی این معادله را تغییر داده و در ۳ پلن سرویس ارائه می‌کند:\n"
         "🟢 <b>کندی اکو :</b> اینترنت آزاد و افزایش ۳ برابری عمر بسته اینترنت \n"

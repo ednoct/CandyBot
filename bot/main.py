@@ -185,9 +185,9 @@ async def main():
     # === START WEB SERVER ===
     await run_web_server(bot)
     
-    # === START POLLING ===
+# === START POLLING ===
     logging.info("Starting bot polling...")
-    await dp.start_polling(bot)
+    await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
 
 # === ENTRY POINT ===
 if __name__ == "__main__":
