@@ -160,7 +160,7 @@ EOF
     run_step "Creating Systemd service" "systemctl daemon-reload && systemctl enable candybot && systemctl start candybot"
 
     # 4. Telegram Webhook (Standard Port 443, no appended port needed)
-    run_step "Setting Telegram Webhook" "curl -s \"https://api.telegram.org/bot\$YOUR_TOKEN/setWebhook?url=https://\$YOUR_DOMAIN/webhook/main\" > /dev/null"
+    run_step "Setting Telegram Webhook" "curl -fsSL \"https://api.telegram.org/bot${YOUR_TOKEN}/setWebhook?url=https://${YOUR_DOMAIN}/webhook/main\" > /dev/null"
 
     clear
     banner
@@ -183,29 +183,56 @@ update_bot() {
         sleep 2; return 1
     fi
 
-    run_step "Stopping CandyBot service" "systemctl stop candybot"
+    local BK_TS
+    BK_TS=$(date +%Y%m%d_%H%M%S)
+    local BK_DIR="/var/backups/candybot/bk_$BK_TS"
+
+    run_step "Stopping CandyBot service" "systemctl stop candybot && sleep 1"
     
-    # Flush SQLite WAL and create a safe local backup before updating code
+    # 1. Flush SQLite WAL and create a safe local backup before updating code
     run_step "Safeguarding database & flushing WAL" "
-        mkdir -p /var/backups/candybot
-        BK_TS=\$(date +%Y%m%d_%H%M%S)
+        mkdir -p \"$BK_DIR\"
         if command -v sqlite3 >/dev/null 2>&1; then
             [ -f \"$BOT_DIR/database/candy.db\" ] && sqlite3 \"$BOT_DIR/database/candy.db\" 'PRAGMA wal_checkpoint(TRUNCATE);' 2>/dev/null || true
             [ -f \"$BOT_DIR/candy.db\" ] && sqlite3 \"$BOT_DIR/candy.db\" 'PRAGMA wal_checkpoint(TRUNCATE);' 2>/dev/null || true
         fi
-        [ -f \"$BOT_DIR/database/candy.db\" ] && cp -a \"$BOT_DIR/database/candy.db\" \"/var/backups/candybot/candy_db_\$BK_TS.db\" 2>/dev/null || true
-        [ -f \"$BOT_DIR/candy.db\" ] && cp -a \"$BOT_DIR/candy.db\" \"/var/backups/candybot/candy_legacy_\$BK_TS.db\" 2>/dev/null || true
+        [ -f \"$BOT_DIR/database/candy.db\" ] && cp -a \"$BOT_DIR/database/candy.db\" \"$BK_DIR/candy_db.db\" 2>/dev/null || true
+        [ -f \"$BOT_DIR/candy.db\" ] && cp -a \"$BOT_DIR/candy.db\" \"$BK_DIR/candy_legacy.db\" 2>/dev/null || true
+        [ -f \"$BOT_DIR/.env\" ] && cp -a \"$BOT_DIR/.env\" \"$BK_DIR/.env\" 2>/dev/null || true
     "
 
+    # 2. Pull latest code from GitHub
     run_step "Pulling latest code from GitHub" "cd $BOT_DIR && git fetch origin main && git reset --hard origin/main"
+
+    # 3. Restore databases & .env if git reset removed or altered them
+    run_step "Restoring live database & environment" "
+        mkdir -p \"$BOT_DIR/database\"
+        if [ -f \"$BK_DIR/candy_db.db\" ] && [ ! -f \"$BOT_DIR/database/candy.db\" ]; then
+            cp -a \"$BK_DIR/candy_db.db\" \"$BOT_DIR/database/candy.db\"
+        elif [ -f \"$BK_DIR/candy_db.db\" ]; then
+            cp -a \"$BK_DIR/candy_db.db\" \"$BOT_DIR/database/candy.db\"
+        fi
+        if [ -f \"$BK_DIR/candy_legacy.db\" ] && [ ! -f \"$BOT_DIR/candy.db\" ]; then
+            cp -a \"$BK_DIR/candy_legacy.db\" \"$BOT_DIR/candy.db\"
+        fi
+        if [ -f \"$BK_DIR/.env\" ]; then
+            cp -a \"$BK_DIR/.env\" \"$BOT_DIR/.env\"
+            chmod 600 \"$BOT_DIR/.env\"
+        fi
+    "
+
+    # 4. Update requirements & run migrations
     run_step "Updating Python requirements" "$BOT_DIR/venv/bin/pip install -r $BOT_DIR/requirements.txt"
     
     # Run DB migration and legacy database unification
     run_step "Applying database migrations" "cd $BOT_DIR && PYTHONPATH=$BOT_DIR $BOT_DIR/venv/bin/python -c 'import asyncio; from database.db_manager import init_db; asyncio.run(init_db())'"
     
+    # Keep only the latest 10 backup folders
+    ls -dt /var/backups/candybot/bk_* 2>/dev/null | tail -n +11 | xargs -r rm -rf 2>/dev/null || true
+
     run_step "Restarting CandyBot service" "systemctl restart candybot"
 
-    echo -e "\n  ${C_OK}✔${CR} ${C_OK}Bot updated successfully.${CR}\n"
+    echo -e "\n  ${C_OK}✔${CR} ${C_OK}Bot updated successfully (Database & settings preserved).${CR}\n"
     read -p "  ❯ Press Enter to return to menu..." _ < /dev/tty
     show_menu
 }
