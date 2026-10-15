@@ -186,8 +186,9 @@ def build_calculator_marketing_text(plan_name: str, base_gb_price: int, sel_gb: 
     تولید متن بازاریابی حرفه‌ای و جدول پلکان‌های داینامیک در بالای ماشین‌حساب
     """
     text = (
-        f"💎 <b>ماشین‌حساب هوشمند اشتراک {plan_name}</b>\n"
-        f"⚡️ <i>قانون طلایی: حجم بیشتر = قیمت بسیار ارزان‌تر برای هر گیگ!</i>\n\n"
+        "💎 <b>ماشین‌حساب هوشمند اشتراک</b>\n"
+        f"<b>{plan_name}</b>\n"
+        "⚡️ <i>قانون طلایی: حجم بیشتر = قیمت بسیار ارزان‌تر برای هر گیگ!</i>\n\n"
         f"📊 <b>جدول پلکان‌های تخفیف حجمی این سرویس:</b>\n"
     )
 
@@ -276,7 +277,7 @@ async def render_calculator(message: types.Message, state: FSMContext, plan_id: 
     
     if time_packages:
         # Header Time
-        builder.row(types.InlineKeyboardButton(text=f"زمان (روز) • هر روز {data['plan_price_day']:,} تومان 🕒", callback_data="none", style="success"))
+        builder.row(types.InlineKeyboardButton(text=f"زمان (روز) • هر روز {data['plan_price_day']:,} تومان 🕒", callback_data="none", style="primary"))
         
         # Grid Time (max 3 per row)
         time_buttons = []
@@ -286,7 +287,7 @@ async def render_calculator(message: types.Message, state: FSMContext, plan_id: 
         builder.row(*time_buttons, width=3)
         
         # Selected Time summary
-        builder.row(types.InlineKeyboardButton(text=f"روز انتخاب شده: {sel_days} ✅", callback_data="none", style="primary"))
+        builder.row(types.InlineKeyboardButton(text=f"روز انتخاب شده: {sel_days} ✅", callback_data="none", style="success"))
         
     if traffic_packages:
         # Header Traffic (پویا و حساس به پلکان)
@@ -295,7 +296,7 @@ async def render_calculator(message: types.Message, state: FSMContext, plan_id: 
         else:
             traffic_header_text = f"حجم (گیگ) • هر گیگ {dynamic_gb_price:,} تومان ⚡"
             
-        builder.row(types.InlineKeyboardButton(text=traffic_header_text, callback_data="none", style="primary"))
+        builder.row(types.InlineKeyboardButton(text=traffic_header_text, callback_data="none", style="success"))
         
         # Grid Traffic
         traffic_buttons = []
@@ -311,7 +312,7 @@ async def render_calculator(message: types.Message, state: FSMContext, plan_id: 
         summary_gb_text = f"گیگ انتخاب شده: {sel_gb} ✅"
         if tier_info['saved_amount'] > 0:
             summary_gb_text += f" (سود شما: {tier_info['saved_amount']:,} ت)"
-        builder.row(types.InlineKeyboardButton(text=summary_gb_text, callback_data="none", style="success"))
+        builder.row(types.InlineKeyboardButton(text=summary_gb_text, callback_data="none", style="primary"))
     
     # Payment Button (محاسبه با قیمت پلکانی جدید)
     base_price = (sel_days * data['plan_price_day']) + tier_info['total_traffic_price']
