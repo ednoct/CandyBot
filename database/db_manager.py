@@ -7,13 +7,68 @@ Module containing functionalities for db_manager.
 # === IMPORTS ===
 import aiosqlite
 import os
+import shutil
+import logging
 
-DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'candy.db')
-SCHEMA_PATH = os.path.join(os.path.dirname(__file__), 'schema.sql')
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DB_PATH = os.path.join(BASE_DIR, "database", "candy.db")
+LEGACY_DB_PATH = os.path.join(BASE_DIR, "candy.db")
+SCHEMA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'schema.sql')
 
 # === DATABASE INITIALIZATION ===
 async def init_db():
     """Handles init db."""
+    # Ensure database directory exists
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+
+    # Smart data preservation: Check if legacy DB in root exists and needs migration
+    if os.path.exists(LEGACY_DB_PATH):
+        legacy_size = os.path.getsize(LEGACY_DB_PATH)
+        db_exists = os.path.exists(DB_PATH)
+        dest_size = os.path.getsize(DB_PATH) if db_exists else -1
+
+        if not db_exists or legacy_size > dest_size:
+            logging.info(
+                f"[DB Migration] Migrating legacy database from {LEGACY_DB_PATH} "
+                f"({legacy_size} bytes) to {DB_PATH} ({dest_size} bytes)..."
+            )
+            legacy_wal = LEGACY_DB_PATH + "-wal"
+            legacy_shm = LEGACY_DB_PATH + "-shm"
+
+            # Flush any uncommitted WAL pages before copying
+            try:
+                import sqlite3
+                conn = sqlite3.connect(LEGACY_DB_PATH)
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+                conn.close()
+            except Exception as e:
+                logging.warning(f"[DB Migration] Legacy WAL checkpoint warning: {e}")
+
+            shutil.copy2(LEGACY_DB_PATH, DB_PATH)
+
+            # Copy WAL and SHM files if they still exist with data
+            if os.path.exists(legacy_wal) and os.path.getsize(legacy_wal) > 0:
+                shutil.copy2(legacy_wal, DB_PATH + "-wal")
+            if os.path.exists(legacy_shm) and os.path.getsize(legacy_shm) > 0:
+                shutil.copy2(legacy_shm, DB_PATH + "-shm")
+
+            # Rename legacy file to candy.db.migrated_backup to prevent future overwriting
+            backup_legacy = os.path.join(BASE_DIR, "candy.db.migrated_backup")
+            if os.path.exists(backup_legacy):
+                try:
+                    os.remove(backup_legacy)
+                except Exception:
+                    pass
+            try:
+                os.rename(LEGACY_DB_PATH, backup_legacy)
+                if os.path.exists(legacy_wal):
+                    os.rename(legacy_wal, backup_legacy + "-wal")
+                if os.path.exists(legacy_shm):
+                    os.rename(legacy_shm, backup_legacy + "-shm")
+                logging.info(f"[DB Migration] Successfully renamed legacy DB to {backup_legacy}")
+            except Exception as e:
+                logging.warning(f"[DB Migration] Could not rename legacy DB: {e}")
+
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute('PRAGMA foreign_keys = ON;')
         with open(SCHEMA_PATH, 'r', encoding='utf-8') as f:
@@ -29,12 +84,6 @@ async def init_db():
             
         try:
             await db.execute("ALTER TABLE licenses_cargo ADD COLUMN is_free_test INTEGER DEFAULT 0")
-        except Exception:
-            pass
-            
-        # Legacy cleanup
-        try:
-            await db.execute("DROP TABLE IF EXISTS app")
         except Exception:
             pass
 
@@ -78,7 +127,7 @@ async def init_db():
         """)
 
         # Seed default operating mode if not set
-        await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('operating_mode', 'api')")
+        await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('operating_mode', 'NORMAL')")
         
         # Insert default department if none exist
         async with db.execute("SELECT COUNT(*) FROM departments") as cursor:
@@ -86,9 +135,6 @@ async def init_db():
                 await db.execute("INSERT INTO departments (name) VALUES ('عمومی')")
                 
         await db.commit()
-        await db.execute(
-            "INSERT OR IGNORE INTO settings (key, value) VALUES ('operating_mode', 'NORMAL')"
-        )
         await db.execute(
             "INSERT OR IGNORE INTO settings (key, value) VALUES ('cashback_percent', '0')"
         )
@@ -222,6 +268,10 @@ async def set_setting(key: str, value: str):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', (key, value))
         await db.commit()
+
+async def update_setting(key: str, value: str):
+    """Updates or inserts a setting value (calls set_setting)."""
+    await set_setting(key, value)
 
 # === REPORTS DB OPERATIONS ===
 async def set_report_setting(key: str, value: str):
@@ -588,24 +638,20 @@ async def api_get_payment(id_order: int):
 # === SETTING DB OPERATIONS ===
 async def api_update_setting(key: str, value: str):
     """Handles api update setting."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(f'UPDATE setting SET {key} = ?', (value,))
-        await db.commit()
+    await set_setting(key, value)
 
 async def api_get_settings():
     """Handles api get settings."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        async with db.execute('SELECT * FROM setting LIMIT 1') as cursor:
-            return await cursor.fetchone()
+        async with db.execute('SELECT key, value FROM settings') as cursor:
+            rows = await cursor.fetchall()
+            return {row['key']: row['value'] for row in rows}
 
 async def api_update_settings_batch(updates: dict):
     """Handles api update settings batch."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        set_clause = ", ".join([f"{k} = ?" for k in updates.keys()])
-        values = list(updates.values())
-        await db.execute(f'UPDATE setting SET {set_clause}', values)
-        await db.commit()
+    for k, v in updates.items():
+        await set_setting(k, str(v))
 
 # === LOGGING OPERATIONS ===
 async def api_insert_log(header: dict, data: dict, ip: str, actions: str):

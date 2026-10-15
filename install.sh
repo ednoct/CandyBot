@@ -184,11 +184,24 @@ update_bot() {
     fi
 
     run_step "Stopping CandyBot service" "systemctl stop candybot"
+    
+    # Flush SQLite WAL and create a safe local backup before updating code
+    run_step "Safeguarding database & flushing WAL" "
+        mkdir -p /var/backups/candybot
+        BK_TS=\$(date +%Y%m%d_%H%M%S)
+        if command -v sqlite3 >/dev/null 2>&1; then
+            [ -f \"$BOT_DIR/database/candy.db\" ] && sqlite3 \"$BOT_DIR/database/candy.db\" 'PRAGMA wal_checkpoint(TRUNCATE);' 2>/dev/null || true
+            [ -f \"$BOT_DIR/candy.db\" ] && sqlite3 \"$BOT_DIR/candy.db\" 'PRAGMA wal_checkpoint(TRUNCATE);' 2>/dev/null || true
+        fi
+        [ -f \"$BOT_DIR/database/candy.db\" ] && cp -a \"$BOT_DIR/database/candy.db\" \"/var/backups/candybot/candy_db_\$BK_TS.db\" 2>/dev/null || true
+        [ -f \"$BOT_DIR/candy.db\" ] && cp -a \"$BOT_DIR/candy.db\" \"/var/backups/candybot/candy_legacy_\$BK_TS.db\" 2>/dev/null || true
+    "
+
     run_step "Pulling latest code from GitHub" "cd $BOT_DIR && git fetch origin main && git reset --hard origin/main"
     run_step "Updating Python requirements" "$BOT_DIR/venv/bin/pip install -r $BOT_DIR/requirements.txt"
     
-    # Run any new DB migrations if applicable
-    run_step "Applying database migrations" "cd $BOT_DIR && PYTHONPATH=$BOT_DIR $BOT_DIR/venv/bin/python -c 'import asyncio; from database.db_manager import init_db; asyncio.run(init_db())' 2>/dev/null || true"
+    # Run DB migration and legacy database unification
+    run_step "Applying database migrations" "cd $BOT_DIR && PYTHONPATH=$BOT_DIR $BOT_DIR/venv/bin/python -c 'import asyncio; from database.db_manager import init_db; asyncio.run(init_db())'"
     
     run_step "Restarting CandyBot service" "systemctl restart candybot"
 
