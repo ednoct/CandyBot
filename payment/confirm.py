@@ -161,13 +161,18 @@ class PaymentConfirmationManager:
                     except Exception as e:
                         logging.error(f"Failed to send admin report: {e}")
                         
-            # Also route to centralized NotificationService (finance_report)
+            # Also route to centralized NotificationService (finance_report / buy_report)
             try:
                 notif_service = NotificationService(self.bot)
                 topic_key = "buy_report" if invoice['plan_id'] != 0 else "finance_report"
                 await notif_service.send_report(
                     topic_key=topic_key,
-                    text=f"💵 **پرداخت موفق**\n\nفاکتور: `{invoice_id}`\nمبلغ: {paid_amount:,} تومان\nروش: {method}",
+                    text=(
+                        f"💵 <b>پرداخت موفق</b>\n\n"
+                        f"🛒 فاکتور: <code>{invoice_id}</code>\n"
+                        f"💸 مبلغ: <b>{paid_amount:,} تومان</b>\n"
+                        f"💳 روش: <b>{method}</b>"
+                    ),
                     user_id=user_id
                 )
             except Exception as e:
@@ -416,43 +421,59 @@ class PaymentConfirmationManager:
 
         if notify_admins:
             try:
+                import html
                 from bot.config import ADMIN_IDS
                 from aiogram.utils.keyboard import InlineKeyboardBuilder
                 from aiogram import types as tg_types
                 
+                safe_admin_error = html.escape(str(admin_error)[:800])
+                error_text = (
+                    f"🚨 <b>خطای صدور لایسنس</b>\n\n"
+                    f"👤 کاربر: <code>{user_id}</code>\n"
+                    f"🛒 فاکتور: <code>{invoice_id}</code>\n\n"
+                    f"📋 جزئیات خطا:\n<code>{safe_admin_error}</code>"
+                )
+
                 admin_builder = InlineKeyboardBuilder()
-                admin_builder.button(text="🔄 تلاش مجدد", callback_data=f"retry_provision_{invoice_id}")
-                
-                for admin_id in ADMIN_IDS:
+                admin_builder.row(
+                    tg_types.InlineKeyboardButton(text="🔄 تلاش مجدد", callback_data=f"retry_provision_{invoice_id}")
+                )
+                if user_id:
                     try:
-                        await self.bot.send_message(
-                            chat_id=admin_id,
-                            text=(
-                                f"🚨 <b>خطای صدور لایسنس</b>\n\n"
-                                f"👤 کاربر: <code>{user_id}</code>\n"
-                                f"🛒 فاکتور: <code>{invoice_id}</code>\n\n"
-                                f"📋 جزئیات خطا:\n<code>{admin_error[:800]}</code>"
-                            ),
-                            parse_mode="HTML",
-                            reply_markup=admin_builder.as_markup()
+                        me = await self.bot.get_me()
+                        admin_builder.row(
+                            tg_types.InlineKeyboardButton(
+                                text="👤 مدیریت کاربر",
+                                url=f"https://t.me/{me.username}?start=manage_{user_id}"
+                            )
                         )
-                    except Exception:
-                        pass
-                
-                # Route to Centralized Notification System
+                    except Exception as me_err:
+                        logging.debug(f"Could not get bot username for user management button: {me_err}")
+
+                # Send error report to Reports Group (error_report topic) instead of Admin PV
+                sent_to_group = False
                 try:
                     notif_service = NotificationService(self.bot)
-                    await notif_service.send_report(
+                    sent_to_group = await notif_service.send_report(
                         topic_key="error_report",
-                        text=(
-                            f"🚨 **خطای صدور لایسنس**\n\n"
-                            f"فاکتور: `{invoice_id}`\n\n"
-                            f"📋 جزئیات خطا:\n<code>{admin_error[:800]}</code>"
-                        ),
-                        user_id=user_id
+                        text=error_text,
+                        reply_markup=admin_builder.as_markup()
                     )
                 except Exception as e:
                     logging.error(f"Failed to send error report via NotificationService: {e}")
+
+                # Fallback to admin PV only if report group is not configured or sending failed
+                if not sent_to_group:
+                    for admin_id in ADMIN_IDS:
+                        try:
+                            await self.bot.send_message(
+                                chat_id=admin_id,
+                                text=error_text,
+                                parse_mode="HTML",
+                                reply_markup=admin_builder.as_markup()
+                            )
+                        except Exception:
+                            pass
                     
             except Exception as e:
                 logging.error(f"Failed to notify admins of provisioning failure: {e}")

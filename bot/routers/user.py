@@ -96,7 +96,7 @@ async def cmd_start(message: types.Message, state: FSMContext, command: CommandO
         username = f"@{message.from_user.username}" if message.from_user.username else "بدون یوزرنیم"
         await notif_service.send_report(
             topic_key="announcement_report",
-            text=f"🆕 **کاربر جدید به ربات پیوست!**\nآیدی: `{message.from_user.id}`\nنام کاربری: {username}",
+            text=f"🆕 <b>کاربر جدید به ربات پیوست!</b>\nآیدی: <code>{message.from_user.id}</code>\nنام کاربری: {username}",
             user_id=message.from_user.id
         )
 
@@ -672,10 +672,12 @@ async def handle_acquisition_survey(callback: types.CallbackQuery):
         await db_manager.save_acquisition_source(callback.from_user.id, source)
         await callback.message.edit_text(f"از نظرسنجی شما متشکریم! ({source})")
         
+        import html
         notif_service = NotificationService(callback.bot)
+        escaped_source = html.escape(str(source))
         await notif_service.send_report(
             topic_key="announcement_report",
-            text=f"📊 **نظرسنجی آشنایی ثبت شد!**\nانتخاب کاربر: {source}",
+            text=f"📊 <b>نظرسنجی آشنایی ثبت شد!</b>\nانتخاب کاربر: <b>{escaped_source}</b>",
             user_id=callback.from_user.id
         )
         
@@ -702,15 +704,17 @@ async def handle_feedback_comment(message: types.Message, state: FSMContext, bot
     data = await state.get_data()
     invoice_id = data.get('fb_invoice_id')
     if invoice_id:
+        import html
         from database.db_manager import DB_PATH
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("UPDATE customer_feedback SET comment = ? WHERE invoice_id = ?", (message.text, invoice_id))
             await db.commit()
             
         notif_service = NotificationService(bot)
+        escaped_comment = html.escape(str(message.text))
         await notif_service.send_report(
             topic_key="announcement_report",
-            text=f"📝 **نظر/انتقاد جدید ثبت شد!**\nفاکتور: `{invoice_id}`\n\nمتن پیام:\n{message.text}",
+            text=f"📝 <b>نظر/انتقاد جدید ثبت شد!</b>\nفاکتور: <code>{invoice_id}</code>\n\nمتن پیام:\n{escaped_comment}",
             user_id=message.from_user.id
         )
             
