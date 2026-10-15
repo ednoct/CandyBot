@@ -56,23 +56,26 @@ async def search_user_prompt(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_user_id)
     await callback.message.edit_text("لطفا شناسه عددی (Chat ID) یا نام کاربری را وارد کنید:")
 
-async def show_user_management_panel(message: types.Message, target_id: int):
+async def show_user_management_panel(message: types.Message, target_id: int | str):
     """Builds and sends the user management panel for a given user ID."""
+    import html
     user = await db_manager.get_user(target_id)
     
     if user:
         wallet_bal = int(user['balance'] or 0)
         comm_bal = int(user['agent_commission_balance'] or 0) if ('agent_commission_balance' in user.keys() and user['agent_commission_balance'] is not None) else 0
         user_status = user['status'] if 'status' in user.keys() else 'active'
-        username_str = f"@{user['username']}" if user.get('username') else "ندارد"
+        username_val = user.get('username')
+        username_str = f"@{html.escape(username_val)}" if username_val else "ندارد"
+        user_status_str = html.escape(str(user_status))
 
         text = (
-            f"👤 **اطلاعات کاربر**\n"
-            f"شناسه: `{user['id']}`\n"
+            f"👤 <b>اطلاعات کاربر</b>\n"
+            f"شناسه: <code>{user['id']}</code>\n"
             f"نام کاربری: {username_str}\n"
             f"💰 موجودی کیف پول: {wallet_bal:,} تومان\n"
             f"💼 موجودی کمیسیون: {comm_bal:,} تومان\n"
-            f"وضعیت: {user_status}"
+            f"وضعیت: {user_status_str}"
         )
         builder = InlineKeyboardBuilder()
         builder.button(text="➕ شارژ کیف", callback_data=f"wallet_add_{user['id']}")
@@ -99,11 +102,15 @@ async def show_user_management_panel(message: types.Message, target_id: int):
         builder.adjust(2, 1, 1, 2, 2, 2, 1, 1)
 
     else:
-        text = "❌ کاربر یافت نشد."
+        text = f"❌ کاربر با شناسه <code>{html.escape(str(target_id))}</code> یافت نشد."
         builder = InlineKeyboardBuilder()
         builder.button(text="🔙 بازگشت", callback_data="admin_users", style="danger")
         
-    await message.answer(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+    try:
+        await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    except Exception as e:
+        logging.warning(f"show_user_management_panel failed with HTML, retrying plain: {e}")
+        await message.answer(text, reply_markup=builder.as_markup())
 
 @admin_users_router.message(AdminStates.waiting_for_user_id)
 async def search_user_result(message: types.Message, state: FSMContext):

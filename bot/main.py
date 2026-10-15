@@ -127,6 +127,17 @@ async def main():
     """Handles main."""
     await init_db()
     
+    # === SYNC ADMIN IDS FROM DB ===
+    try:
+        from database.db_manager import get_db_admin_ids
+        db_admin_ids = await get_db_admin_ids()
+        for aid in db_admin_ids:
+            if aid not in ADMIN_IDS:
+                ADMIN_IDS.append(aid)
+        logging.info(f"Loaded {len(ADMIN_IDS)} admin ID(s): {ADMIN_IDS}")
+    except Exception as e:
+        logging.warning(f"Could not load admins from DB: {e}")
+    
     # === BOT SETUP ===
     bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()

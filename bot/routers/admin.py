@@ -16,7 +16,15 @@ admin_router = Router()
 # === ADMIN FILTER ===
 def is_admin(message: types.Message):
     """Handles is admin."""
-    return message.chat.id in ADMIN_IDS
+    if not message:
+        return False
+    user_id = getattr(message, 'from_user', None) and message.from_user.id
+    chat_id = getattr(message, 'chat', None) and message.chat.id
+    if user_id and user_id in ADMIN_IDS:
+        return True
+    if chat_id and chat_id in ADMIN_IDS:
+        return True
+    return False
 
 
 # === HELPER: BUILD LIVE ADMIN DASHBOARD TEXT ===

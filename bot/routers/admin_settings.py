@@ -302,6 +302,10 @@ async def add_admin_save(message: types.Message, state: FSMContext):
         await db.execute("INSERT INTO admins (id, role) VALUES (?, 'admin')", (new_admin_id,))
         await db.commit()
         
+    from bot.config import ADMIN_IDS
+    if new_admin_id not in ADMIN_IDS:
+        ADMIN_IDS.append(new_admin_id)
+        
     await state.set_state(None)
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 بازگشت به تنظیمات", callback_data="admin_settings", style="danger")

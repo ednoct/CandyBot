@@ -2432,3 +2432,12 @@ async def create_free_invoice(
         )
         await db.commit()
     return True
+
+
+async def get_db_admin_ids() -> list[int]:
+    """Returns list of admin IDs stored in the admins table."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT id FROM admins") as cur:
+            rows = await cur.fetchall()
+            return [int(r[0]) for r in rows if r[0] is not None and str(r[0]).isdigit()]
+

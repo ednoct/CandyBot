@@ -102,9 +102,27 @@ async def cmd_start(message: types.Message, state: FSMContext, command: CommandO
 
     if command and command.args:
         if command.args.startswith("manage_"):
-            if message.from_user.id in ADMIN_IDS:
-                target_id = command.args.split("_")[1]
+            user_id = message.from_user.id if message.from_user else message.chat.id
+            is_adm = user_id in ADMIN_IDS
+            if not is_adm:
+                from database.db_manager import DB_PATH
+                import aiosqlite
+                try:
+                    async with aiosqlite.connect(DB_PATH) as db:
+                        async with db.execute("SELECT 1 FROM admins WHERE id = ?", (user_id,)) as cur:
+                            if await cur.fetchone():
+                                is_adm = True
+                                if user_id not in ADMIN_IDS:
+                                    ADMIN_IDS.append(user_id)
+                except Exception:
+                    pass
+
+            if is_adm:
+                target_id = command.args[7:].strip()
                 await show_user_management_panel(message, target_id)
+                return
+            else:
+                await message.answer("❌ شما دسترسی لازم برای مدیریت این کاربر را ندارید.")
                 return
         elif command.args.startswith("ref_"):
             try:

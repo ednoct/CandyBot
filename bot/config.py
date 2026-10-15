@@ -12,7 +12,19 @@ load_dotenv()
 
 # === BOT CONFIGURATION ===
 BOT_TOKEN = os.getenv('BOT_TOKEN', 'YOUR_BOT_TOKEN_HERE')
-ADMIN_IDS = [int(id) for id in os.getenv('ADMIN_IDS', '').split(',') if id.isdigit()]
+
+def _parse_admin_ids(raw_str: str) -> list[int]:
+    cleaned = raw_str.replace('"', '').replace("'", '').replace(';', ',').replace(' ', ',')
+    ids = []
+    for part in cleaned.split(','):
+        part = part.strip()
+        if part.isdigit():
+            val = int(part)
+            if val not in ids:
+                ids.append(val)
+    return ids
+
+ADMIN_IDS = _parse_admin_ids(os.getenv('ADMIN_IDS', ''))
 WEBHOOK_DOMAIN = os.getenv('WEBHOOK_DOMAIN', 'localhost')
 
 # === WEB CONFIGURATION ===

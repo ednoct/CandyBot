@@ -77,7 +77,7 @@ async def reports_menu(callback: types.CallbackQuery):
     builder.button(text="👥 پیگیری تست (CRM)", callback_data="crm_trial_followup")
     
     builder.button(text="🔙 بازگشت", callback_data="admin_back", style="danger")
-    builder.adjust(1, 1, 4, 1, 1)
+    builder.adjust(1, 1, 2, 2, 1, 1)
     
     await callback.message.edit_text("📈 **آمار و گزارشات کندی**\n\nلطفا بخش مورد نظر را انتخاب کنید:", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
