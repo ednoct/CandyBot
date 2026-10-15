@@ -97,7 +97,7 @@ async def set_default_text_start(callback: types.CallbackQuery, state: FSMContex
     builder.row(types.InlineKeyboardButton(text="🔙 انصراف", callback_data="admin_agent", style="danger"))
 
     await state.set_state(AdminAgentStates.waiting_for_default_text)
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML"), disable_web_page_preview=True
 
 
 @admin_agent_router.message(AdminAgentStates.waiting_for_default_text)
