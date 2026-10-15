@@ -9,6 +9,7 @@ from aiogram.fsm.context import FSMContext
 from .admin import is_admin
 from ..states import AdminStates
 from database import db_manager
+from utils.ui_helpers import safe_edit_message
 import aiosqlite
 
 admin_finance_router = Router()
@@ -21,9 +22,11 @@ class FinanceStates(StatesGroup):
 
 # === ROUTER: FINANCE MENU ===
 @admin_finance_router.callback_query(F.data == "admin_finance")
-async def finance_menu(callback: types.CallbackQuery):
+async def finance_menu(callback: types.CallbackQuery, state: FSMContext = None):
     """Handles finance menu."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
+    if state:
+        await state.clear()
     
     from database.db_manager import DB_PATH
     import aiosqlite
@@ -70,14 +73,14 @@ async def finance_menu(callback: types.CallbackQuery):
     
     builder.adjust(2, 2, 2, 1, 1, 1, 1)
     
-    await callback.message.edit_text("💎 **مدیریت مالی و درگاه‌ها**", reply_markup=builder.as_markup(), parse_mode="Markdown")
+    await safe_edit_message(callback, "💎 **مدیریت مالی و درگاه‌ها**", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
 
 
 @admin_finance_router.callback_query(F.data.startswith("toggle_fin_"))
 async def handle_finance_toggles(callback: types.CallbackQuery):
     """Handles handle finance toggles."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     
     code = callback.data.split('_')[2]
     from database.db_manager import DB_PATH
@@ -99,9 +102,11 @@ async def handle_finance_toggles(callback: types.CallbackQuery):
 
 # === ROUTER: CRYPTO WALLETS ===
 @admin_finance_router.callback_query(F.data == "fin_crypto_wallets")
-async def crypto_wallets_menu(callback: types.CallbackQuery):
+async def crypto_wallets_menu(callback: types.CallbackQuery, state: FSMContext = None):
     """Handles crypto wallets menu."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
+    if state:
+        await state.clear()
     builder = InlineKeyboardBuilder()
     builder.button(text="تغییر آدرس USDT", callback_data="set_wallet_usdt")
     builder.button(text="تغییر آدرس GRAM", callback_data="set_wallet_gram")
@@ -112,12 +117,12 @@ async def crypto_wallets_menu(callback: types.CallbackQuery):
     builder.button(text="تنظیم Webhook Secret FrenzyEx", callback_data="set_frenzyex_callback_secret")
     builder.button(text="🔙 بازگشت", callback_data="admin_finance", style="danger")
     builder.adjust(1)
-    await callback.message.edit_text("🪙 **مدیریت متغیر درگاه ها**", reply_markup=builder.as_markup(), parse_mode="Markdown")
+    await safe_edit_message(callback, "🪙 **مدیریت متغیر درگاه ها**", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
 @admin_finance_router.callback_query(F.data.in_(["set_wallet_usdt", "set_wallet_gram", "set_memo_gram", "set_exchanger_gram", "set_frenzyex_api_key", "set_frenzyex_base_url", "set_frenzyex_callback_secret"]))
 async def set_crypto_wallet_prompt(callback: types.CallbackQuery, state: FSMContext):
     """Handles set crypto wallet prompt."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     key_name = callback.data.replace('set_', '')
     await state.update_data(setting_key=key_name)
     await state.set_state(FinanceStates.waiting_for_crypto_setting)
@@ -139,7 +144,7 @@ async def set_crypto_wallet_prompt(callback: types.CallbackQuery, state: FSMCont
                 
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 لغو", callback_data="fin_crypto_wallets", style="danger")
-    await callback.message.edit_text(f"لطفا مقدار جدید برای `{key_name}` را ارسال کنید:{current_val_text}", reply_markup=builder.as_markup(), parse_mode="Markdown")
+    await safe_edit_message(callback, f"لطفا مقدار جدید برای `{key_name}` را ارسال کنید:{current_val_text}", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
 @admin_finance_router.message(FinanceStates.waiting_for_crypto_setting)
 async def set_crypto_wallet_process(message: types.Message, state: FSMContext):
@@ -155,7 +160,7 @@ async def set_crypto_wallet_process(message: types.Message, state: FSMContext):
         await db.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', (key_name, new_value))
         await db.commit()
         
-    await state.set_state(None)
+    await state.clear()
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 بازگشت", callback_data="fin_crypto_wallets", style="danger")
     await message.answer(f"✅ تنظیمات با موفقیت ذخیره شد.", reply_markup=builder.as_markup())
@@ -166,7 +171,7 @@ async def set_crypto_wallet_process(message: types.Message, state: FSMContext):
 @admin_finance_router.callback_query(F.data == 'fin_pending_receipts')
 async def pending_receipts_menu(callback: types.CallbackQuery):
     """Handles pending receipts menu."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     
     from database.db_manager import DB_PATH
     import aiosqlite
@@ -181,7 +186,7 @@ async def pending_receipts_menu(callback: types.CallbackQuery):
     
     if not pending:
         builder.button(text="🔙 بازگشت", callback_data="admin_finance", style="danger")
-        return await callback.message.edit_text("💵 **رسیدهای تایید نشده**\n\nدر حال حاضر رسید تایید نشده‌ای وجود ندارد.", reply_markup=builder.as_markup(), parse_mode="Markdown")
+        return await safe_edit_message(callback, "💵 **رسیدهای تایید نشده**\n\nدر حال حاضر رسید تایید نشده‌ای وجود ندارد.", reply_markup=builder.as_markup(), parse_mode="Markdown")
         
     for p in pending:
         builder.button(text=f"💳 {p['user_id']} - {p['amount']}T", callback_data=f"none")
@@ -192,13 +197,15 @@ async def pending_receipts_menu(callback: types.CallbackQuery):
     builder.button(text="🔙 بازگشت", callback_data="admin_finance", style="danger")
     builder.adjust(3, *([3]*len(pending)), 1, 1)
     
-    await callback.message.edit_text(f"💵 **رسیدهای تایید نشده ({len(pending)} مورد)**\n\nلطفاً رسیدها را بررسی و تایید یا رد کنید:", reply_markup=builder.as_markup(), parse_mode="Markdown")
+    await safe_edit_message(callback, f"💵 **رسیدهای تایید نشده ({len(pending)} مورد)**\n\nلطفاً رسیدها را بررسی و تایید یا رد کنید:", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
 # === ROUTER: LIMITS MENU ===
 @admin_finance_router.callback_query(F.data == 'fin_limits_menu')
-async def limits_menu(callback: types.CallbackQuery):
+async def limits_menu(callback: types.CallbackQuery, state: FSMContext = None):
     """Handles limits menu."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
+    if state:
+        await state.clear()
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     builder = InlineKeyboardBuilder()
     
@@ -210,12 +217,12 @@ async def limits_menu(callback: types.CallbackQuery):
     builder.button(text="🔙 بازگشت", callback_data="admin_finance", style="danger")
     builder.adjust(2)
     
-    await callback.message.edit_text("📈 **تنظیم محدودیت‌های شارژ کیف پول**", reply_markup=builder.as_markup(), parse_mode="Markdown")
+    await safe_edit_message(callback, "📈 **تنظیم محدودیت‌های شارژ کیف پول**", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
 @admin_finance_router.callback_query(F.data.startswith('lim_'))
 async def set_limit_prompt(callback: types.CallbackQuery, state: FSMContext):
     """Handles set limit prompt."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     limit_type = callback.data.split('_')[1] # min or max
     gateway = callback.data.split('_')[2]
     
@@ -226,7 +233,7 @@ async def set_limit_prompt(callback: types.CallbackQuery, state: FSMContext):
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 لغو", callback_data="fin_limits_menu", style="danger")
     typ_str = "حداقل" if limit_type == 'min' else "حداکثر"
-    await callback.message.edit_text(f"📌 مبلغ {typ_str} برای درگاه {gateway} را ارسال کنید:", reply_markup=builder.as_markup())
+    await safe_edit_message(callback, f"📌 مبلغ {typ_str} برای درگاه {gateway} را ارسال کنید:", reply_markup=builder.as_markup())
 
 @admin_finance_router.message(AdminStates.waiting_for_min_max_limit)
 async def set_limit_process(message: types.Message, state: FSMContext):
@@ -246,7 +253,7 @@ async def set_limit_process(message: types.Message, state: FSMContext):
         await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, str(amount)))
         await db.commit()
         
-    await state.set_state(None)
+    await state.clear()
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 مدیریت محدودیت‌ها", callback_data="fin_limits_menu", style="danger")
@@ -260,5 +267,3 @@ async def handle_noop(callback: types.CallbackQuery):
         await callback.answer()
     except Exception:
         pass
-
-

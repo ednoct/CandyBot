@@ -17,7 +17,7 @@ admin_support_router = Router()
 # Main support management menu
 @admin_support_router.callback_query(F.data == "admin_support")
 async def admin_support(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     await callback.answer()
     await state.clear()
     
@@ -46,7 +46,7 @@ async def admin_support(callback: types.CallbackQuery, state: FSMContext):
 # Add department
 @admin_support_router.callback_query(F.data == "admin_support_add_dept")
 async def add_dept_start(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     await callback.answer()
     await state.set_state(AdminSupportStates.waiting_for_dept_name)
     
@@ -75,7 +75,7 @@ async def add_dept_process(message: types.Message, state: FSMContext):
 # Remove department
 @admin_support_router.callback_query(F.data == "admin_support_remove_dept")
 async def remove_dept_start(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     await callback.answer()
     await state.clear()
     
@@ -92,7 +92,7 @@ async def remove_dept_start(callback: types.CallbackQuery, state: FSMContext):
 
 @admin_support_router.callback_query(F.data.startswith("deldept_"))
 async def remove_dept_process(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     dept_id = int(callback.data.split("_")[1])
     
     await db_manager.remove_department(dept_id)
@@ -102,7 +102,7 @@ async def remove_dept_process(callback: types.CallbackQuery, state: FSMContext):
 # Set agent
 @admin_support_router.callback_query(F.data == "admin_support_set_agent")
 async def set_agent_start(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     await callback.answer()
     await state.clear()
     
@@ -149,7 +149,7 @@ async def set_agent_start(callback: types.CallbackQuery, state: FSMContext):
 
 @admin_support_router.callback_query(F.data.startswith("setagentdept_"))
 async def set_agent_dept_selected(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     await callback.answer()
     dept_id = int(callback.data.split("_")[1])
     dept = await db_manager.get_department(dept_id)
@@ -177,7 +177,7 @@ async def set_agent_dept_selected(callback: types.CallbackQuery, state: FSMConte
 
 @admin_support_router.callback_query(F.data == "clear_agent")
 async def clear_agent_process(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     data = await state.get_data()
     dept_id = data.get("target_dept_id")
     if dept_id:
@@ -228,7 +228,7 @@ async def set_agent_process(message: types.Message, state: FSMContext):
 # Set FAQ
 @admin_support_router.callback_query(F.data == "admin_support_set_faq")
 async def set_faq_start(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     await callback.answer()
     await state.set_state(AdminSupportStates.waiting_for_faq_text)
     

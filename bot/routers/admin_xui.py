@@ -10,6 +10,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from .admin import is_admin
 from ..states import AdminStates
 from database import db_manager
+from utils.ui_helpers import safe_edit_message
 
 admin_xui_router = Router()
 
@@ -21,7 +22,7 @@ admin_xui_router = Router()
 @admin_xui_router.callback_query(F.data == "admin_xui")
 async def admin_xui_menu(callback: types.CallbackQuery, state: FSMContext):
     """Handles admin xui menu."""
-    if not is_admin(callback.message):
+    if not is_admin(callback):
         return
     await state.clear()
 
@@ -31,7 +32,7 @@ async def admin_xui_menu(callback: types.CallbackQuery, state: FSMContext):
     builder.button(text="🔙 بازگشت", callback_data="admin_back", style="danger")
     builder.adjust(1)
 
-    await callback.message.edit_text(
+    await safe_edit_message(callback, 
         "🖥 <b>مدیریت ثنا (پنل‌های 3x-UI)</b>\n\n"
         "از اینجا می‌توانید پنل‌های ثنا را تعریف و مدیریت کنید.",
         reply_markup=builder.as_markup(),
@@ -46,13 +47,13 @@ async def admin_xui_menu(callback: types.CallbackQuery, state: FSMContext):
 @admin_xui_router.callback_query(F.data == "xui_add_panel")
 async def add_panel_start(callback: types.CallbackQuery, state: FSMContext):
     """Handles add panel start."""
-    if not is_admin(callback.message):
+    if not is_admin(callback):
         return
     await state.set_state(AdminStates.waiting_for_panel_name)
 
     builder = InlineKeyboardBuilder()
     builder.button(text="❌ انصراف", callback_data="admin_xui", style="danger")
-    await callback.message.edit_text(
+    await safe_edit_message(callback, 
         "🖥 <b>مرحله ۱/۶ — نام پنل</b>\n\n"
         "یک نام دلخواه برای این پنل وارد کنید.\n"
         "<i>مثال: پنل آلمان 1</i>",
@@ -233,7 +234,7 @@ async def add_panel_ip_limit(message: types.Message, state: FSMContext):
 @admin_xui_router.callback_query(F.data == "xui_list_panels")
 async def list_panels(callback: types.CallbackQuery):
     """Handles list panels."""
-    if not is_admin(callback.message):
+    if not is_admin(callback):
         return
 
     panels = await db_manager.get_xui_panels()
@@ -243,7 +244,8 @@ async def list_panels(callback: types.CallbackQuery):
         builder.button(text="➕ اضافه کردن پنل", callback_data="xui_add_panel")
         builder.button(text="🔙 بازگشت", callback_data="admin_xui", style="danger")
         builder.adjust(1)
-        return await callback.message.edit_text(
+        return await safe_edit_message(
+            callback,
             "📋 <b>لیست پنل‌های ثنا</b>\n\n"
             "هنوز هیچ پنلی تعریف نشده است.",
             reply_markup=builder.as_markup(),
@@ -263,7 +265,7 @@ async def list_panels(callback: types.CallbackQuery):
     builder.button(text="🔙 بازگشت", callback_data="admin_xui", style="danger")
     builder.adjust(1)
 
-    await callback.message.edit_text(
+    await safe_edit_message(callback, 
         f"📋 <b>لیست پنل‌های ثنا ({len(panels)} پنل)</b>\n\n"
         "برای مشاهده جزئیات، روی هر پنل کلیک کنید:",
         reply_markup=builder.as_markup(),
@@ -278,7 +280,7 @@ async def list_panels(callback: types.CallbackQuery):
 @admin_xui_router.callback_query(F.data.startswith("xui_panel_"))
 async def panel_detail(callback: types.CallbackQuery):
     """Handles panel detail."""
-    if not is_admin(callback.message):
+    if not is_admin(callback):
         return
 
     panel_id = int(callback.data.split("_")[2])
@@ -307,7 +309,7 @@ async def panel_detail(callback: types.CallbackQuery):
     builder.button(text="🔙 بازگشت به لیست", callback_data="xui_list_panels", style="danger")
     builder.adjust(1)
 
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    await safe_edit_message(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
 
 # ============================================================
@@ -317,7 +319,7 @@ async def panel_detail(callback: types.CallbackQuery):
 @admin_xui_router.callback_query(F.data.startswith("xui_del_panel_"))
 async def delete_panel(callback: types.CallbackQuery):
     """Handles delete panel."""
-    if not is_admin(callback.message):
+    if not is_admin(callback):
         return
 
     panel_id = int(callback.data.split("_")[3])

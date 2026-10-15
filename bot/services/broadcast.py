@@ -6,11 +6,12 @@ Module containing functionalities for broadcast.
 # === IMPORTS ===
 import asyncio
 import logging
+import aiosqlite
 from database import db_manager
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 START_BUTTON_MARKUP = InlineKeyboardMarkup(inline_keyboard=[[
-    InlineKeyboardButton(text="🟢 شروع و خرید از ربات", callback_data="start_from_notification")
+    InlineKeyboardButton(text="🟢 شروع و خرید از ربات", callback_data="start_from_notification", style="success")
 ]])
 
 # === BROADCAST SERVICE ===

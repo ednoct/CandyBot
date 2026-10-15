@@ -10,6 +10,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from .admin import is_admin
 from ..states import AdminStates
 from database import db_manager
+from utils.ui_helpers import safe_edit_message
 import aiosqlite
 
 admin_plans_router = Router()
@@ -22,7 +23,7 @@ admin_plans_router = Router()
 @admin_plans_router.callback_query(F.data == "admin_manage_plans")
 async def manage_plans_menu(callback: types.CallbackQuery, state: FSMContext = None):
     """Handles manage plans menu."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     if state:
         await state.clear()
 
@@ -37,7 +38,8 @@ async def manage_plans_menu(callback: types.CallbackQuery, state: FSMContext = N
     builder.button(text="🔙 بازگشت", callback_data="admin_back", style="danger")
     builder.adjust(1)
 
-    await callback.message.edit_text(
+    await safe_edit_message(
+        callback,
         "📁 <b>مدیریت پلن‌ها و لایسنس‌ها</b>",
         reply_markup=builder.as_markup(),
         parse_mode="HTML"
@@ -51,7 +53,7 @@ async def manage_plans_menu(callback: types.CallbackQuery, state: FSMContext = N
 @admin_plans_router.callback_query(F.data == "admin_set_plans_diff_text")
 async def set_plans_diff_text_start(callback: types.CallbackQuery, state: FSMContext):
     """Handles starting the configuration of plans difference text."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
 
     current_text = await db_manager.get_setting("plans_difference_text")
     if not current_text or not current_text.strip():
@@ -72,9 +74,9 @@ async def set_plans_diff_text_start(callback: types.CallbackQuery, state: FSMCon
     )
 
     try:
-        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        await safe_edit_message(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
     except Exception:
-        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode=None)
+        await safe_edit_message(callback, text, reply_markup=builder.as_markup(), parse_mode=None)
 
 
 @admin_plans_router.message(AdminStates.waiting_for_plans_difference_text)
@@ -110,9 +112,15 @@ async def set_plans_diff_text_save(message: types.Message, state: FSMContext):
 @admin_plans_router.callback_query(F.data == "add_plan_start")
 async def add_plan_start(callback: types.CallbackQuery, state: FSMContext):
     """Handles add plan start."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     await state.set_state(AdminStates.waiting_for_plan_name)
-    await callback.message.edit_text("لطفا نام پلن جدید را وارد کنید (مثلا: ویژه 💎):")
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 انصراف و بازگشت", callback_data="admin_manage_plans", style="danger")
+    await safe_edit_message(
+        callback,
+        "لطفا نام پلن جدید را وارد کنید (مثلا: ویژه 💎):",
+        reply_markup=builder.as_markup()
+    )
 
 
 @admin_plans_router.message(AdminStates.waiting_for_plan_name)
@@ -135,7 +143,7 @@ async def add_plan_desc(message: types.Message, state: FSMContext):
         await db.execute('INSERT INTO plans (name, admin_description) VALUES (?, ?)', (data['plan_name'], message.text))
         await db.commit()
 
-    await state.set_state(None)
+    await state.clear()
 
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 بازگشت به پلن‌ها", callback_data="admin_manage_plans", style="danger")
@@ -151,9 +159,11 @@ async def add_plan_desc(message: types.Message, state: FSMContext):
 # ============================================================
 
 @admin_plans_router.callback_query(F.data.startswith("manageplan_"))
-async def plan_dashboard(callback: types.CallbackQuery):
+async def plan_dashboard(callback: types.CallbackQuery, state: FSMContext = None):
     """Handles plan dashboard."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
+    if state:
+        await state.clear()
     plan_id = int(callback.data.split("_")[1])
     plan = await db_manager.get_plan(plan_id)
     if not plan:
@@ -185,7 +195,7 @@ async def plan_dashboard(callback: types.CallbackQuery):
     builder.button(text="🔙 بازگشت", callback_data="admin_manage_plans", style="danger")
     builder.adjust(2, 2, 1, 1)
 
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    await safe_edit_message(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
 
 # ============================================================
@@ -195,11 +205,18 @@ async def plan_dashboard(callback: types.CallbackQuery):
 @admin_plans_router.callback_query(F.data.startswith("fastprice_"))
 async def fast_price_start(callback: types.CallbackQuery, state: FSMContext):
     """Handles fast price start."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     plan_id = int(callback.data.split("_")[1])
     await state.update_data(fast_price_plan_id=plan_id)
     await state.set_state(AdminStates.waiting_for_fast_pricing)
-    await callback.message.edit_text("لطفا قیمت روز و قیمت گیگ را با فاصله وارد کنید (مثلا: 1200 7000):")
+
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 انصراف و بازگشت", callback_data=f"manageplan_{plan_id}", style="danger")
+    await safe_edit_message(
+        callback,
+        "لطفا قیمت روز و قیمت گیگ را با فاصله وارد کنید (مثلا: 1200 7000):",
+        reply_markup=builder.as_markup()
+    )
 
 
 @admin_plans_router.message(AdminStates.waiting_for_fast_pricing)
@@ -216,7 +233,7 @@ async def fast_price_save(message: types.Message, state: FSMContext):
             await db.execute('UPDATE plans SET price_per_day = ?, price_per_gb = ? WHERE id = ?', (day_price, gb_price, plan_id))
             await db.commit()
 
-        await state.set_state(None)
+        await state.clear()
 
         builder = InlineKeyboardBuilder()
         builder.button(text="🔙 بازگشت", callback_data=f"manageplan_{plan_id}", style="danger")
@@ -232,7 +249,7 @@ async def fast_price_save(message: types.Message, state: FSMContext):
 @admin_plans_router.callback_query(F.data.startswith("connect_panel_"))
 async def connect_panel_menu(callback: types.CallbackQuery):
     """Show list of available XUI panels for admin to bind to this plan."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     plan_id = int(callback.data.split("_")[2])
 
     panels = await db_manager.get_xui_panels()
@@ -242,7 +259,8 @@ async def connect_panel_menu(callback: types.CallbackQuery):
         builder.button(text="🖥 رفتن به مدیریت ثنا", callback_data="admin_xui")
         builder.button(text="🔙 بازگشت", callback_data=f"manageplan_{plan_id}", style="danger")
         builder.adjust(1)
-        return await callback.message.edit_text(
+        return await safe_edit_message(
+            callback,
             "❌ هیچ پنلی تعریف نشده است.\n"
             "ابتدا از بخش <b>مدیریت ثنا</b> یک پنل اضافه کنید.",
             reply_markup=builder.as_markup(),
@@ -265,7 +283,8 @@ async def connect_panel_menu(callback: types.CallbackQuery):
     builder.button(text="🔙 بازگشت", callback_data=f"manageplan_{plan_id}", style="danger")
     builder.adjust(1)
 
-    await callback.message.edit_text(
+    await safe_edit_message(
+        callback,
         f"📦 <b>اتصال مخزن به پلن #{plan_id}</b>\n\n"
         "یکی از پنل‌های زیر را برای اتصال به این پلن انتخاب کنید:\n"
         "<i>لایسنس‌های کاربران برای این پلن روی پنل انتخابی ساخته خواهند شد.</i>",
@@ -277,7 +296,7 @@ async def connect_panel_menu(callback: types.CallbackQuery):
 @admin_plans_router.callback_query(F.data.startswith("bind_panel_"))
 async def bind_panel_to_plan(callback: types.CallbackQuery):
     """Bind the chosen panel to the plan."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
 
     parts = callback.data.split("_")
     plan_id = int(parts[2])
@@ -299,9 +318,11 @@ async def bind_panel_to_plan(callback: types.CallbackQuery):
 # ============================================================
 
 @admin_plans_router.callback_query(F.data.startswith("pkgtime_"))
-async def manage_time_packages(callback: types.CallbackQuery, state: FSMContext):
+async def manage_time_packages(callback: types.CallbackQuery, state: FSMContext = None):
     """Handles manage time packages."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
+    if state:
+        await state.clear()
     plan_id = int(callback.data.split("_")[1])
     time_packages = await db_manager.get_time_packages(plan_id)
 
@@ -315,7 +336,8 @@ async def manage_time_packages(callback: types.CallbackQuery, state: FSMContext)
     builder.button(text="🔙 بازگشت", callback_data=f"manageplan_{plan_id}", style="danger")
     builder.adjust(2)
 
-    await callback.message.edit_text(
+    await safe_edit_message(
+        callback,
         f"⏱ <b>پکیج‌های زمانی این پلن</b>\n\n"
         f"زمان‌های فعلی: <code>{existing}</code>\n\n"
         "برای حذف روی هرکدام کلیک کنید، یا زمان‌های جدید اضافه کنید:",
@@ -327,7 +349,7 @@ async def manage_time_packages(callback: types.CallbackQuery, state: FSMContext)
 @admin_plans_router.callback_query(F.data.startswith("deltime_"))
 async def delete_time_package(callback: types.CallbackQuery):
     """Handles delete time package."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     tp_id = int(callback.data.split("_")[1])
     plan_id = int(callback.data.split("_")[2])
 
@@ -343,14 +365,15 @@ async def delete_time_package(callback: types.CallbackQuery):
 @admin_plans_router.callback_query(F.data.startswith("addtime_"))
 async def add_time_start(callback: types.CallbackQuery, state: FSMContext):
     """Handles add time start."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     plan_id = int(callback.data.split("_")[1])
     await state.update_data(add_time_plan_id=plan_id)
     await state.set_state(AdminStates.waiting_for_time_days)
 
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 لغو", callback_data=f"pkgtime_{plan_id}", style="danger")
-    await callback.message.edit_text(
+    await safe_edit_message(
+        callback,
         "⏱ <b>افزودن پکیج‌های زمان</b>\n\n"
         "تعداد روزها را با ویرگول جدا کنید:\n"
         "<i>مثال: <code>7,30,60,90</code></i>",
@@ -394,7 +417,7 @@ async def add_time_save(message: types.Message, state: FSMContext):
                     await db.execute('INSERT INTO time_packages (plan_id, days) VALUES (?, ?)', (plan_id, days))
         await db.commit()
 
-    await state.set_state(None)
+    await state.clear()
 
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 مدیریت پکیج‌های زمان", callback_data=f"pkgtime_{plan_id}", style="danger")
@@ -410,9 +433,11 @@ async def add_time_save(message: types.Message, state: FSMContext):
 # ============================================================
 
 @admin_plans_router.callback_query(F.data.startswith("pkgtraffic_"))
-async def manage_traffic_packages(callback: types.CallbackQuery, state: FSMContext):
+async def manage_traffic_packages(callback: types.CallbackQuery, state: FSMContext = None):
     """Handles manage traffic packages."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
+    if state:
+        await state.clear()
     plan_id = int(callback.data.split("_")[1])
     traffic_packages = await db_manager.get_traffic_packages(plan_id)
 
@@ -426,7 +451,8 @@ async def manage_traffic_packages(callback: types.CallbackQuery, state: FSMConte
     builder.button(text="🔙 بازگشت", callback_data=f"manageplan_{plan_id}", style="danger")
     builder.adjust(2)
 
-    await callback.message.edit_text(
+    await safe_edit_message(
+        callback,
         f"🔋 <b>پکیج‌های حجم این پلن</b>\n\n"
         f"حجم‌های فعلی: <code>{existing}</code>\n\n"
         "برای حذف روی هرکدام کلیک کنید، یا حجم‌های جدید اضافه کنید:",
@@ -438,7 +464,7 @@ async def manage_traffic_packages(callback: types.CallbackQuery, state: FSMConte
 @admin_plans_router.callback_query(F.data.startswith("deltraffic_"))
 async def delete_traffic_package(callback: types.CallbackQuery):
     """Handles delete traffic package."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     tp_id = int(callback.data.split("_")[1])
     plan_id = int(callback.data.split("_")[2])
 
@@ -454,14 +480,15 @@ async def delete_traffic_package(callback: types.CallbackQuery):
 @admin_plans_router.callback_query(F.data.startswith("addtraffic_"))
 async def add_traffic_start(callback: types.CallbackQuery, state: FSMContext):
     """Handles add traffic start."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     plan_id = int(callback.data.split("_")[1])
     await state.update_data(add_traffic_plan_id=plan_id)
     await state.set_state(AdminStates.waiting_for_traffic_gb)
 
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 لغو", callback_data=f"pkgtraffic_{plan_id}", style="danger")
-    await callback.message.edit_text(
+    await safe_edit_message(
+        callback,
         "🔋 <b>افزودن پکیج‌های حجم</b>\n\n"
         "مقادیر حجم را به گیگابایت با ویرگول جدا کنید:\n"
         "<i>مثال: <code>10,20,50,100</code></i>",
@@ -503,7 +530,7 @@ async def add_traffic_save(message: types.Message, state: FSMContext):
                     await db.execute('INSERT INTO traffic_packages (plan_id, gb) VALUES (?, ?)', (plan_id, gb))
         await db.commit()
 
-    await state.set_state(None)
+    await state.clear()
 
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 مدیریت پکیج‌های حجم", callback_data=f"pkgtraffic_{plan_id}", style="danger")
@@ -521,7 +548,7 @@ async def add_traffic_save(message: types.Message, state: FSMContext):
 @admin_plans_router.callback_query(F.data.startswith("delplan_"))
 async def delete_plan(callback: types.CallbackQuery):
     """Handles delete plan."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     plan_id = int(callback.data.split("_")[1])
 
     async with aiosqlite.connect(db_manager.DB_PATH) as db:

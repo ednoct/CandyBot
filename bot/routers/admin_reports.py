@@ -14,6 +14,7 @@ import csv
 import io
 from .admin import is_admin
 from database import db_manager
+from utils.ui_helpers import safe_edit_message
 from utils.date_formatter import (
     get_current_jalali,
     get_jalali_date,
@@ -49,9 +50,11 @@ TOPICS = {
 
 # === ROUTER: REPORTS MENU ===
 @admin_reports_router.callback_query(F.data == "admin_reports")
-async def reports_menu(callback: types.CallbackQuery):
+async def reports_menu(callback: types.CallbackQuery, state: FSMContext = None):
     """Handles reports menu."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
+    if state:
+        await state.clear()
     
     # We will just redirect to the advanced stats default view (all time)
     # The user wanted to replace the "Overall Bot Statistics" section.
@@ -79,14 +82,14 @@ async def reports_menu(callback: types.CallbackQuery):
     builder.button(text="🔙 بازگشت", callback_data="admin_back", style="danger")
     builder.adjust(1, 1, 2, 2, 1, 1)
     
-    await callback.message.edit_text("📈 **آمار و گزارشات کندی**\n\nلطفا بخش مورد نظر را انتخاب کنید:", reply_markup=builder.as_markup(), parse_mode="Markdown")
+    await safe_edit_message(callback, "📈 **آمار و گزارشات کندی**\n\nلطفا بخش مورد نظر را انتخاب کنید:", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
 
 # === ROUTER: REPORTS SETUP (TOPICS) ===
 @admin_reports_router.callback_query(F.data == "report_group_setup")
 async def report_setup_start_callback(callback: types.CallbackQuery, state: FSMContext):
     """Handles report setup start via callback."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     
     text = (
         "آموزش تنظیم گروه :\n"
@@ -98,8 +101,9 @@ async def report_setup_start_callback(callback: types.CallbackQuery, state: FSMC
     )
     
     await state.set_state(AdminReportStates.waiting_for_report_group_id)
-    await callback.message.edit_text(text)
-    await callback.answer()
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 انصراف و بازگشت", callback_data="admin_reports", style="danger")
+    await safe_edit_message(callback, text, reply_markup=builder.as_markup())
 
 @admin_reports_router.message(F.text == "📣 گزارشات ربات")
 async def report_setup_start(message: types.Message, state: FSMContext):
@@ -153,7 +157,7 @@ async def report_setup_process(message: types.Message, state: FSMContext, bot: B
 @admin_reports_router.callback_query(F.data.startswith("stats_"))
 async def fetch_stats(callback: types.CallbackQuery, state: FSMContext = None):
     """Handles fetch stats."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     action = callback.data.split("_")[1]
     
     clause = ""
@@ -387,7 +391,7 @@ async def render_custom_stats_view(
 @admin_reports_router.callback_query(F.data == "stats_custom")
 async def stats_custom_menu(callback: types.CallbackQuery, state: FSMContext = None):
     """Interactive Custom Date & Range Dashboard."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     if state:
         await state.clear()
         
@@ -443,7 +447,7 @@ async def stats_custom_menu(callback: types.CallbackQuery, state: FSMContext = N
 @admin_reports_router.callback_query(F.data.startswith("stats_quick:"))
 async def stats_quick_handler(callback: types.CallbackQuery):
     """Handles quick preset date ranges."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     range_type = callback.data.split(":")[1]
     now = datetime.now()
     cur_jy, cur_jm, cur_jd = gregorian_to_jalali(now.year, now.month, now.day)
@@ -491,7 +495,7 @@ async def stats_quick_handler(callback: types.CallbackQuery):
 @admin_reports_router.callback_query(F.data.startswith("cal_nav:"))
 async def cal_nav_handler(callback: types.CallbackQuery):
     """Navigates through Jalali calendar months."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     _, jy_str, jm_str = callback.data.split(":")
     jy, jm = int(jy_str), int(jm_str)
     
@@ -514,7 +518,7 @@ async def cal_nav_handler(callback: types.CallbackQuery):
 @admin_reports_router.callback_query(F.data.startswith("cal_pick:"))
 async def cal_pick_handler(callback: types.CallbackQuery):
     """Picks a specific Jalali day and shows its stats."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     _, jy_str, jm_str, jd_str = callback.data.split(":")
     jy, jm, jd = int(jy_str), int(jm_str), int(jd_str)
     
@@ -532,7 +536,7 @@ async def cal_pick_handler(callback: types.CallbackQuery):
 @admin_reports_router.callback_query(F.data == "custom_date_manual")
 async def custom_date_manual_start(callback: types.CallbackQuery, state: FSMContext):
     """Prompts admin to enter date or range as text."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     await state.set_state(AdminReportStates.waiting_for_custom_date)
     
     text = (
@@ -585,7 +589,7 @@ async def custom_date_process(message: types.Message, state: FSMContext):
 @admin_reports_router.callback_query(F.data.startswith("exp_dt:"))
 async def export_custom_date_orders(callback: types.CallbackQuery):
     """Exports orders in the custom date range to a CSV file."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     _, s_tag, e_tag = callback.data.split(":")
     start_str = f"{s_tag} 00:00:00"
     end_str = f"{e_tag} 23:59:59"
@@ -645,7 +649,7 @@ async def export_custom_date_orders(callback: types.CallbackQuery):
 @admin_reports_router.callback_query(F.data.startswith("export_"))
 async def export_data(callback: types.CallbackQuery):
     """Handles export data."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     action = callback.data.split("_")[1]
     
     table_map = {
@@ -694,7 +698,7 @@ async def export_data(callback: types.CallbackQuery):
 @admin_reports_router.callback_query(F.data == "export_agent_settlements")
 async def export_agent_settlements_handler(callback: types.CallbackQuery):
     """Exports all settled agent payouts from day 1 with full details."""
-    if not is_admin(callback.message):
+    if not is_admin(callback):
         return await callback.answer("❌ دسترسی غیرمجاز.", show_alert=True)
 
     await callback.answer("در حال ساخت فایل خروجی تسویه‌های نمایندگی...", show_alert=False)
@@ -752,7 +756,7 @@ async def export_agent_settlements_handler(callback: types.CallbackQuery):
 @admin_reports_router.callback_query(F.data == "crm_trial_followup")
 async def crm_trial_followup(callback: types.CallbackQuery):
     """Handles crm trial followup."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     
     from database.db_manager import DB_PATH
     async with aiosqlite.connect(DB_PATH) as db:

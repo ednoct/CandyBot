@@ -25,7 +25,7 @@ admin_agent_router = Router()
 @admin_agent_router.callback_query(F.data == "admin_agent")
 async def admin_agent_menu(callback: types.CallbackQuery, state: FSMContext):
     """Displays the main Agent Settings menu with live pending badges."""
-    if not is_admin(callback.message):
+    if not is_admin(callback):
         return await callback.answer("❌ دسترسی غیرمجاز.", show_alert=True)
 
     await state.clear()
@@ -81,7 +81,7 @@ async def admin_agent_menu(callback: types.CallbackQuery, state: FSMContext):
 @admin_agent_router.callback_query(F.data == "agent_admin_text")
 async def set_default_text_start(callback: types.CallbackQuery, state: FSMContext):
     """Starts default agency text configuration."""
-    if not is_admin(callback.message):
+    if not is_admin(callback):
         return await callback.answer("❌ دسترسی غیرمجاز.", show_alert=True)
 
     await callback.answer()
@@ -123,7 +123,7 @@ async def process_default_text(message: types.Message, state: FSMContext):
 @admin_agent_router.callback_query(F.data == "agent_admin_percent")
 async def set_commission_percent_start(callback: types.CallbackQuery, state: FSMContext):
     """Starts commission percentage configuration."""
-    if not is_admin(callback.message):
+    if not is_admin(callback):
         return await callback.answer("❌ دسترسی غیرمجاز.", show_alert=True)
 
     await callback.answer()
@@ -171,7 +171,7 @@ async def process_commission_percent(message: types.Message, state: FSMContext):
 @admin_agent_router.callback_query(F.data == "agent_admin_min_settle")
 async def set_min_settlement_start(callback: types.CallbackQuery, state: FSMContext):
     """Starts minimum settlement amount configuration."""
-    if not is_admin(callback.message):
+    if not is_admin(callback):
         return await callback.answer("❌ دسترسی غیرمجاز.", show_alert=True)
 
     await callback.answer()
@@ -221,7 +221,7 @@ async def list_unsettled_settlements(callback: types.CallbackQuery):
     Displays unsettled (pending/waiting) settlement requests sorted by amount descending,
     with pagination, refresh button, and item navigation.
     """
-    if not is_admin(callback.message):
+    if not is_admin(callback):
         return await callback.answer("❌ دسترسی غیرمجاز.", show_alert=True)
 
     await callback.answer()
@@ -292,7 +292,7 @@ async def view_settlement_item(callback: types.CallbackQuery):
     Displays the full settlement invoice with exact format matching the agent notification,
     including Copy Wallet Address, Settle, and Wait buttons.
     """
-    if not is_admin(callback.message):
+    if not is_admin(callback):
         return await callback.answer("❌ دسترسی غیرمجاز.", show_alert=True)
 
     await callback.answer()
@@ -357,7 +357,7 @@ async def view_settlement_item(callback: types.CallbackQuery):
 @admin_agent_router.callback_query(F.data.startswith("agent_stl_wait_"))
 async def mark_settlement_waiting(callback: types.CallbackQuery):
     """Marks a settlement request as waiting (منتظر بماند)."""
-    if not is_admin(callback.message):
+    if not is_admin(callback):
         return await callback.answer("❌ دسترسی غیرمجاز.", show_alert=True)
 
     settlement_id = int(callback.data.split("_")[3])
@@ -371,7 +371,7 @@ async def mark_settlement_waiting(callback: types.CallbackQuery):
 @admin_agent_router.callback_query(F.data.startswith("agent_stl_done_"))
 async def mark_settlement_done_start(callback: types.CallbackQuery, state: FSMContext):
     """Starts the settlement finalization flow by requesting the transaction hash link."""
-    if not is_admin(callback.message):
+    if not is_admin(callback):
         return await callback.answer("❌ دسترسی غیرمجاز.", show_alert=True)
 
     await callback.answer()
@@ -459,7 +459,7 @@ async def list_activation_requests(callback: types.CallbackQuery):
     Displays pending activation requests sorted by commission balance descending,
     with pagination and navigation.
     """
-    if not is_admin(callback.message):
+    if not is_admin(callback):
         return await callback.answer("❌ دسترسی غیرمجاز.", show_alert=True)
 
     await callback.answer()
@@ -521,7 +521,7 @@ async def list_activation_requests(callback: types.CallbackQuery):
 @admin_agent_router.callback_query(F.data.startswith("agent_act_view_"))
 async def view_activation_request(callback: types.CallbackQuery):
     """Displays full details of an activation request with approve and reject buttons."""
-    if not is_admin(callback.message):
+    if not is_admin(callback):
         return await callback.answer("❌ دسترسی غیرمجاز.", show_alert=True)
 
     await callback.answer()
@@ -562,7 +562,7 @@ async def approve_activation_request(callback: types.CallbackQuery):
     Approves activation request, permanently activating settlement button for this agent,
     and sends notification to the agent.
     """
-    if not is_admin(callback.message):
+    if not is_admin(callback):
         return await callback.answer("❌ دسترسی غیرمجاز.", show_alert=True)
 
     await callback.answer()
@@ -600,7 +600,7 @@ async def approve_activation_request(callback: types.CallbackQuery):
 @admin_agent_router.callback_query(F.data.startswith("agent_act_reject_"))
 async def reject_activation_request_start(callback: types.CallbackQuery, state: FSMContext):
     """Prompts the admin for the rejection reason."""
-    if not is_admin(callback.message):
+    if not is_admin(callback):
         return await callback.answer("❌ دسترسی غیرمجاز.", show_alert=True)
 
     await callback.answer()

@@ -10,6 +10,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from .admin import is_admin
 from ..states import AdminStates
 from database import db_manager
+from utils.ui_helpers import safe_edit_message
 import aiosqlite
 
 admin_discounts_router = Router()
@@ -19,8 +20,10 @@ admin_discounts_router = Router()
 # ============================================================
 
 @admin_discounts_router.callback_query(F.data == "admin_discounts")
-async def discounts_menu(callback: types.CallbackQuery):
-    if not is_admin(callback.message): return
+async def discounts_menu(callback: types.CallbackQuery, state: FSMContext = None):
+    if not is_admin(callback): return
+    if state:
+        await state.clear()
 
     builder = InlineKeyboardBuilder()
     builder.button(text="🎫 مدیریت کدهای تخفیف", callback_data="manage_discounts")
@@ -28,7 +31,8 @@ async def discounts_menu(callback: types.CallbackQuery):
     builder.button(text="🔙 بازگشت", callback_data="admin_finance", style="danger")
     builder.adjust(1)
 
-    await callback.message.edit_text(
+    await safe_edit_message(
+        callback,
         "🎁 <b>مدیریت تخفیف و هدیه</b>\n\nلطفا یک بخش را انتخاب کنید:",
         reply_markup=builder.as_markup(),
         parse_mode="HTML"
@@ -39,8 +43,10 @@ async def discounts_menu(callback: types.CallbackQuery):
 # ============================================================
 
 @admin_discounts_router.callback_query(F.data == "manage_discounts")
-async def manage_discounts(callback: types.CallbackQuery):
-    if not is_admin(callback.message): return
+async def manage_discounts(callback: types.CallbackQuery, state: FSMContext = None):
+    if not is_admin(callback): return
+    if state:
+        await state.clear()
     
     async with aiosqlite.connect(db_manager.DB_PATH) as db:
         db.row_factory = aiosqlite.Row
@@ -56,11 +62,11 @@ async def manage_discounts(callback: types.CallbackQuery):
     builder.adjust(1)
     
     text = "🎫 <b>لیست کدهای تخفیف (۲۰ مورد آخر)</b>\n\nبرای حذف روی کد مورد نظر کلیک کنید:"
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    await safe_edit_message(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
 @admin_discounts_router.callback_query(F.data.startswith("del_discount_"))
 async def del_discount(callback: types.CallbackQuery):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     code = callback.data.replace("del_discount_", "")
     async with aiosqlite.connect(db_manager.DB_PATH) as db:
         await db.execute("DELETE FROM discount_codes WHERE code = ?", (code,))
@@ -70,9 +76,11 @@ async def del_discount(callback: types.CallbackQuery):
 
 @admin_discounts_router.callback_query(F.data == "add_discount_start")
 async def add_discount_start(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     await state.set_state(AdminStates.waiting_for_admin_discount_code)
-    await callback.message.edit_text("لطفا کد تخفیف مورد نظر را وارد کنید (مثلا SPRING1403):")
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 انصراف و بازگشت", callback_data="manage_discounts", style="danger")
+    await safe_edit_message(callback, "لطفا کد تخفیف مورد نظر را وارد کنید (مثلا SPRING1403):", reply_markup=builder.as_markup())
 
 @admin_discounts_router.message(AdminStates.waiting_for_admin_discount_code)
 async def add_discount_code(message: types.Message, state: FSMContext):
@@ -83,18 +91,22 @@ async def add_discount_code(message: types.Message, state: FSMContext):
     builder = InlineKeyboardBuilder()
     builder.button(text="درصدی (%)", callback_data="dt_percent")
     builder.button(text="مبلغ ثابت (تومان)", callback_data="dt_fixed")
+    builder.button(text="🔙 انصراف و بازگشت", callback_data="manage_discounts", style="danger")
+    builder.adjust(2, 1)
     
     await message.answer("نوع تخفیف را انتخاب کنید:", reply_markup=builder.as_markup())
 
 @admin_discounts_router.callback_query(F.data.in_({"dt_percent", "dt_fixed"}))
 async def add_discount_type(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     dtype = "percent" if callback.data == "dt_percent" else "fixed"
     await state.update_data(d_type=dtype)
     await state.set_state(AdminStates.waiting_for_admin_discount_value)
     
     unit = "درصد" if dtype == "percent" else "تومان"
-    await callback.message.edit_text(f"مقدار تخفیف را به {unit} وارد کنید (فقط عدد):")
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 انصراف و بازگشت", callback_data="manage_discounts", style="danger")
+    await safe_edit_message(callback, f"مقدار تخفیف را به {unit} وارد کنید (فقط عدد):", reply_markup=builder.as_markup())
 
 @admin_discounts_router.message(AdminStates.waiting_for_admin_discount_value)
 async def add_discount_value(message: types.Message, state: FSMContext):
@@ -156,8 +168,10 @@ async def add_discount_save(message: types.Message, state: FSMContext):
 # ============================================================
 
 @admin_discounts_router.callback_query(F.data == "manage_gifts")
-async def manage_gifts(callback: types.CallbackQuery):
-    if not is_admin(callback.message): return
+async def manage_gifts(callback: types.CallbackQuery, state: FSMContext = None):
+    if not is_admin(callback): return
+    if state:
+        await state.clear()
     
     async with aiosqlite.connect(db_manager.DB_PATH) as db:
         db.row_factory = aiosqlite.Row
@@ -173,11 +187,11 @@ async def manage_gifts(callback: types.CallbackQuery):
     builder.adjust(1)
     
     text = "🎁 <b>لیست کدهای هدیه کیف پول (۲۰ مورد آخر)</b>\n\nبرای حذف روی کد مورد نظر کلیک کنید:"
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    await safe_edit_message(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
 @admin_discounts_router.callback_query(F.data.startswith("del_gift_"))
 async def del_gift(callback: types.CallbackQuery):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     code = callback.data.replace("del_gift_", "")
     async with aiosqlite.connect(db_manager.DB_PATH) as db:
         await db.execute("DELETE FROM gift_codes WHERE code = ?", (code,))
@@ -187,9 +201,11 @@ async def del_gift(callback: types.CallbackQuery):
 
 @admin_discounts_router.callback_query(F.data == "add_gift_start")
 async def add_gift_start(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     await state.set_state(AdminStates.waiting_for_admin_gift_code)
-    await callback.message.edit_text("لطفا کد هدیه مورد نظر را وارد کنید (مثلا GIFT100):")
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 انصراف و بازگشت", callback_data="manage_gifts", style="danger")
+    await safe_edit_message(callback, "لطفا کد هدیه مورد نظر را وارد کنید (مثلا GIFT100):", reply_markup=builder.as_markup())
 
 @admin_discounts_router.message(AdminStates.waiting_for_admin_gift_code)
 async def add_gift_code(message: types.Message, state: FSMContext):

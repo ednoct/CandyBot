@@ -10,15 +10,18 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from .admin import is_admin
 from ..states import AdminStates
 from database import db_manager
+from utils.ui_helpers import safe_edit_message
 import aiosqlite
 
 admin_settings_router = Router()
 
 # === ROUTER: SETTINGS MENU ===
 @admin_settings_router.callback_query(F.data == "admin_settings")
-async def settings_menu(callback: types.CallbackQuery):
+async def settings_menu(callback: types.CallbackQuery, state: FSMContext = None):
     """Handles settings menu."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
+    if state:
+        await state.clear()
     
     op_mode = await db_manager.get_operating_mode()
     fb_enabled = await db_manager.get_setting('feedback_enabled', '1')
@@ -71,12 +74,12 @@ async def settings_menu(callback: types.CallbackQuery):
     
     builder.adjust(2, 2, 2, 2, 2, 1, 1, 1, 1, 1)
     
-    await callback.message.edit_text("⚙️ **تنظیمات عمومی ربات**", reply_markup=builder.as_markup(), parse_mode="Markdown")
+    await safe_edit_message(callback, "⚙️ **تنظیمات عمومی ربات**", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
 @admin_settings_router.callback_query(F.data.in_({"toggle_op_mode", "toggle_feedback", "toggle_acquisition", "toggle_qr_bg"}))
 async def handle_toggles(callback: types.CallbackQuery):
     """Handles handle toggles."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     
     if callback.data == "toggle_op_mode":
         current = await db_manager.get_operating_mode()
@@ -109,7 +112,7 @@ async def handle_toggles(callback: types.CallbackQuery):
 @admin_settings_router.callback_query(F.data == "admin_manage_channels")
 async def manage_channels(callback: types.CallbackQuery, state: FSMContext = None):
     """Handles manage channels menu."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     if state:
         await state.clear()
     
@@ -119,18 +122,18 @@ async def manage_channels(callback: types.CallbackQuery, state: FSMContext = Non
     builder.button(text="🔙 بازگشت", callback_data="admin_settings", style="danger")
     builder.adjust(2, 1)
     
-    await callback.message.edit_text("📯 <b>مدیریت کانال‌های جوین اجباری</b>", reply_markup=builder.as_markup(), parse_mode="HTML")
+    await safe_edit_message(callback, "📯 <b>مدیریت کانال‌های جوین اجباری</b>", reply_markup=builder.as_markup(), parse_mode="HTML")
 
 @admin_settings_router.callback_query(F.data == "add_channel")
 async def add_channel_start(callback: types.CallbackQuery, state: FSMContext):
     """Handles add channel start."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     await state.set_state(AdminStates.waiting_for_channel_remark)
     
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 لغو و بازگشت", callback_data="admin_manage_channels", style="danger")
     
-    await callback.message.edit_text(
+    await safe_edit_message(callback, 
         "📌 <b>یک نام برای دکمه عضویت کانال انتخاب نمایید:</b>\n"
         "(مثلاً: <code>به جمع ما بپیوند</code>)",
         reply_markup=builder.as_markup(),
@@ -225,7 +228,7 @@ async def add_channel_url(message: types.Message, state: FSMContext):
 @admin_settings_router.callback_query(F.data == "del_channel")
 async def del_channel_list(callback: types.CallbackQuery, state: FSMContext = None):
     """Shows the list of force join channels to delete."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     if state:
         await state.clear()
 
@@ -239,7 +242,8 @@ async def del_channel_list(callback: types.CallbackQuery, state: FSMContext = No
 
     if not channels:
         builder.button(text="🔙 بازگشت", callback_data="admin_manage_channels", style="danger")
-        return await callback.message.edit_text(
+        return await safe_edit_message(
+            callback,
             "❌ <b>هیچ کانال جوین اجباری ثبت نشده است.</b>", 
             reply_markup=builder.as_markup(),
             parse_mode="HTML"
@@ -253,7 +257,7 @@ async def del_channel_list(callback: types.CallbackQuery, state: FSMContext = No
     builder.button(text="🔙 بازگشت", callback_data="admin_manage_channels", style="danger")
     builder.adjust(1)
 
-    await callback.message.edit_text(
+    await safe_edit_message(callback, 
         "🗑 <b>حذف کانال‌های جوین اجباری</b>\n\n"
         "جهت حذف هر کانال، روی دکمه آن کلیک کنید:",
         reply_markup=builder.as_markup(),
@@ -263,7 +267,7 @@ async def del_channel_list(callback: types.CallbackQuery, state: FSMContext = No
 @admin_settings_router.callback_query(F.data.startswith("del_chan_"))
 async def del_channel_exec(callback: types.CallbackQuery):
     """Deletes a selected force join channel."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     
     chan_id = int(callback.data.split("_")[2])
     from database.db_manager import DB_PATH
@@ -279,12 +283,12 @@ async def del_channel_exec(callback: types.CallbackQuery):
 @admin_settings_router.callback_query(F.data == "admin_manage_admins")
 async def manage_admins(callback: types.CallbackQuery, state: FSMContext):
     """Handles manage admins."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     await state.set_state(AdminStates.waiting_for_admin_id)
     
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 بازگشت", callback_data="admin_settings", style="danger")
-    await callback.message.edit_text("👨‍💻 **مدیریت ادمین‌ها**\n\nبرای افزودن ادمین جدید، لطفا آیدی عددی (User ID) تلگرام او را بفرستید:", reply_markup=builder.as_markup(), parse_mode="Markdown")
+    await safe_edit_message(callback, "👨‍💻 **مدیریت ادمین‌ها**\n\nبرای افزودن ادمین جدید، لطفا آیدی عددی (User ID) تلگرام او را بفرستید:", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
 @admin_settings_router.message(AdminStates.waiting_for_admin_id)
 async def add_admin_save(message: types.Message, state: FSMContext):
@@ -317,13 +321,13 @@ async def add_admin_save(message: types.Message, state: FSMContext):
 @admin_settings_router.callback_query(F.data == "admin_manage_qr")
 async def manage_qr_prompt(callback: types.CallbackQuery, state: FSMContext):
     """Handles manage qr prompt."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     await state.set_state(AdminStates.waiting_for_qr_background)
     
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 لغو", callback_data="admin_settings", style="danger")
-    await callback.message.edit_text("🖼 **پس زمینه کیوآرکد**\nتصویر خود را برای پس زمینه ارسال کنید:", reply_markup=builder.as_markup(), parse_mode="Markdown")
+    await safe_edit_message(callback, "🖼 **پس زمینه کیوآرکد**\nتصویر خود را برای پس زمینه ارسال کنید:", reply_markup=builder.as_markup(), parse_mode="Markdown")
 
 @admin_settings_router.message(AdminStates.waiting_for_qr_background)
 async def manage_qr_process(message: types.Message, state: FSMContext):
@@ -356,7 +360,7 @@ async def manage_qr_process(message: types.Message, state: FSMContext):
 @admin_settings_router.callback_query(F.data == "admin_referral")
 async def referral_settings_menu(callback: types.CallbackQuery):
     """Handles referral settings menu."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     
     status = await db_manager.get_setting('referral_status', '0')
     r_type = await db_manager.get_setting('referral_reward_type', 'percent')
@@ -380,7 +384,7 @@ async def referral_settings_menu(callback: types.CallbackQuery):
     
     builder.adjust(2, 2, 2, 1)
     
-    await callback.message.edit_text(
+    await safe_edit_message(callback, 
         "🤝 **تنظیمات زیرمجموعه گیری**\n\n"
         "در این بخش می‌توانید سیستم معرفی دوستان را مدیریت کنید.",
         reply_markup=builder.as_markup(),
@@ -390,7 +394,7 @@ async def referral_settings_menu(callback: types.CallbackQuery):
 @admin_settings_router.callback_query(F.data.in_({"toggle_ref_status", "toggle_ref_type"}))
 async def handle_referral_toggles(callback: types.CallbackQuery):
     """Handles referral toggles."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     
     if callback.data == "toggle_ref_status":
         current = await db_manager.get_setting('referral_status', '0')
@@ -410,12 +414,12 @@ async def handle_referral_toggles(callback: types.CallbackQuery):
 @admin_settings_router.callback_query(F.data == "set_ref_value")
 async def set_referral_value_prompt(callback: types.CallbackQuery, state: FSMContext):
     """Handles set referral value prompt."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     await state.set_state(AdminStates.waiting_for_referral_value)
     
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 لغو", callback_data="admin_referral", style="danger")
-    await callback.message.edit_text(
+    await safe_edit_message(callback, 
         "💰 **تنظیم مقدار پاداش**\n"
         "لطفاً مقدار جدید را به صورت عددی ارسال کنید (بدون کاما):",
         reply_markup=builder.as_markup(),
@@ -447,7 +451,7 @@ async def set_referral_value_process(message: types.Message, state: FSMContext):
 @admin_settings_router.callback_query(F.data == "admin_db_cleanup")
 async def admin_db_cleanup_menu(callback: types.CallbackQuery):
     """Displays periodic database cleanup status and statistics."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     
     import json
     import time
@@ -513,13 +517,13 @@ async def admin_db_cleanup_menu(callback: types.CallbackQuery):
         f"📊 <b>آمار آخرین پاکسازی:</b>\n{stats_text}"
     )
 
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    await safe_edit_message(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
     await callback.answer()
 
 @admin_settings_router.callback_query(F.data == "admin_db_cleanup_now")
 async def admin_db_cleanup_now_handler(callback: types.CallbackQuery):
     """Manually triggers database cleanup on demand."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     
     import json
     import time

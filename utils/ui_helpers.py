@@ -94,6 +94,7 @@ async def send_bottom_message(
         return new_msg
 
     elif isinstance(event, types.Message):
+        delete_user_message = kwargs.pop("delete_user_message", False)
         new_msg = await event.answer(
             text=text,
             reply_markup=reply_markup,
@@ -101,7 +102,10 @@ async def send_bottom_message(
             **kwargs
         )
 
-        if delete_prev:
+        # Do not delete incoming user message by default.
+        # Only delete if message is from a bot or delete_user_message=True is explicitly specified.
+        is_bot = bool(event.from_user and event.from_user.is_bot)
+        if delete_prev and (is_bot or delete_user_message):
             try:
                 await event.delete()
             except Exception as del_err:
@@ -127,6 +131,12 @@ async def safe_edit_message(
     """
     msg = target.message if isinstance(target, types.CallbackQuery) else target
     cb = target if isinstance(target, types.CallbackQuery) else None
+
+    if cb:
+        try:
+            await cb.answer()
+        except Exception:
+            pass
 
     try:
         if msg:

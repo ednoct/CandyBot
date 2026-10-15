@@ -10,6 +10,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from bot.config import ADMIN_IDS
 from database import db_manager
+from utils.ui_helpers import safe_edit_message
 
 admin_router = Router()
 
@@ -154,12 +155,7 @@ async def admin_panel_callback(callback: types.CallbackQuery, state: FSMContext)
 
     text = await _build_admin_dashboard_text(counts)
     builder = await _admin_keyboard(counts)
-    try:
-        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
-    except Exception as e:
-        if "not modified" not in str(e).lower():
-            await callback.answer()
-    await callback.answer()
+    await safe_edit_message(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
 
 @admin_router.callback_query(F.data == "admin_back")
@@ -178,12 +174,7 @@ async def admin_back_handler(callback: types.CallbackQuery, state: FSMContext):
 
     text = await _build_admin_dashboard_text(counts)
     builder = await _admin_keyboard(counts)
-    try:
-        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
-    except Exception as e:
-        if "not modified" not in str(e).lower():
-            raise
-    await callback.answer()
+    await safe_edit_message(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
 
 # === NEUTRAL BUTTONS HANDLER (PREVENTS "QUERY IS TOO OLD") ===

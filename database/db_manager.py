@@ -1460,6 +1460,18 @@ async def add_global_balance(amount: int) -> list:
             await db.commit()
         return user_ids
 
+async def disable_user(user_id: int):
+    """Deactivates a user (e.g. when bot is blocked)."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("UPDATE users SET is_active = 0 WHERE id = ?", (user_id,))
+        await db.commit()
+
+async def enable_user(user_id: int):
+    """Re-activates a user."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("UPDATE users SET is_active = 1 WHERE id = ?", (user_id,))
+        await db.commit()
+
 async def get_invoice_details(invoice_id: str):
     """Fetch complete details of an invoice for search."""
     async with aiosqlite.connect(DB_PATH) as db:
@@ -2331,7 +2343,7 @@ async def get_admin_dashboard_counts() -> dict:
 
         try:
             async with db.execute(
-                "SELECT COUNT(*) FROM support_tickets WHERE status = 'open'"
+                "SELECT COUNT(*) FROM support_tickets WHERE status IN ('open', 'unanswered')"
             ) as cur:
                 open_tickets = (await cur.fetchone())[0]
         except Exception:
