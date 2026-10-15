@@ -10,7 +10,7 @@ import math
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-
+from aiogram.types import LinkPreviewOptions
 from bot.routers.admin import is_admin
 from bot.states import AdminAgentStates
 from bot.config import ADMIN_IDS
@@ -98,12 +98,11 @@ async def set_default_text_start(callback: types.CallbackQuery, state: FSMContex
 
     await state.set_state(AdminAgentStates.waiting_for_default_text)
     
-    # اضافه کردن پارامتر غیرفعال‌سازی پیش‌نمایش لینک
     await callback.message.edit_text(
         text, 
         reply_markup=builder.as_markup(), 
         parse_mode="HTML",
-        disable_web_page_preview=True  # یا در نسخه‌های جدیدتر: link_preview_options=types.LinkPreviewOptions(is_disabled=True)
+        link_preview_options=LinkPreviewOptions(is_disabled=True)
     )
 
 
@@ -126,7 +125,7 @@ async def process_default_text(message: types.Message, state: FSMContext):
     await message.answer(
         "✅ متن پیشفرض نمایندگی با موفقیت به‌روزرسانی شد.", 
         reply_markup=builder.as_markup(),
-        disable_web_page_preview=True
+        link_preview_options=LinkPreviewOptions(is_disabled=True)
     )
 
 # === SETTING 2: COMMISSION PERCENT ===
