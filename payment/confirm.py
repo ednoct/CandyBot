@@ -40,37 +40,44 @@ class PaymentConfirmationManager:
             async with aiosqlite.connect(db_manager.DB_PATH) as db:
                 db.row_factory = aiosqlite.Row
 
-                # Fetch invoice
+                # Fetch invoice first
                 async with db.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)) as cursor:
                     invoice = await cursor.fetchone()
 
-                if not invoice or invoice['status'] == 'paid':
+                if not invoice:
                     return False
 
-                # Mark as paid
-                await db.execute("UPDATE invoices SET status = 'paid' WHERE id = ?", (invoice_id,))
+                # Atomic check & update: only transition to 'paid' if not already paid/approved
+                cursor = await db.execute(
+                    "UPDATE invoices SET status = 'paid' WHERE id = ? AND status NOT IN ('paid', 'approved', 'completed')",
+                    (invoice_id,)
+                )
+                if cursor.rowcount == 0:
+                    # Invoice was already paid or approved concurrently (prevent race condition / double provision)
+                    return False
 
-                # Fetch user
                 user_id = invoice['user_id']
-                async with db.execute("SELECT * FROM users WHERE id = ?", (user_id,)) as cursor:
-                    user = await cursor.fetchone()
-
-                added_balance = 0
+                wallet_deduction = invoice['wallet_deduction'] if 'wallet_deduction' in invoice.keys() else 0
 
                 # Wallet-top-up invoice (plan_id == 0)
                 if invoice['plan_id'] == 0:
-                    added_balance += invoice['final_amount']
+                    added_balance = invoice['final_amount']
+                    if added_balance > 0:
+                        await db.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (added_balance, user_id))
 
-                if added_balance > 0:
-                    await db.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (added_balance, user_id))
-                    
-                wallet_deduction = invoice.get('wallet_deduction', 0)
+                # Atomic wallet deduction if invoice used wallet balance
                 if wallet_deduction and wallet_deduction > 0:
-                    if user['balance'] < wallet_deduction:
-                        # Should have been validated earlier, but safeguard here
+                    deduct_cur = await db.execute(
+                        "UPDATE users SET balance = balance - ? WHERE id = ? AND balance >= ?",
+                        (wallet_deduction, user_id, wallet_deduction)
+                    )
+                    if deduct_cur.rowcount == 0:
+                        # Insufficient balance at confirmation time — roll back invoice status to pending
+                        await db.rollback()
+                        await db.execute("UPDATE invoices SET status = 'pending' WHERE id = ?", (invoice_id,))
+                        await db.commit()
                         return False
-                    await db.execute("UPDATE users SET balance = balance - ? WHERE id = ?", (wallet_deduction, user_id))
-                    
+
                 await db.commit()
                 
             # Now trigger async helpers (Cashback and Referral)

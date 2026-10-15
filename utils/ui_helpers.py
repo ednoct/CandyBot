@@ -112,3 +112,41 @@ async def send_bottom_message(
     else:
         raise TypeError(f"Unsupported event type: {type(event)}")
 
+
+async def safe_edit_message(
+    target: Union[types.CallbackQuery, types.Message],
+    text: str,
+    reply_markup: Optional[InlineKeyboardMarkup] = None,
+    parse_mode: Optional[str] = "HTML",
+    **kwargs
+) -> Optional[types.Message]:
+    """
+    Safely edits a message without raising or spamming on TelegramBadRequest:
+    - If Telegram reports 'message is not modified', silently ignores it and answers callback (no duplicate message!).
+    - If the message cannot be edited (e.g. user message), gracefully falls back to answering with a new message.
+    """
+    msg = target.message if isinstance(target, types.CallbackQuery) else target
+    cb = target if isinstance(target, types.CallbackQuery) else None
+
+    try:
+        if msg:
+            return await msg.edit_text(text, reply_markup=reply_markup, parse_mode=parse_mode, **kwargs)
+    except Exception as e:
+        err = str(e).lower()
+        if "not modified" in err:
+            # User clicked the already-selected button — ignore safely
+            if cb:
+                try:
+                    await cb.answer()
+                except Exception:
+                    pass
+            return None
+        # Other errors (e.g., cannot edit user message) -> fallback to sending new message
+        try:
+            if msg:
+                return await msg.answer(text, reply_markup=reply_markup, parse_mode=parse_mode, **kwargs)
+        except Exception as send_err:
+            logger.debug(f"safe_edit_message fallback failed: {send_err}")
+            return None
+    return None
+

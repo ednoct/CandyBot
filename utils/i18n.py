@@ -25,7 +25,7 @@ class I18nManager:
     def load_texts(self):
         """Loads the JSON dictionary into memory."""
         try:
-            with open(self.file_path, 'r', encoding='utf-8') as f:
+            with open(self.file_path, 'r', encoding='utf-8-sig') as f:
                 self._texts = json.load(f)
         except Exception as e:
             print(f"[I18N ERROR] Failed to load texts from {self.file_path}: {e}")

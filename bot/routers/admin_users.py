@@ -637,9 +637,13 @@ def _build_paginated_users_keyboard(users: list, list_type: str, current_page: i
     builder.row(InlineKeyboardButton(text="🔙 بازگشت به منوی مدیریت", callback_data="admin_users", style="danger"))
     return builder.as_markup()
 
-@admin_users_router.callback_query(F.data == "ignore")
+# === NEUTRAL BUTTONS HANDLER (PREVENTS "QUERY IS TOO OLD") ===
+@admin_users_router.callback_query(F.data.in_(["noop", "none", "ignore"]))
 async def handle_ignore_callback(callback: types.CallbackQuery):
-    await callback.answer()
+    try:
+        await callback.answer()
+    except Exception:
+        pass
 
 @admin_users_router.callback_query(F.data.startswith("admin_ulist_"))
 async def handle_paginated_users(callback: types.CallbackQuery):

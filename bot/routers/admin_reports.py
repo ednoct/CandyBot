@@ -793,3 +793,12 @@ async def crm_trial_followup(callback: types.CallbackQuery):
     builder.button(text="🔙 بازگشت", callback_data="admin_reports", style="danger")
     
     await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+
+
+# === NEUTRAL BUTTONS HANDLER (PREVENTS "QUERY IS TOO OLD") ===
+@admin_reports_router.callback_query(F.data.in_(["noop", "none"]))
+async def handle_noop(callback: types.CallbackQuery):
+    try:
+        await callback.answer()
+    except Exception:
+        pass

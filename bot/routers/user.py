@@ -716,3 +716,12 @@ async def handle_feedback_comment(message: types.Message, state: FSMContext, bot
             
     await state.clear()
     await message.reply("نظر شما ثبت شد. با تشکر از همراهی شما! 🌺")
+
+
+# === NEUTRAL BUTTONS HANDLER (PREVENTS "QUERY IS TOO OLD") ===
+@user_router.callback_query(F.data.in_(["noop", "none"]))
+async def handle_noop(callback: types.CallbackQuery):
+    try:
+        await callback.answer()
+    except Exception:
+        pass

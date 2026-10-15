@@ -253,3 +253,12 @@ async def set_limit_process(message: types.Message, state: FSMContext):
     await message.answer("✅ محدودیت با موفقیت تنظیم شد.", reply_markup=builder.as_markup())
 
 
+# === NEUTRAL BUTTONS HANDLER (PREVENTS "QUERY IS TOO OLD") ===
+@admin_finance_router.callback_query(F.data.in_(["noop", "none"]))
+async def handle_noop(callback: types.CallbackQuery):
+    try:
+        await callback.answer()
+    except Exception:
+        pass
+
+

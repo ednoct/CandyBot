@@ -286,7 +286,7 @@ async def render_calculator(message: types.Message, state: FSMContext, plan_id: 
         builder.row(*time_buttons, width=3)
         
         # Selected Time summary
-        builder.row(types.InlineKeyboardButton(text=f"روز انتخاب شده: {sel_days} ✅", callback_data="none", style="primary))
+        builder.row(types.InlineKeyboardButton(text=f"روز انتخاب شده: {sel_days} ✅", callback_data="none", style="primary"))
         
     if traffic_packages:
         # Header Traffic (پویا و حساس به پلکان)
@@ -295,7 +295,7 @@ async def render_calculator(message: types.Message, state: FSMContext, plan_id: 
         else:
             traffic_header_text = f"حجم (گیگ) • هر گیگ {dynamic_gb_price:,} تومان ⚡"
             
-        builder.row(types.InlineKeyboardButton(text=traffic_header_text, callback_data="none", style="primary))
+        builder.row(types.InlineKeyboardButton(text=traffic_header_text, callback_data="none", style="primary"))
         
         # Grid Traffic
         traffic_buttons = []
@@ -323,13 +323,28 @@ async def render_calculator(message: types.Message, state: FSMContext, plan_id: 
     text = build_calculator_marketing_text(data['plan_name'], data['plan_price_gb'], sel_gb, tier_info)
     
     try:
-        await message.edit_text(text, reply_markup=builder.as_markup())
+        await message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    except Exception as e:
+        err = str(e).lower()
+        if "message is not modified" in err or "not modified" in err:
+            return  # کاربر دوباره روی دکمه انتخابی کلیک کرد — نادیده بگیر
+        try:
+            await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        except Exception:
+            pass
+
+# === NEUTRAL BUTTONS HANDLER (PREVENTS "QUERY IS TOO OLD") ===
+@checkout_router.callback_query(F.data.in_(["noop", "none"]))
+async def handle_noop(callback: types.CallbackQuery):
+    try:
+        await callback.answer()
     except Exception:
-        await message.answer(text, reply_markup=builder.as_markup())
+        pass
 
 @checkout_router.callback_query(F.data.startswith('calc_time_'))
 async def update_time(callback: types.CallbackQuery, state: FSMContext):
     """Handles update time."""
+    await callback.answer()
     time_id = int(callback.data.split('_')[2])
     await state.update_data(time_id=time_id)
     data = await state.get_data()
@@ -338,6 +353,7 @@ async def update_time(callback: types.CallbackQuery, state: FSMContext):
 @checkout_router.callback_query(F.data.startswith('calc_traffic_'))
 async def update_traffic(callback: types.CallbackQuery, state: FSMContext):
     """Handles update traffic."""
+    await callback.answer()
     traffic_id = int(callback.data.split('_')[2])
     await state.update_data(traffic_id=traffic_id)
     data = await state.get_data()
@@ -420,24 +436,10 @@ async def prepare_and_send_invoice(message: types.Message, user_id: int, data: d
     builder.row(types.InlineKeyboardButton(text="🎁 ثبت کد هدیه", callback_data="apply_gift"))
     
     if final_amount > 0:
-        # Show gateways
-        import aiosqlite
-        from database.db_manager import DB_PATH
-        
-        available_gateways = [
-            ('گرام (TON)', 'gram', 'pay_gram'),
-            ('تتر (BSC)', 'usdt', 'pay_usdt'),
-            ('کارت به کارت هوشمند', 'frenzyex', 'pay_frenzyex')
-        ]
-        
-        async with aiosqlite.connect(DB_PATH) as db:
-            for name, code, cb_data in available_gateways:
-                key_name = f"{code}_status" if code in ['frenzyex', 'usdt', 'gram'] else f"gateway_status_{code}"
-                async with db.execute("SELECT value FROM settings WHERE key = ?", (key_name,)) as cursor:
-                    row = await cursor.fetchone()
-                    is_active = (row and row[0] == '1')
-                    if is_active:
-                        builder.row(types.InlineKeyboardButton(text=f"💳 {name}", callback_data=cb_data))
+        # درگاه‌های فعال را از db_manager بخواهیم (no raw SQL in router)
+        active_gateways = await db_manager.get_active_payment_gateways()
+        for name, cb_data in active_gateways:
+            builder.row(types.InlineKeyboardButton(text=f"💳 {name}", callback_data=cb_data))
     else:
         builder.row(types.InlineKeyboardButton(text="✅ تکمیل خرید (رایگان)", callback_data="pay_free"))
         
@@ -446,10 +448,11 @@ async def prepare_and_send_invoice(message: types.Message, user_id: int, data: d
     if isinstance(message, types.Message):
         try:
             await message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
-        except Exception:
-            # message.edit_text() raises TelegramBadRequest when called on a
-            # regular user message (only bot messages are editable).
-            # Fall back to sending a new message.
+        except Exception as e:
+            err = str(e).lower()
+            if "message is not modified" in err or "not modified" in err:
+                return  # نادیده بگیر — محتوا تغییر نکرده
+            # دکمه‌های اینلاین قابل ویرایش نیستند، پیام جدید ارسال شود
             await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
 # === ROUTER: DISCOUNT CODE ===
@@ -521,84 +524,38 @@ async def cancel_modifier(callback: types.CallbackQuery, state: FSMContext):
 
 @checkout_router.callback_query(F.data == "pay_free")
 async def pay_free(callback: types.CallbackQuery, state: FSMContext):
-    """Handles pay free."""
-    import aiosqlite
+    """Handles zero-cost invoice creation and immediate license delivery."""
     data = await state.get_data()
     invoice_id = str(uuid.uuid4())[:8].upper()
-    license_note = data.get('license_note', '')
 
-    async with aiosqlite.connect(db_manager.DB_PATH) as db:
-        wallet_deduction = data.get('wallet_deduction', 0)
-        
-        # Strict mathematical balance validation
-        if wallet_deduction > 0:
-            async with db.execute("SELECT balance FROM users WHERE id = ?", (callback.from_user.id,)) as cursor:
-                user = await cursor.fetchone()
-                if not user or user[0] < wallet_deduction:
-                    return await callback.answer("❌ موجودی کیف پول شما برای این پرداخت کافی نیست.", show_alert=True)
-                    
-        await db.execute('''
-            INSERT INTO invoices (id, user_id, plan_id, days, gb, base_price, wallet_deduction, 
-            discount_code, discount_deduction, gift_code, gift_deduction, final_amount, license_note, status, renew_license_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
-        ''', (invoice_id, callback.from_user.id, data['plan_id'], data['days'], data['gb'],
-              data['base_price'], wallet_deduction, data.get('discount_code'), 
-              data.get('discount_amount', 0), data.get('gift_code'), data.get('gift_amount', 0), 
-              0, license_note, data.get('renew_license_id')))
-        await db.commit()
-        
+    ok = await db_manager.create_free_invoice(
+        invoice_id=invoice_id,
+        user_id=callback.from_user.id,
+        plan_id=data['plan_id'],
+        days=data['days'],
+        gb=data['gb'],
+        base_price=data.get('base_price', 0),
+        wallet_deduction=data.get('wallet_deduction', 0),
+        discount_code=data.get('discount_code'),
+        discount_amount=data.get('discount_amount', 0),
+        gift_code=data.get('gift_code'),
+        gift_amount=data.get('gift_amount', 0),
+        license_note=data.get('license_note', ''),
+        renew_license_id=data.get('renew_license_id'),
+    )
+    if not ok:
+        return await callback.answer(
+            "❌ موجودی کیف پول شما برای این پرداخت کافی نیست.",
+            show_alert=True
+        )
+
     await state.clear()
-    
-    # Use callback.bot — `bot` is not exported from the bot package
     from payment.confirm import PaymentConfirmationManager
+    # callback.bot — متغیر bot از پکیج bot قابل import نیست
     pcm = PaymentConfirmationManager(callback.bot)
     await callback.message.edit_text("✅ در حال تحویل لایسنس شما...")
     await pcm.confirm_paid(invoice_id, 0, 'free_discount')
 
-# === ROUTER: FREE TEST ===
-@checkout_router.callback_query(F.data == "free_test")
-async def process_free_test(callback: types.CallbackQuery):
-    """Handles process free test."""
-    import aiosqlite
-    user_id = callback.from_user.id
-    
-    async with aiosqlite.connect(db_manager.DB_PATH) as db:
-        try:
-            # First try the modern schema
-            async with db.execute("SELECT COUNT(*) FROM payment_reports WHERE user_id = ? AND payment_method = 'free_test'", (user_id,)) as cursor:
-                count = (await cursor.fetchone())[0]
-        except aiosqlite.OperationalError:
-            # Fallback to legacy schema
-            async with db.execute("SELECT COUNT(*) FROM payment_reports WHERE id_user = ? AND Payment_Method = 'free_test'", (user_id,)) as cursor:
-                count = (await cursor.fetchone())[0]
-            
-        if count > 0:
-            return await callback.answer("❌ شما قبلا از تست رایگان استفاده کرده‌اید.", show_alert=True)
-            
-        try:
-            async with db.execute("SELECT id, license_key FROM licenses_cargo WHERE is_free_test = 1 LIMIT 1") as cursor:
-                cargo = await cursor.fetchone()
-        except aiosqlite.OperationalError as e:
-            # If is_free_test column is missing, this handles it
-            return await callback.message.edit_text(f"❌ خطای دیتابیس در بخش مخزن تست: {e}")
-            
-        if not cargo:
-            return await callback.answer("❌ متاسفانه در حال حاضر لایسنس تست رایگان موجود نیست.", show_alert=True)
-            
-        await db.execute("DELETE FROM licenses_cargo WHERE id = ?", (cargo[0],))
-        
-        try:
-            await db.execute("INSERT INTO payment_reports (user_id, invoice_id, amount, payment_method, status) VALUES (?, ?, ?, ?, ?)",
-                (user_id, 'TEST', 0, 'free_test', 'approved'))
-        except aiosqlite.OperationalError:
-            await db.execute("INSERT INTO payment_reports (id_user, id_order, price, Payment_Method, payment_Status) VALUES (?, ?, ?, ?, ?)",
-                (user_id, 'TEST', 0, 'free_test', 'approved'))
-                
-        await db.commit()
-        
-    text = (
-        f"🎁 <b>تست رایگان شما آماده است!</b>\n\n"
-        f"لایسنس:\n<code>{cargo[1]}</code>\n\n"
-        f"با آرزوی بهترین‌ها برای شما!"
-    )
-    await callback.message.edit_text(text)
+# NOTE: The old `free_test` handler has been permanently removed from this file.
+# All free-trial logic now lives exclusively in bot/routers/user_free_trial.py
+# (modern XUI-based provisioning via the free_trial_usage table).

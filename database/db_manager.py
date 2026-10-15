@@ -2282,3 +2282,153 @@ async def get_all_settled_settlements() -> list[dict]:
             return [dict(r) for r in rows]
 
 
+# ============================================================
+# === ADMIN DASHBOARD LIVE COUNTERS ===
+# ============================================================
+
+async def get_admin_dashboard_counts() -> dict:
+    """
+    Returns pending-action counters for the admin live dashboard.
+    All queries run in a single connection for efficiency.
+    """
+    import time as _time
+    today_ts = int(_time.mktime(_time.strptime(
+        _time.strftime('%Y-%m-%d'), '%Y-%m-%d'
+    )))
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        def _count(q, p=()):
+            return db.execute(q, p)
+
+        try:
+            async with db.execute(
+                "SELECT COUNT(*) FROM payment_reports WHERE status = 'pending'"
+            ) as cur:
+                pending_receipts = (await cur.fetchone())[0]
+        except Exception:
+            pending_receipts = 0
+
+        try:
+            async with db.execute(
+                "SELECT COUNT(*) FROM agent_settlements WHERE status IN ('pending','waiting')"
+            ) as cur:
+                pending_settlements = (await cur.fetchone())[0]
+        except Exception:
+            pending_settlements = 0
+
+        try:
+            async with db.execute(
+                "SELECT COUNT(*) FROM agent_activation_requests WHERE status = 'pending'"
+            ) as cur:
+                pending_activations = (await cur.fetchone())[0]
+        except Exception:
+            pending_activations = 0
+
+        try:
+            async with db.execute(
+                "SELECT COUNT(*) FROM support_tickets WHERE status = 'open'"
+            ) as cur:
+                open_tickets = (await cur.fetchone())[0]
+        except Exception:
+            open_tickets = 0
+
+        try:
+            async with db.execute(
+                "SELECT COUNT(*), COALESCE(SUM(final_amount),0) FROM invoices "
+                "WHERE status IN ('paid','approved') AND created_at >= datetime(?,'unixepoch')",
+                (today_ts,)
+            ) as cur:
+                row = await cur.fetchone()
+                today_count = row[0] or 0
+                today_amount = row[1] or 0
+        except Exception:
+            today_count = today_amount = 0
+
+        try:
+            async with db.execute(
+                "SELECT value FROM settings WHERE key='operating_mode'"
+            ) as cur:
+                row = await cur.fetchone()
+                op_mode = row[0] if row else 'NORMAL'
+        except Exception:
+            op_mode = 'NORMAL'
+
+    return {
+        'pending_receipts': pending_receipts,
+        'pending_settlements': pending_settlements,
+        'pending_activations': pending_activations,
+        'open_tickets': open_tickets,
+        'today_count': today_count,
+        'today_amount': today_amount,
+        'op_mode': op_mode,
+    }
+
+
+async def get_active_payment_gateways() -> list:
+    """
+    Returns list of (label, callback_data) for active payment gateways.
+    Centralises DB access so routers stay clean.
+    """
+    gateway_map = [
+        ('gram_status',     'گرام (TON)',           'pay_gram'),
+        ('usdt_status',     'تتر (BSC)',             'pay_usdt'),
+        ('frenzyex_status', 'کارت به کارت هوشمند', 'pay_frenzyex'),
+    ]
+    result = []
+    async with aiosqlite.connect(DB_PATH) as db:
+        for key, name, cb_data in gateway_map:
+            async with db.execute(
+                "SELECT value FROM settings WHERE key = ?", (key,)
+            ) as cur:
+                row = await cur.fetchone()
+            if row and row[0] == '1':
+                result.append((name, cb_data))
+    return result
+
+
+async def create_free_invoice(
+    invoice_id: str,
+    user_id: int,
+    plan_id: int,
+    days: int,
+    gb: int,
+    base_price: int,
+    wallet_deduction: int,
+    discount_code,
+    discount_amount: int,
+    gift_code,
+    gift_amount: int,
+    license_note: str,
+    renew_license_id,
+) -> bool:
+    """
+    Atomically validates wallet balance and inserts a zero-cost invoice.
+    Returns False if wallet_deduction > current balance (prevents double-spend).
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        if wallet_deduction > 0:
+            async with db.execute(
+                "SELECT balance FROM users WHERE id = ?", (user_id,)
+            ) as cur:
+                row = await cur.fetchone()
+            if not row or row[0] < wallet_deduction:
+                return False
+
+        await db.execute(
+            """
+            INSERT INTO invoices
+              (id, user_id, plan_id, days, gb, base_price, wallet_deduction,
+               discount_code, discount_deduction, gift_code, gift_deduction,
+               final_amount, license_note, status, renew_license_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'pending', ?)
+            """,
+            (
+                invoice_id, user_id, plan_id, days, gb,
+                base_price, wallet_deduction,
+                discount_code, discount_amount,
+                gift_code, gift_amount,
+                license_note, renew_license_id,
+            ),
+        )
+        await db.commit()
+    return True

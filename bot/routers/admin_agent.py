@@ -24,12 +24,24 @@ admin_agent_router = Router()
 # === ROUTER: MAIN ADMIN AGENT MENU ===
 @admin_agent_router.callback_query(F.data == "admin_agent")
 async def admin_agent_menu(callback: types.CallbackQuery, state: FSMContext):
-    """Displays the main Agent Settings menu in the Admin panel."""
+    """Displays the main Agent Settings menu with live pending badges."""
     if not is_admin(callback.message):
         return await callback.answer("❌ دسترسی غیرمجاز.", show_alert=True)
 
     await state.clear()
     await callback.answer()
+
+    # Live counters for badges
+    try:
+        counts = await db_manager.get_admin_dashboard_counts()
+    except Exception:
+        counts = {}
+
+    pending_settlements = counts.get('pending_settlements', 0)
+    pending_activations = counts.get('pending_activations', 0)
+
+    def _badge(label, n):
+        return f"{label} ({n} 🔴)" if n > 0 else label
 
     text = (
         "🏬 <b>تنظیمات و مدیریت نمایندگان</b>\n\n"
@@ -37,30 +49,32 @@ async def admin_agent_menu(callback: types.CallbackQuery, state: FSMContext):
     )
 
     builder = InlineKeyboardBuilder()
-
-    # Row 1: Default Text | Commission Percent
     builder.row(
         types.InlineKeyboardButton(text="📝 تنظیم متن پیشفرض", callback_data="agent_admin_text"),
         types.InlineKeyboardButton(text="📊 تنظیم درصد کمیسیون", callback_data="agent_admin_percent")
     )
-
-    # Row 2: Unsettled List | Activation Requests
     builder.row(
-        types.InlineKeyboardButton(text="⏳ تسویه نشده‌ها", callback_data="agent_unsettled_page_0"),
-        types.InlineKeyboardButton(text="📩 درخواست‌های فعالسازی", callback_data="agent_act_page_0")
+        types.InlineKeyboardButton(
+            text=_badge("⏳ تسویه نشده‌ها", pending_settlements),
+            callback_data="agent_unsettled_page_0"
+        ),
+        types.InlineKeyboardButton(
+            text=_badge("📩 فعالسازی تسویه", pending_activations),
+            callback_data="agent_act_page_0"
+        )
     )
-
-    # Row 3: Minimum Settlement Amount
     builder.row(
-        types.InlineKeyboardButton(text="🎯 تنظیم حداقل موجودی برای ثبت درخواست تسویه", callback_data="agent_admin_min_settle")
+        types.InlineKeyboardButton(text="🎯 تنظیم حداقل موجودی تسویه", callback_data="agent_admin_min_settle")
     )
-
-    # Row 4: Back
     builder.row(
         types.InlineKeyboardButton(text="🔙 بازگشت", callback_data="admin_panel_start", style="danger")
     )
 
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    try:
+        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    except Exception as e:
+        if "not modified" not in str(e).lower():
+            raise
 
 
 # === SETTING 1: DEFAULT TEXT ===
@@ -205,7 +219,7 @@ async def process_min_settlement(message: types.Message, state: FSMContext):
 async def list_unsettled_settlements(callback: types.CallbackQuery):
     """
     Displays unsettled (pending/waiting) settlement requests sorted by amount descending,
-    with pagination and item navigation.
+    with pagination, refresh button, and item navigation.
     """
     if not is_admin(callback.message):
         return await callback.answer("❌ دسترسی غیرمجاز.", show_alert=True)
@@ -226,8 +240,14 @@ async def list_unsettled_settlements(callback: types.CallbackQuery):
 
     if not items:
         text = "✅ در حال حاضر هیچ درخواست تسویه نشده یا منتظر مانده‌ای وجود ندارد."
+        builder.row(types.InlineKeyboardButton(text="🔄 بروزرسانی", callback_data="agent_unsettled_page_0"))
         builder.row(types.InlineKeyboardButton(text="🔙 بازگشت به تنظیمات نمایندگان", callback_data="admin_agent", style="danger"))
-        return await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        try:
+            return await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        except Exception as e:
+            if "not modified" not in str(e).lower():
+                raise
+            return
 
     text = (
         "⏳ <b>لیست تسویه‌های منتظر مانده (تسویه نشده‌ها)</b>\n\n"
@@ -245,21 +265,25 @@ async def list_unsettled_settlements(callback: types.CallbackQuery):
             )
         )
 
-    # Navigation buttons
+    # Navigation row
     nav_buttons = []
     if page > 0:
-        nav_buttons.append(types.InlineKeyboardButton(text="◀️ صفحه قبل", callback_data=f"agent_unsettled_page_{page - 1}"))
-    nav_buttons.append(types.InlineKeyboardButton(text=f"صفحه {page + 1} از {total_pages}", callback_data="noop"))
+        nav_buttons.append(types.InlineKeyboardButton(text="◀️ قبل", callback_data=f"agent_unsettled_page_{page - 1}"))
+    nav_buttons.append(types.InlineKeyboardButton(text=f"📄 {page + 1} از {total_pages}", callback_data="noop"))
     if page < total_pages - 1:
-        nav_buttons.append(types.InlineKeyboardButton(text="صفحه بعد ▶️", callback_data=f"agent_unsettled_page_{page + 1}"))
+        nav_buttons.append(types.InlineKeyboardButton(text="بعدی ▶️", callback_data=f"agent_unsettled_page_{page + 1}"))
     if nav_buttons:
         builder.row(*nav_buttons)
 
-    builder.row(
-        types.InlineKeyboardButton(text="🔙 بازگشت به تنظیمات نمایندگان", callback_data="admin_agent", style="danger")
-    )
+    # Refresh + Back
+    builder.row(types.InlineKeyboardButton(text="🔄 بروزرسانی آنی", callback_data=f"agent_unsettled_page_{page}"))
+    builder.row(types.InlineKeyboardButton(text="🔙 بازگشت به تنظیمات نمایندگان", callback_data="admin_agent", style="danger"))
 
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    try:
+        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    except Exception as e:
+        if "not modified" not in str(e).lower():
+            raise
 
 
 @admin_agent_router.callback_query(F.data.startswith("agent_stl_view_"))
@@ -473,16 +497,20 @@ async def list_activation_requests(callback: types.CallbackQuery):
             )
         )
 
-    # Navigation buttons
+    # Navigation row
     nav_buttons = []
     if page > 0:
-        nav_buttons.append(types.InlineKeyboardButton(text="◀️ صفحه قبل", callback_data=f"agent_act_page_{page - 1}"))
-    nav_buttons.append(types.InlineKeyboardButton(text=f"صفحه {page + 1} از {total_pages}", callback_data="noop"))
+        nav_buttons.append(types.InlineKeyboardButton(text="◀️ قبل", callback_data=f"agent_act_page_{page - 1}"))
+    nav_buttons.append(types.InlineKeyboardButton(text=f"📄 {page + 1} از {total_pages}", callback_data="noop"))
     if page < total_pages - 1:
-        nav_buttons.append(types.InlineKeyboardButton(text="صفحه بعد ▶️", callback_data=f"agent_act_page_{page + 1}"))
+        nav_buttons.append(types.InlineKeyboardButton(text="بعدی ▶️", callback_data=f"agent_act_page_{page + 1}"))
     if nav_buttons:
         builder.row(*nav_buttons)
 
+    # Refresh + Back row
+    builder.row(
+        types.InlineKeyboardButton(text="🔄 بروزرسانی لیست", callback_data=f"agent_act_page_{page}")
+    )
     builder.row(
         types.InlineKeyboardButton(text="🔙 بازگشت به تنظیمات نمایندگان", callback_data="admin_agent", style="danger")
     )
@@ -640,7 +668,10 @@ async def process_activation_reject_reason(message: types.Message, state: FSMCon
     )
 
 
-# === NOOP HANDLER ===
-@admin_agent_router.callback_query(F.data == "noop")
-async def noop_callback(callback: types.CallbackQuery):
-    await callback.answer()
+# === NEUTRAL BUTTONS HANDLER (PREVENTS "QUERY IS TOO OLD") ===
+@admin_agent_router.callback_query(F.data.in_(["noop", "none"]))
+async def handle_noop(callback: types.CallbackQuery):
+    try:
+        await callback.answer()
+    except Exception:
+        pass

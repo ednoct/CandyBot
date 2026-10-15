@@ -551,3 +551,12 @@ async def finalize_settlement_request(callback: types.CallbackQuery, state: FSMC
             )
         except Exception as e:
             logger.error(f"Failed to notify admin {admin_id} for settlement #{settlement_id}: {e}")
+
+
+# === NEUTRAL BUTTONS HANDLER (PREVENTS "QUERY IS TOO OLD") ===
+@agent_router.callback_query(F.data.in_(["noop", "none"]))
+async def handle_noop(callback: types.CallbackQuery):
+    try:
+        await callback.answer()
+    except Exception:
+        pass

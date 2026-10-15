@@ -537,3 +537,12 @@ async def admin_db_cleanup_now_handler(callback: types.CallbackQuery):
     await callback.answer(alert_msg, show_alert=True)
     await admin_db_cleanup_menu(callback)
 
+
+# === NEUTRAL BUTTONS HANDLER (PREVENTS "QUERY IS TOO OLD") ===
+@admin_settings_router.callback_query(F.data.in_(["noop", "none"]))
+async def handle_noop(callback: types.CallbackQuery):
+    try:
+        await callback.answer()
+    except Exception:
+        pass
+
