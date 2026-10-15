@@ -238,6 +238,11 @@ class XUIClient:
         return data
 
     # public API
+    async def get_inbounds(self) -> list:
+        """Return all inbounds from panel including clientStats and settings."""
+        data = await self._get("panel/api/inbounds/list")
+        return data.get("obj") or []
+
     async def get_active_inbound_ids(self) -> list:
         """Return IDs of all enabled inbounds."""
         data = await self._get("panel/api/inbounds/list")

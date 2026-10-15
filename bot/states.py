@@ -34,6 +34,7 @@ class AdminStates(StatesGroup):
     waiting_for_order_id = State()
     waiting_for_global_traffic_days = State()
     waiting_for_global_traffic_gb = State()
+    waiting_for_commission_balance_change = State()
     
     waiting_for_admin_user_msg = State()
     waiting_for_fast_gift_value = State()

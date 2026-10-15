@@ -14,11 +14,25 @@ import csv
 import io
 from .admin import is_admin
 from database import db_manager
+from utils.date_formatter import (
+    get_current_jalali,
+    get_jalali_date,
+    gregorian_to_jalali,
+    jalali_to_gregorian,
+    get_days_in_jalali_month,
+    get_persian_weekday_index,
+    get_persian_weekday_name,
+    parse_custom_date_input,
+    JALALI_MONTH_NAMES,
+    PERSIAN_WEEKDAYS_SHORT,
+    PERSIAN_WEEKDAYS_FULL
+)
 
 admin_reports_router = Router()
 
 class AdminReportStates(StatesGroup):
     waiting_for_report_group_id = State()
+    waiting_for_custom_date = State()
 
 TOPICS = {
     "buy_report": "🛍 گزارش های خرید",
@@ -44,16 +58,20 @@ async def reports_menu(callback: types.CallbackQuery):
     # To keep the export buttons accessible, we will show the main menu with the advanced stats entry.
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="📊 آمار پیشرفته ربات", callback_data="stats_all")
-    
-    # Reports Settings
-    builder.button(text="📣 تنظیمات گروه گزارشات", callback_data="report_group_setup")
+    builder.row(
+        types.InlineKeyboardButton(text="📊 آمار پیشرفته ربات", callback_data="stats_all"),
+        types.InlineKeyboardButton(text="📣 تنظیمات گروه گزارشات", callback_data="report_group_setup")
+    )
     
     # Exports
-    builder.button(text="📑 خروجی کاربران", callback_data="export_users")
-    builder.button(text="📑 خروجی سفارشات", callback_data="export_orders")
-    builder.button(text="📑 خروجی تراکنش‌ها", callback_data="export_payments")
-    builder.button(text="📑 خروجی تسویه‌های نمایندگی", callback_data="export_agent_settlements")
+    builder.row(
+        types.InlineKeyboardButton(text="📑 خروجی کاربران", callback_data="export_users"),
+        types.InlineKeyboardButton(text="📑 خروجی سفارشات", callback_data="export_orders")
+    )
+    builder.row(
+        types.InlineKeyboardButton(text="📑 خروجی تراکنش‌ها", callback_data="export_payments"),
+        types.InlineKeyboardButton(text="📑 خروجی تسویه‌های نمایندگی", callback_data="export_agent_settlements")
+    )
     
     # CRM
     builder.button(text="👥 پیگیری تست (CRM)", callback_data="crm_trial_followup")
@@ -133,7 +151,7 @@ async def report_setup_process(message: types.Message, state: FSMContext, bot: B
 
 # === ROUTER: FETCH STATS ===
 @admin_reports_router.callback_query(F.data.startswith("stats_"))
-async def fetch_stats(callback: types.CallbackQuery):
+async def fetch_stats(callback: types.CallbackQuery, state: FSMContext = None):
     """Handles fetch stats."""
     if not is_admin(callback.message): return
     action = callback.data.split("_")[1]
@@ -162,11 +180,8 @@ async def fetch_stats(callback: types.CallbackQuery):
         params = (start,)
         title = "🕐 آمار ماه فعلی"
     elif action == "prevmonth":
-        # First day of current month
         first_day_curr = now.replace(day=1, hour=0, minute=0, second=0)
-        # Last day of prev month
         last_day_prev = first_day_curr - timedelta(seconds=1)
-        # First day of prev month
         first_day_prev = last_day_prev.replace(day=1, hour=0, minute=0, second=0)
         
         start = first_day_prev.strftime('%Y-%m-%d %H:%M:%S')
@@ -181,8 +196,9 @@ async def fetch_stats(callback: types.CallbackQuery):
         params = (start,)
         title = "🕐 آمار یک ساعت اخیر"
     elif action == "custom":
-        await callback.answer("این بخش در آپدیت‌های بعدی اضافه خواهد شد.", show_alert=True)
-        return
+        if state:
+            await state.clear()
+        return await stats_custom_menu(callback, state)
         
     stats = await db_manager.get_advanced_bot_stats(clause, params)
     
@@ -212,7 +228,7 @@ async def fetch_stats(callback: types.CallbackQuery):
     builder.row(InlineKeyboardButton(text="⏱ آمار کل", callback_data="stats_all"))
     # Row 2
     builder.row(InlineKeyboardButton(text="⏱ یک ساعت اخیر", callback_data="stats_hour"))
-    # Row 3: [امروز] | [دیروز] -> In code from right to left: Today | Yesterday
+    # Row 3: [امروز] | [دیروز]
     builder.row(
         InlineKeyboardButton(text="امروز ☁️", callback_data="stats_today"),
         InlineKeyboardButton(text="دیروز ☀️", callback_data="stats_yesterday")
@@ -230,10 +246,400 @@ async def fetch_stats(callback: types.CallbackQuery):
     try:
         await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
     except Exception as e:
-        # Ignore message not modified error
         pass
     
     await callback.answer()
+
+
+# ============================================================
+# === CUSTOM DATE & CALENDAR SYSTEM (حرفه‌ای و تعاملی) ===
+# ============================================================
+
+def build_jalali_calendar_keyboard(jy: int, jm: int) -> InlineKeyboardBuilder:
+    """Creates a full 7-column interactive Jalali calendar inline keyboard."""
+    builder = InlineKeyboardBuilder()
+    
+    # Month navigation
+    if jm == 1:
+        prev_y, prev_m = jy - 1, 12
+    else:
+        prev_y, prev_m = jy, jm - 1
+        
+    if jm == 12:
+        next_y, next_m = jy + 1, 1
+    else:
+        next_y, next_m = jy, jm + 1
+        
+    m_name = JALALI_MONTH_NAMES[jm] if 1 <= jm <= 12 else str(jm)
+    
+    builder.row(
+        types.InlineKeyboardButton(text="◀️ ماه قبل", callback_data=f"cal_nav:{prev_y}:{prev_m}"),
+        types.InlineKeyboardButton(text=f"📅 {m_name} {jy}", callback_data="none"),
+        types.InlineKeyboardButton(text="ماه بعد ▶️", callback_data=f"cal_nav:{next_y}:{next_m}")
+    )
+    
+    # Weekday headers (شنبه تا جمعه)
+    headers = [
+        types.InlineKeyboardButton(text=lbl, callback_data="none")
+        for lbl in PERSIAN_WEEKDAYS_SHORT
+    ]
+    builder.row(*headers)
+    
+    # Calculate days in month & starting weekday
+    days_in_month = get_days_in_jalali_month(jy, jm)
+    gy, gm, gd = jalali_to_gregorian(jy, jm, 1)
+    start_weekday = get_persian_weekday_index(gy, gm, gd)  # 0=Saturday, 6=Friday
+    
+    now = datetime.now()
+    cur_jy, cur_jm, cur_jd = gregorian_to_jalali(now.year, now.month, now.day)
+    
+    current_row = []
+    # Spacers before the first day of the month
+    for _ in range(start_weekday):
+        current_row.append(types.InlineKeyboardButton(text="·", callback_data="none"))
+        
+    for day in range(1, days_in_month + 1):
+        is_today = (jy == cur_jy and jm == cur_jm and day == cur_jd)
+        day_text = f"🌟{day}" if is_today else str(day)
+        
+        current_row.append(
+            types.InlineKeyboardButton(
+                text=day_text,
+                callback_data=f"cal_pick:{jy}:{jm}:{day}"
+            )
+        )
+        
+        if len(current_row) == 7:
+            builder.row(*current_row)
+            current_row = []
+            
+    if current_row:
+        while len(current_row) < 7:
+            current_row.append(types.InlineKeyboardButton(text="·", callback_data="none"))
+        builder.row(*current_row)
+        
+    # Quick action row
+    builder.row(
+        types.InlineKeyboardButton(text="⚡ امروز", callback_data=f"cal_pick:{cur_jy}:{cur_jm}:{cur_jd}"),
+        types.InlineKeyboardButton(text="✍️ ورود دستی تاریخ", callback_data="custom_date_manual")
+    )
+    builder.row(
+        types.InlineKeyboardButton(text="🔙 بازگشت به گزینه‌های تاریخ", callback_data="stats_custom", style="danger")
+    )
+    
+    return builder
+
+
+async def render_custom_stats_view(
+    callback_or_message,
+    start_str: str,
+    end_str: str,
+    title: str,
+    is_message: bool = False
+):
+    """Fetches and renders statistics for the given datetime range."""
+    stats = await db_manager.get_advanced_bot_stats(
+        "WHERE created_at BETWEEN ? AND ?",
+        (start_str, end_str)
+    )
+
+    text = (
+        f"🗓 **{title}**\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"👤 **بخش کاربران:**\n"
+        f"🔹 کاربران جدید این بازه: `{stats['total_users']}` نفر\n"
+        f"🔹 کاربران دارای خرید: `{stats['users_with_purchase']}` نفر\n"
+        f"🔹 اکانت‌های تست صادر شده: `{stats['test_accounts']}` مورد\n"
+        f"🔹 موجودی کل کاربران: `{stats['total_balance']:,}` تومان\n"
+        f"🔹 نظرسنجی‌ها: `{stats['poll_count']}` مورد (میانگین `{stats['avg_poll_rating']}` ⭐)\n\n"
+        f"💰 **بخش مالی و سفارشات:**\n"
+        f"🔸 تعداد کل فروش موفق: `{stats['total_sales_count']}` سفارش\n"
+        f"🔸 جمع کل فروش: `{stats['total_sales_amount']:,}` تومان\n"
+        f"🔸 جمع کل تمدیدها: `{stats['total_renewal_amount']:,}` تومان\n"
+        f"🔸 میانگین خرید هر مشتری: `{stats['avg_purchase']:,}` تومان\n"
+        f"🔸 درصد تمدید از فروش: `{stats['renewal_percentage']}%`\n"
+        f"🔸 نرخ تبدیل به مشتری: `{stats['conversion_rate']}%`\n"
+    )
+
+    # Encode start/end dates for CSV export callback (short format: YYYY-MM-DD)
+    s_tag = start_str[:10]
+    e_tag = end_str[:10]
+
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        types.InlineKeyboardButton(text="🗓 انتخاب تاریخ دیگر", callback_data="stats_custom"),
+        types.InlineKeyboardButton(text="📑 خروجی سفارشات (CSV)", callback_data=f"exp_dt:{s_tag}:{e_tag}")
+    )
+    builder.row(
+        types.InlineKeyboardButton(text="⏱ بازگشت به آمار کل", callback_data="stats_all", style="danger")
+    )
+
+    if is_message:
+        await callback_or_message.answer(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+    else:
+        try:
+            await callback_or_message.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+        except Exception:
+            pass
+        await callback_or_message.answer()
+
+
+@admin_reports_router.callback_query(F.data == "stats_custom")
+async def stats_custom_menu(callback: types.CallbackQuery, state: FSMContext = None):
+    """Interactive Custom Date & Range Dashboard."""
+    if not is_admin(callback.message): return
+    if state:
+        await state.clear()
+        
+    now = datetime.now()
+    cur_jy, cur_jm, cur_jd = gregorian_to_jalali(now.year, now.month, now.day)
+    m_name = JALALI_MONTH_NAMES[cur_jm]
+    w_name = get_persian_weekday_name(now.year, now.month, now.day)
+    today_jalali_str = f"{w_name} {cur_jd} {m_name} {cur_jy}"
+    
+    text = (
+        "🗓 **مشاهده آمار در تاریخ و بازه مشخص**\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"📅 امروز: **{today_jalali_str}**\n\n"
+        "یکی از بازه‌های آماده را انتخاب کنید، با تقویم هوشمند روز دقیق را تعیین نمایید، یا تاریخ دلخواهتان را تایپ کنید:"
+    )
+    
+    builder = InlineKeyboardBuilder()
+    
+    # Row 1: Quick range presets
+    builder.row(
+        types.InlineKeyboardButton(text="⚡ ۷ روز اخیر", callback_data="stats_quick:7d"),
+        types.InlineKeyboardButton(text="⚡ ۳۰ روز اخیر", callback_data="stats_quick:30d")
+    )
+    # Row 2: Week and Jalali Month presets
+    builder.row(
+        types.InlineKeyboardButton(text="⚡ این هفته (از شنبه)", callback_data="stats_quick:this_week"),
+        types.InlineKeyboardButton(text="⚡ این ماه شمسی", callback_data="stats_quick:this_month")
+    )
+    # Row 3: Previous Jalali month
+    builder.row(
+        types.InlineKeyboardButton(text="⚡ ماه قبل شمسی", callback_data="stats_quick:prev_month")
+    )
+    # Row 4: Interactive Jalali Calendar
+    builder.row(
+        types.InlineKeyboardButton(text="🗓 تقویم شمسی هوشمند (انتخاب روز)", callback_data=f"cal_nav:{cur_jy}:{cur_jm}")
+    )
+    # Row 5: Manual text input
+    builder.row(
+        types.InlineKeyboardButton(text="✍️ ورود دستی تاریخ یا بازه", callback_data="custom_date_manual")
+    )
+    # Row 6: Back
+    builder.row(
+        types.InlineKeyboardButton(text="🔙 بازگشت به آمار کل", callback_data="stats_all", style="danger")
+    )
+    
+    try:
+        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+    except Exception:
+        pass
+    await callback.answer()
+
+
+@admin_reports_router.callback_query(F.data.startswith("stats_quick:"))
+async def stats_quick_handler(callback: types.CallbackQuery):
+    """Handles quick preset date ranges."""
+    if not is_admin(callback.message): return
+    range_type = callback.data.split(":")[1]
+    now = datetime.now()
+    cur_jy, cur_jm, cur_jd = gregorian_to_jalali(now.year, now.month, now.day)
+    
+    if range_type == "7d":
+        start_dt = (now - timedelta(days=7)).replace(hour=0, minute=0, second=0)
+        start_str = start_dt.strftime('%Y-%m-%d 00:00:00')
+        end_str = now.strftime('%Y-%m-%d 23:59:59')
+        title = "آمار ۷ روز اخیر"
+    elif range_type == "30d":
+        start_dt = (now - timedelta(days=30)).replace(hour=0, minute=0, second=0)
+        start_str = start_dt.strftime('%Y-%m-%d 00:00:00')
+        end_str = now.strftime('%Y-%m-%d 23:59:59')
+        title = "آمار ۳۰ روز اخیر"
+    elif range_type == "this_week":
+        w_idx = get_persian_weekday_index(now.year, now.month, now.day)
+        sat_dt = (now - timedelta(days=w_idx)).replace(hour=0, minute=0, second=0)
+        start_str = sat_dt.strftime('%Y-%m-%d 00:00:00')
+        end_str = now.strftime('%Y-%m-%d 23:59:59')
+        title = "آمار هفته جاری (از شنبه تا کنون)"
+    elif range_type == "this_month":
+        gy, gm, gd = jalali_to_gregorian(cur_jy, cur_jm, 1)
+        start_str = f"{gy:04d}-{gm:02d}-{gd:02d} 00:00:00"
+        end_str = now.strftime('%Y-%m-%d 23:59:59')
+        m_name = JALALI_MONTH_NAMES[cur_jm]
+        title = f"آمار ماه جاری ({m_name} {cur_jy})"
+    elif range_type == "prev_month":
+        if cur_jm == 1:
+            p_jy, p_jm = cur_jy - 1, 12
+        else:
+            p_jy, p_jm = cur_jy, cur_jm - 1
+        days_in_p = get_days_in_jalali_month(p_jy, p_jm)
+        gy_s, gm_s, gd_s = jalali_to_gregorian(p_jy, p_jm, 1)
+        gy_e, gm_e, gd_e = jalali_to_gregorian(p_jy, p_jm, days_in_p)
+        start_str = f"{gy_s:04d}-{gm_s:02d}-{gd_s:02d} 00:00:00"
+        end_str = f"{gy_e:04d}-{gm_e:02d}-{gd_e:02d} 23:59:59"
+        m_name = JALALI_MONTH_NAMES[p_jm]
+        title = f"آمار ماه قبل ({m_name} {p_jy})"
+    else:
+        return await callback.answer("بازه نامعتبر", show_alert=True)
+        
+    await render_custom_stats_view(callback, start_str, end_str, title)
+
+
+@admin_reports_router.callback_query(F.data.startswith("cal_nav:"))
+async def cal_nav_handler(callback: types.CallbackQuery):
+    """Navigates through Jalali calendar months."""
+    if not is_admin(callback.message): return
+    _, jy_str, jm_str = callback.data.split(":")
+    jy, jm = int(jy_str), int(jm_str)
+    
+    builder = build_jalali_calendar_keyboard(jy, jm)
+    m_name = JALALI_MONTH_NAMES[jm] if 1 <= jm <= 12 else str(jm)
+    
+    text = (
+        f"🗓 **تقویم هوشمند شمسی — {m_name} {jy}**\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        "برای مشاهده آمار فروش و کاربران، روی روز مورد نظر کلیک کنید:"
+    )
+    
+    try:
+        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+    except Exception:
+        pass
+    await callback.answer()
+
+
+@admin_reports_router.callback_query(F.data.startswith("cal_pick:"))
+async def cal_pick_handler(callback: types.CallbackQuery):
+    """Picks a specific Jalali day and shows its stats."""
+    if not is_admin(callback.message): return
+    _, jy_str, jm_str, jd_str = callback.data.split(":")
+    jy, jm, jd = int(jy_str), int(jm_str), int(jd_str)
+    
+    gy, gm, gd = jalali_to_gregorian(jy, jm, jd)
+    start_str = f"{gy:04d}-{gm:02d}-{gd:02d} 00:00:00"
+    end_str = f"{gy:04d}-{gm:02d}-{gd:02d} 23:59:59"
+    
+    w_name = get_persian_weekday_name(gy, gm, gd)
+    m_name = JALALI_MONTH_NAMES[jm] if 1 <= jm <= 12 else str(jm)
+    title = f"آمار روز {w_name} {jd} {m_name} {jy} ({gy:04d}-{gm:02d}-{gd:02d})"
+    
+    await render_custom_stats_view(callback, start_str, end_str, title)
+
+
+@admin_reports_router.callback_query(F.data == "custom_date_manual")
+async def custom_date_manual_start(callback: types.CallbackQuery, state: FSMContext):
+    """Prompts admin to enter date or range as text."""
+    if not is_admin(callback.message): return
+    await state.set_state(AdminReportStates.waiting_for_custom_date)
+    
+    text = (
+        "✍️ **ورود دستی تاریخ یا بازه زمانی**\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        "لطفاً تاریخ یا بازه مورد نظرتان را به یکی از فرمت‌های زیر ارسال کنید:\n\n"
+        "📌 **یک روز مشخص:**\n"
+        "• `1403/07/24` یا `1403-07-24`\n"
+        "• `2024-10-15`\n\n"
+        "📌 **بازه زمانی دلخواه:**\n"
+        "• `1403/07/01 تا 1403/07/24`\n"
+        "• `1403/07/01 - 1403/07/24`\n"
+        "• `2024-10-01 to 2024-10-15`\n\n"
+        "*(ارقام فارسی یا انگلیسی قابل قبول هستند)*"
+    )
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(types.InlineKeyboardButton(text="🔙 انصراف و بازگشت", callback_data="stats_custom"))
+    
+    try:
+        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+    except Exception:
+        pass
+    await callback.answer()
+
+
+@admin_reports_router.message(AdminReportStates.waiting_for_custom_date)
+async def custom_date_process(message: types.Message, state: FSMContext):
+    """Processes manual date input from the admin."""
+    if not is_admin(message): return
+    
+    parsed = parse_custom_date_input(message.text)
+    if not parsed:
+        builder = InlineKeyboardBuilder()
+        builder.row(types.InlineKeyboardButton(text="🔙 انصراف و بازگشت", callback_data="stats_custom"))
+        return await message.answer(
+            "❌ **فرمت تاریخ وارد شده نامعتبر است!**\n\n"
+            "لطفاً تاریخ را به صورت سال/ماه/روز ارسال کنید.\n"
+            "• مثال یک روز: `1403/07/24`\n"
+            "• مثال بازه زمانی: `1403/07/01 تا 1403/07/24`",
+            reply_markup=builder.as_markup(),
+            parse_mode="Markdown"
+        )
+        
+    await state.clear()
+    start_str, end_str, title = parsed
+    await render_custom_stats_view(message, start_str, end_str, title, is_message=True)
+
+
+@admin_reports_router.callback_query(F.data.startswith("exp_dt:"))
+async def export_custom_date_orders(callback: types.CallbackQuery):
+    """Exports orders in the custom date range to a CSV file."""
+    if not is_admin(callback.message): return
+    _, s_tag, e_tag = callback.data.split(":")
+    start_str = f"{s_tag} 00:00:00"
+    end_str = f"{e_tag} 23:59:59"
+    
+    await callback.answer("در حال ساخت فایل اکسل سفارشات...", show_alert=False)
+    
+    rows = await db_manager.get_orders_in_timeframe(start_str, end_str)
+    if not rows:
+        return await callback.message.answer(f"❌ هیچ سفارشی با وضعیت موفق در بازه {s_tag} تا {e_tag} یافت نشد.")
+        
+    headers = [
+        "شناسه فاکتور",
+        "آیدی کاربر",
+        "نام کاربری",
+        "پلن",
+        "مدت (روز)",
+        "حجم (گیگابایت)",
+        "مبلغ پرداختی (تومان)",
+        "وضعیت",
+        "نوع سفارش",
+        "تاریخ و زمان ثبت"
+    ]
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(headers)
+    
+    for r in rows:
+        order_type = "تمدید سرویس" if r['renew_license_id'] else "خرید جدید"
+        writer.writerow([
+            r['id'],
+            r['user_id'],
+            r['username'] or '',
+            r['plan_name'] or str(r['plan_id'] or ''),
+            r['days'] or 0,
+            r['gb'] or 0,
+            r['final_amount'] or 0,
+            r['status'],
+            order_type,
+            r['created_at']
+        ])
+        
+    output.seek(0)
+    from aiogram.types import BufferedInputFile
+    file = BufferedInputFile(
+        output.getvalue().encode('utf-8-sig'),
+        filename=f"orders_{s_tag}_to_{e_tag}.csv"
+    )
+    
+    await callback.message.answer_document(
+        file,
+        caption=f"📑 **خروجی سفارشات بازه {s_tag} تا {e_tag}**\nتعداد کل سفارشات موفق: `{len(rows)}` مورد",
+        parse_mode="Markdown"
+    )
 
 # === ROUTER: EXPORT DATA ===
 @admin_reports_router.callback_query(F.data.startswith("export_"))

@@ -242,22 +242,29 @@ class PaymentConfirmationManager:
         else:
             binding = await db_manager.get_plan_panel(plan_id)
         if not binding:
+            error_msg = f"درخواست پنل برای پلن {plan_id} تعریف نشده (plan_panel خالی است)"
             logging.error(f"No panel bound to plan {plan_id} for invoice {invoice_id}. Cannot provision.")
             await self._notify_provisioning_failure(
                 user_id,
                 invoice_id,
-                "❌ پرداخت شما تایید شد اما هنوز هیچ پنلی به این پلن متصل نشده است. "
-                "با پشتیبانی تماس بگیرید تا لایسنس شما صادر شود."
+                "❌ پرداخت شما تایید شد اما ادامه فرآیند با مشکل مواجه شد. "
+                "لطفاً با پشتیبانی تماس بگیرید تا لایسنس شما صادر شود.",
+                notify_admins=True,
+                admin_error=error_msg
             )
             return
 
         panel = await db_manager.get_xui_panel(binding['panel_id'])
         if not panel:
+            error_msg = f"پنل {binding['panel_id']} که به پلن {plan_id} متصل بود در دیتابیس یافت نشد"
             logging.error(f"Panel {binding['panel_id']} referenced by plan {plan_id} not found.")
             await db_manager.mark_invoice_issue(invoice_id, "پنل تعریف شده برای این پلن وجود ندارد.")
             await self._notify_provisioning_failure(
                 user_id, invoice_id,
-                "❌ خطای داخلی: پنل تعریف شده برای این پلن در دیتابیس وجود ندارد. با پشتیبانی تماس بگیرید."
+                "❌ پرداخت شما تایید شد اما ادامه فرآیند با مشکل مواجه شد. "
+                "لطفاً با پشتیبانی تماس بگیرید تا لایسنس شما صادر شود.",
+                notify_admins=True,
+                admin_error=error_msg
             )
             return
 

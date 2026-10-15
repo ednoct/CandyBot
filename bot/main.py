@@ -146,7 +146,6 @@ async def main():
         admin_settings_router,
         admin_finance_router,
         admin_users_router,
-        admin_shop_router,
         admin_plans_router,
         admin_reports_router,
         admin_xui_router,
@@ -171,7 +170,6 @@ async def main():
     dp.include_router(admin_settings_router)
     dp.include_router(admin_finance_router)
     dp.include_router(admin_users_router)
-    dp.include_router(admin_shop_router)
     dp.include_router(admin_xui_router)
     dp.include_router(admin_discounts_router)
     dp.include_router(admin_free_trial_router)

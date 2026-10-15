@@ -13,7 +13,6 @@
 │   │   ├── admin_plans.py
 │   │   ├── admin_reports.py
 │   │   ├── admin_settings.py
-│   │   ├── admin_shop.py
 │   │   ├── admin_users.py
 │   │   ├── admin_xui.py
 │   │   ├── checkout.py
@@ -180,12 +179,6 @@
 * `# ============================================================`
 
 > Telegram handlers for 3x-ui panel management (adding, viewing, and deleting panels) using a multi-step FSM.
-
-### `bot/routers/admin_shop.py`
-* `# === IMPORTS ===`
-* `# === ROUTER: SHOP MENU ===`
-
-> Telegram handlers for shop toggles like bulk buy and copy cart configurations.
 
 ### `bot/routers/admin_plans.py`
 * `# === IMPORTS ===`

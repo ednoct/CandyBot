@@ -9,7 +9,6 @@ from .admin import admin_router
 from .admin_settings import admin_settings_router
 from .admin_finance import admin_finance_router
 from .admin_users import admin_users_router
-from .admin_shop import admin_shop_router
 from .admin_plans import admin_plans_router
 from .admin_reports import admin_reports_router
 from .admin_xui import admin_xui_router
@@ -30,7 +29,6 @@ __all__ = [
     "admin_settings_router",
     "admin_finance_router",
     "admin_users_router",
-    "admin_shop_router",
     "admin_plans_router",
     "admin_reports_router",
     "admin_xui_router",

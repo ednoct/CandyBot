@@ -201,10 +201,18 @@ async def cleanup_miniapp_migration():
         await db.commit()
 
 # === USER OPERATIONS ===
-async def get_user(user_id: int):
-    """Handles get user."""
+async def get_user(user_id: int | str):
+    """Handles get user by ID or username."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
+        if isinstance(user_id, str):
+            clean = user_id.lstrip('@').strip()
+            if clean.isdigit():
+                async with db.execute('SELECT * FROM users WHERE id = ?', (int(clean),)) as cursor:
+                    res = await cursor.fetchone()
+                    if res: return res
+            async with db.execute('SELECT * FROM users WHERE username = ? OR username = ?', (clean, f"@{clean}")) as cursor:
+                return await cursor.fetchone()
         async with db.execute('SELECT * FROM users WHERE id = ?', (user_id,)) as cursor:
             return await cursor.fetchone()
 
@@ -226,6 +234,26 @@ async def update_user_balance(user_id: int, amount_change: int):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute('UPDATE users SET balance = balance + ? WHERE id = ?', (amount_change, user_id))
         await db.commit()
+
+async def adjust_user_commission_balance(user_id: int | str, delta: int) -> tuple[int, int] | None:
+    """
+    Adjusts user's agent_commission_balance by delta (+ to add, - to deduct).
+    Floors at 0 so commission balance cannot become negative.
+    Returns (old_balance, new_balance) on success, or None if user not found.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        target = int(user_id) if str(user_id).isdigit() else user_id
+        async with db.execute("SELECT id, agent_commission_balance FROM users WHERE id = ?", (target,)) as cur:
+            row = await cur.fetchone()
+            if not row:
+                return None
+            old_balance = int(row['agent_commission_balance']) if row['agent_commission_balance'] is not None else 0
+
+        new_balance = max(0, old_balance + delta)
+        await db.execute("UPDATE users SET agent_commission_balance = ? WHERE id = ?", (new_balance, row['id']))
+        await db.commit()
+        return old_balance, new_balance
 
 # === GENERIC DB OPERATIONS ===
 async def fetch_all(sql: str, params: tuple = ()):
@@ -721,20 +749,22 @@ async def get_advanced_bot_stats(timeframe_clause: str = "", timeframe_params: t
     """Handles get advanced bot stats."""
     import time
     async with aiosqlite.connect(DB_PATH) as db:
+        order_timeframe = timeframe_clause.replace("WHERE ", "AND ") if timeframe_clause else ""
+
         # User Stats
         async with db.execute(f"SELECT COUNT(*) FROM users {timeframe_clause}", timeframe_params) as cursor:
             total_users = (await cursor.fetchone())[0]
             
-        async with db.execute("SELECT COUNT(DISTINCT user_id) FROM invoices WHERE status IN ('paid', 'approved')") as cursor:
-            users_with_purchase = (await cursor.fetchone())[0]
+        async with db.execute(f"SELECT COUNT(DISTINCT user_id) FROM invoices WHERE status IN ('paid', 'approved') {order_timeframe}", timeframe_params) as cursor:
+            users_with_purchase = (await cursor.fetchone())[0] or 0
             
         async with db.execute(f"SELECT COUNT(*) FROM licenses_cargo WHERE is_free_test=1") as cursor:
             test_accounts_cargo = (await cursor.fetchone())[0]
         
-        async with db.execute(f"SELECT COUNT(*) FROM payment_reports WHERE payment_method = 'free_test'") as cursor:
-            test_accounts_report = (await cursor.fetchone())[0]
+        async with db.execute(f"SELECT COUNT(*) FROM payment_reports WHERE payment_method = 'free_test' {order_timeframe}", timeframe_params) as cursor:
+            test_accounts_report = (await cursor.fetchone())[0] or 0
             
-        test_accounts = test_accounts_cargo + test_accounts_report
+        test_accounts = test_accounts_report if timeframe_clause else (test_accounts_cargo + test_accounts_report)
             
         async with db.execute("SELECT SUM(balance) FROM users") as cursor:
             total_balance = (await cursor.fetchone())[0] or 0
@@ -805,6 +835,22 @@ async def get_invoice_count():
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute('SELECT COUNT(*) FROM invoices') as cursor:
             return (await cursor.fetchone())[0]
+
+async def get_orders_in_timeframe(start_str: str, end_str: str):
+    """Fetch invoices/orders in a specific datetime range for reporting/exporting."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        sql = """
+            SELECT i.id, i.user_id, u.username, i.plan_id, p.name AS plan_name,
+                   i.days, i.gb, i.final_amount, i.status, i.renew_license_id, i.created_at
+            FROM invoices i
+            LEFT JOIN users u ON i.user_id = u.id
+            LEFT JOIN plans p ON i.plan_id = p.id
+            WHERE i.status IN ('paid', 'approved') AND i.created_at BETWEEN ? AND ?
+            ORDER BY i.created_at DESC
+        """
+        async with db.execute(sql, (start_str, end_str)) as cursor:
+            return await cursor.fetchall()
 
 # === DISCOUNTS & GIFTS ===
 async def get_discount_code(code: str, user_id: int):
@@ -1437,14 +1483,35 @@ async def get_all_active_xui_licenses_non_trial():
             return await cur.fetchall()
 
 async def get_users_with_active_licenses():
+    """
+    Returns users who currently have at least one active, non-trial subscription.
+    Excludes free trials (base_price = 0, license_note containing 'trial', etc.)
+    and excludes expired subscriptions (where invoice days have elapsed).
+    """
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("""
-            SELECT DISTINCT u.id, u.username, u.balance
+            SELECT 
+                u.id, 
+                u.username, 
+                u.balance,
+                u.created_at,
+                COUNT(DISTINCT xl.id) AS sub_count
             FROM users u
             JOIN invoices i ON u.id = i.user_id
             JOIN xui_licenses xl ON i.id = xl.invoice_id
             WHERE i.status = 'approved'
+              AND i.base_price > 0
+              AND (i.plan_id IS NULL OR i.plan_id > 0)
+              AND (xl.license_note IS NULL OR LOWER(xl.license_note) NOT LIKE '%trial%')
+              AND (i.license_note IS NULL OR LOWER(i.license_note) NOT LIKE '%trial%')
+              AND (i.payment_method IS NULL OR (LOWER(i.payment_method) NOT LIKE '%test%' AND LOWER(i.payment_method) NOT LIKE '%trial%'))
+              AND (
+                  i.days IS NULL 
+                  OR i.days <= 0 
+                  OR datetime(COALESCE(i.created_at, xl.created_at), '+' || i.days || ' days') >= datetime('now')
+              )
+            GROUP BY u.id, u.username, u.balance, u.created_at
             ORDER BY u.created_at DESC
         """) as cur:
             return await cur.fetchall()

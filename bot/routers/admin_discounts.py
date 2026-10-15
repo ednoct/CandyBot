@@ -201,16 +201,20 @@ async def add_gift_code(message: types.Message, state: FSMContext):
 @admin_discounts_router.message(AdminStates.waiting_for_admin_gift_value)
 async def add_gift_value(message: types.Message, state: FSMContext):
     if not is_admin(message): return
-    if not message.text.isdigit(): return await message.answer("لطفا فقط عدد وارد کنید.")
-    await state.update_data(g_value=int(message.text))
+    from utils.date_formatter import normalize_persian_digits
+    raw = normalize_persian_digits(message.text.strip()).replace(',', '').replace('،', '')
+    if not raw.isdigit(): return await message.answer("لطفا فقط عدد وارد کنید.")
+    await state.update_data(g_value=int(raw))
     await state.set_state(AdminStates.waiting_for_admin_gift_max_uses)
     await message.answer("تعداد مجاز استفاده را وارد کنید (برای نامحدود 0 ارسال کنید):")
 
 @admin_discounts_router.message(AdminStates.waiting_for_admin_gift_max_uses)
 async def add_gift_max_uses(message: types.Message, state: FSMContext):
     if not is_admin(message): return
-    if not message.text.isdigit(): return await message.answer("لطفا فقط عدد وارد کنید.")
-    max_uses = int(message.text)
+    from utils.date_formatter import normalize_persian_digits
+    raw = normalize_persian_digits(message.text.strip())
+    if not raw.isdigit(): return await message.answer("لطفا فقط عدد وارد کنید.")
+    max_uses = int(raw)
     await state.update_data(g_max_uses=None if max_uses == 0 else max_uses)
     await state.set_state(AdminStates.waiting_for_admin_gift_expiry)
     await message.answer("تعداد روزهای اعتبار این کد را وارد کنید (برای نامحدود 0 ارسال کنید):")
@@ -218,8 +222,10 @@ async def add_gift_max_uses(message: types.Message, state: FSMContext):
 @admin_discounts_router.message(AdminStates.waiting_for_admin_gift_expiry)
 async def add_gift_expiry(message: types.Message, state: FSMContext):
     if not is_admin(message): return
-    if not message.text.isdigit(): return await message.answer("لطفا فقط عدد وارد کنید.")
-    days = int(message.text)
+    from utils.date_formatter import normalize_persian_digits
+    raw = normalize_persian_digits(message.text.strip())
+    if not raw.isdigit(): return await message.answer("لطفا فقط عدد وارد کنید.")
+    days = int(raw)
     
     expiry = None
     if days > 0:
@@ -233,21 +239,29 @@ async def add_gift_expiry(message: types.Message, state: FSMContext):
 @admin_discounts_router.message(AdminStates.waiting_for_admin_gift_user_id)
 async def add_gift_save(message: types.Message, state: FSMContext):
     if not is_admin(message): return
-    uid = message.text.strip()
+    from utils.date_formatter import normalize_persian_digits
+    uid = normalize_persian_digits(message.text.strip())
     if not uid.isdigit(): return await message.answer("لطفا آیدی عددی معتبر یا 0 وارد کنید.")
     
     user_id = None if uid == "0" else int(uid)
     data = await state.get_data()
     
-    async with aiosqlite.connect(db_manager.DB_PATH) as db:
-        await db.execute(
-            "INSERT INTO gift_codes (code, amount, max_uses, used_count, expiration_date, user_id_restriction) VALUES (?, ?, ?, 0, ?, ?)",
-            (data['g_code'], data['g_value'], data['g_max_uses'], data['g_expiry'], user_id)
-        )
-        await db.commit()
+    try:
+        async with aiosqlite.connect(db_manager.DB_PATH) as db:
+            await db.execute(
+                # NOTE: column is `value`, NOT `amount` — matches schema.sql
+                "INSERT INTO gift_codes (code, value, max_uses, used_count, expiration_date, user_id_restriction) VALUES (?, ?, ?, 0, ?, ?)",
+                (data['g_code'], data['g_value'], data['g_max_uses'], data['g_expiry'], user_id)
+            )
+            await db.commit()
+    except Exception as e:
+        import logging
+        logging.error(f"Gift code save failed: {e}", exc_info=True)
+        await state.clear()
+        return await message.answer(f"❌ خطا در ذخیره کد هدیه:\n<code>{str(e)[:300]}</code>", parse_mode="HTML")
         
     await state.clear()
     
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 بازگشت به مدیریت", callback_data="manage_gifts", style="danger")
-    await message.answer(f"✅ کد هدیه {data['g_code']} با موفقیت ذخیره شد.", reply_markup=builder.as_markup())
+    await message.answer(f"✅ کد هدیه <b>{data['g_code']}</b> با موفقیت ذخیره شد.", parse_mode="HTML", reply_markup=builder.as_markup())

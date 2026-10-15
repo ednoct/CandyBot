@@ -28,7 +28,7 @@ async def users_menu(callback: types.CallbackQuery, state: FSMContext):
     # Row 2
     builder.row(InlineKeyboardButton(text="لیست کاربرانی که زیرمجموعه دارند.", callback_data="admin_ulist_ref_0"))
     # Row 3
-    builder.row(InlineKeyboardButton(text="لیست کاربران دارای اشتراک", callback_data="admin_ulist_sub_0"))
+    builder.row(InlineKeyboardButton(text="لیست کاربران دارای اشتراک فعال", callback_data="admin_ulist_sub_0"))
     # Row 4
     builder.row(InlineKeyboardButton(text="لیست کل کاربران", callback_data="admin_ulist_all_0"))
     # Row 5: [👥 شارژ همگانی] | [🎁 شارژ تستی] | [🛍 جستجو سفارش]
@@ -61,18 +61,25 @@ async def show_user_management_panel(message: types.Message, target_id: int):
     user = await db_manager.get_user(target_id)
     
     if user:
+        wallet_bal = int(user['balance'] or 0)
+        comm_bal = int(user['agent_commission_balance'] or 0) if ('agent_commission_balance' in user.keys() and user['agent_commission_balance'] is not None) else 0
+        user_status = user['status'] if 'status' in user.keys() else 'active'
+        username_str = f"@{user['username']}" if user.get('username') else "ندارد"
+
         text = (
             f"👤 **اطلاعات کاربر**\n"
             f"شناسه: `{user['id']}`\n"
-            f"موجودی: {user['balance']} تومان\n"
-            f"وضعیت: {user['status'] if 'status' in user.keys() else 'active'}"
+            f"نام کاربری: {username_str}\n"
+            f"💰 موجودی کیف پول: {wallet_bal:,} تومان\n"
+            f"💼 موجودی کمیسیون: {comm_bal:,} تومان\n"
+            f"وضعیت: {user_status}"
         )
         builder = InlineKeyboardBuilder()
         builder.button(text="➕ شارژ کیف", callback_data=f"wallet_add_{user['id']}")
         builder.button(text="➖ کسر کیف", callback_data=f"wallet_reduce_{user['id']}")
-        builder.button(text="⭕️ صفر کردن موجودی", callback_data=f"wallet_zero_{user['id']}")
+        builder.button(text="⭕️ صفر کردن موجودی کیف", callback_data=f"wallet_zero_{user['id']}")
+        builder.button(text="💼 تغییر موجودی کمیسیون", callback_data=f"user_comm_bal_{user['id']}")
         
-        user_status = user['status'] if 'status' in user.keys() else 'active'
         if user_status == 'banned':
             builder.button(text="✅ رفع مسدودی", callback_data=f"user_unban_{user['id']}")
         else:
@@ -89,7 +96,7 @@ async def show_user_management_panel(message: types.Message, target_id: int):
         builder.button(text="🗑 حذف کامل کاربر", callback_data=f"user_delete_confirm_{user['id']}")
         
         builder.button(text="🔙 بازگشت", callback_data="admin_users", style="danger")
-        builder.adjust(2, 1, 2, 2, 2, 1, 1)
+        builder.adjust(2, 1, 1, 2, 2, 2, 1, 1)
 
     else:
         text = "❌ کاربر یافت نشد."
@@ -165,6 +172,112 @@ async def process_wallet_reduce(message: types.Message, state: FSMContext):
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 جستجوی مجدد", callback_data="admin_search_user", style="danger")
     await message.answer(f"✅ مبلغ {amount} تومان از کیف پول کاربر {target_id} کسر شد.", reply_markup=builder.as_markup())
+
+# === ROUTER: COMMISSION BALANCE MANAGEMENT ===
+@admin_users_router.callback_query(F.data.startswith("user_comm_bal_"))
+async def prompt_user_comm_balance(callback: types.CallbackQuery, state: FSMContext):
+    if not is_admin(callback.message): return
+    target_id = int(callback.data.replace("user_comm_bal_", ""))
+    user = await db_manager.get_user(target_id)
+    if not user:
+        return await callback.answer("❌ کاربر یافت نشد.", show_alert=True)
+
+    comm_bal = int(user['agent_commission_balance'] or 0) if ('agent_commission_balance' in user.keys() and user['agent_commission_balance'] is not None) else 0
+    username_str = f"@{user['username']}" if user.get('username') else str(target_id)
+
+    await state.update_data(target_user_id=target_id)
+    await state.set_state(AdminStates.waiting_for_commission_balance_change)
+
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 انصراف و بازگشت", callback_data=f"user_manage_{target_id}", style="danger")
+
+    text = (
+        f"💼 **تغییر موجودی کمیسیون (نمایندگی)**\n\n"
+        f"👤 کاربر: {username_str} (`{target_id}`)\n"
+        f"💰 موجودی کمیسیون فعلی: **{comm_bal:,} تومان**\n\n"
+        f"📌 **نحوه تغییر موجودی:**\n"
+        f"➕ برای **افزایش موجودی**: عدد مثبت یا با علامت `+` (مثال: `50000` یا `+50000`)\n"
+        f"➖ برای **کسر از موجودی**: عدد منفی با علامت `-` (مثال: `-20000`)\n\n"
+        f"لطفاً مبلغ مورد نظر (تومان) را ارسال کنید:"
+    )
+    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+
+@admin_users_router.message(AdminStates.waiting_for_commission_balance_change)
+async def process_user_comm_balance(message: types.Message, state: FSMContext):
+    if not is_admin(message): return
+    data = await state.get_data()
+    target_id = data.get('target_user_id')
+    if not target_id:
+        await state.clear()
+        return await message.answer("❌ خطایی رخ داد، لطفاً دوباره کاربر را انتخاب کنید.")
+
+    raw_text = message.text or ""
+    from utils.date_formatter import normalize_persian_digits
+    cleaned = (
+        normalize_persian_digits(raw_text.strip())
+        .replace('،', '')
+        .replace(',', '')
+        .replace(' ', '')
+        .replace('−', '-')
+        .replace('–', '-')
+        .replace('—', '-')
+        .replace('＋', '+')
+    )
+
+    import re
+    if not re.match(r'^[+-]?\d+$', cleaned):
+        builder = InlineKeyboardBuilder()
+        builder.button(text="🔙 انصراف و بازگشت", callback_data=f"user_manage_{target_id}", style="danger")
+        return await message.answer(
+            "❌ مبلغ وارد شده نامعتبر است.\n\n"
+            "لطفاً مبلغ را فقط به صورت عدد انگلیسی یا فارسی ارسال نمایید:\n"
+            "➕ برای افزایش: `50000` یا `+50000`\n"
+            "➖ برای کسر: `-20000`",
+            reply_markup=builder.as_markup(),
+            parse_mode="Markdown"
+        )
+
+    amount = int(cleaned)
+    if amount == 0:
+        builder = InlineKeyboardBuilder()
+        builder.button(text="🔙 انصراف و بازگشت", callback_data=f"user_manage_{target_id}", style="danger")
+        return await message.answer(
+            "❌ مبلغ تغییر نمی‌تواند صفر باشد.\n"
+            "لطفاً عددی مثبت برای افزایش یا منفی برای کسر وارد کنید.",
+            reply_markup=builder.as_markup(),
+            parse_mode="Markdown"
+        )
+
+    result = await db_manager.adjust_user_commission_balance(int(target_id), amount)
+    if result is None:
+        await state.clear()
+        return await message.answer("❌ کاربر در دیتابیس یافت نشد.")
+
+    old_bal, new_bal = result
+    await state.clear()
+
+    if amount > 0:
+        action_desc = f"➕ مبلغ **{abs(amount):,} تومان** به موجودی کمیسیون اضافه شد."
+    else:
+        action_desc = f"➖ مبلغ **{abs(amount):,} تومان** از موجودی کمیسیون کسر شد."
+
+    note = ""
+    if amount < 0 and (old_bal + amount < 0):
+        note = "\n⚠️ *(مبلغ درخواستی کسر بیشتر از موجودی قبلی بود؛ بنابراین موجودی روی ۰ تنظیم شد.)*"
+
+    builder = InlineKeyboardBuilder()
+    builder.button(text="👤 بازگشت به مدیریت کاربر", callback_data=f"user_manage_{target_id}")
+    builder.button(text="🔙 منوی کاربران", callback_data="admin_users", style="danger")
+    builder.adjust(1, 1)
+
+    text = (
+        f"✅ **موجودی کمیسیون با موفقیت تغییر یافت.**\n\n"
+        f"👤 شناسه کاربر: `{target_id}`\n"
+        f"{action_desc}{note}\n\n"
+        f"📊 موجودی قبلی: {old_bal:,} تومان\n"
+        f"💰 موجودی جدید کمیسیون: **{new_bal:,} تومان**"
+    )
+    await message.answer(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
 
 # === ROUTER: USER STATUS ===
 @admin_users_router.callback_query(F.data.startswith("user_ban_"))
@@ -501,7 +614,11 @@ def _build_paginated_users_keyboard(users: list, list_type: str, current_page: i
     for u in page_users:
         username = f"@{u['username']}" if u['username'] else "NoUsername"
         bal = u['balance'] if u['balance'] is not None else 0
-        btn_text = f"👤 ID: {u['id']} | {username} | 💰 {bal}"
+        try:
+            bal_str = f"{int(bal):,}"
+        except Exception:
+            bal_str = str(bal)
+        btn_text = f"👤 ID: {u['id']} | {username} | 💰 {bal_str}"
         builder.row(InlineKeyboardButton(text=btn_text, callback_data=f"user_manage_{u['id']}"))
         
     # Pagination controls
@@ -519,6 +636,10 @@ def _build_paginated_users_keyboard(users: list, list_type: str, current_page: i
         
     builder.row(InlineKeyboardButton(text="🔙 بازگشت به منوی مدیریت", callback_data="admin_users", style="danger"))
     return builder.as_markup()
+
+@admin_users_router.callback_query(F.data == "ignore")
+async def handle_ignore_callback(callback: types.CallbackQuery):
+    await callback.answer()
 
 @admin_users_router.callback_query(F.data.startswith("admin_ulist_"))
 async def handle_paginated_users(callback: types.CallbackQuery):
@@ -539,7 +660,7 @@ async def handle_paginated_users(callback: types.CallbackQuery):
         title = "کاربران دارای زیرمجموعه"
     elif list_type == "sub":
         users = await db_manager.get_users_with_active_licenses()
-        title = "کاربران دارای اشتراک فعال"
+        title = "کاربران دارای اشتراک فعال (غیرتریال)"
     else:
         return await callback.answer("لیست نامعتبر", show_alert=True)
         
@@ -561,8 +682,12 @@ async def handle_paginated_users(callback: types.CallbackQuery):
 @admin_users_router.callback_query(F.data.startswith("user_manage_"))
 async def handle_user_manage_click(callback: types.CallbackQuery, state: FSMContext):
     if not is_admin(callback.message): return
+    await state.clear()
     target_id = int(callback.data.split("_")[2])
-    await callback.message.delete()
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
     await show_user_management_panel(callback.message, target_id)
 
 # ============================================================
@@ -682,98 +807,294 @@ async def global_charge_execute(message: types.Message, state: FSMContext):
 # GLOBAL TRAFFIC / TIME
 # ============================================================
 @admin_users_router.callback_query(F.data == "admin_global_traffic")
-async def global_traffic_prompt(callback: types.CallbackQuery, state: FSMContext):
+async def global_traffic_type_prompt(callback: types.CallbackQuery, state: FSMContext):
     if not is_admin(callback.message): return
-    await state.set_state(AdminStates.waiting_for_global_traffic_gb)
-    
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 لغو", callback_data="admin_users", style="danger")
-    await callback.message.edit_text(
-        "لطفاً **حجم** مورد نظر برای اضافه شدن به تمامی کانفیگ‌های فعال (بجز تست رایگان) را به گیگابایت وارد کنید:\n(برای عدم تغییر 0 وارد کنید)", 
-        reply_markup=builder.as_markup()
-    )
-
-@admin_users_router.message(AdminStates.waiting_for_global_traffic_gb)
-async def global_traffic_days_prompt(message: types.Message, state: FSMContext):
-    if not is_admin(message): return
-    try:
-        gb = float(message.text)
-        await state.update_data(global_gb=gb)
-    except ValueError:
-        return await message.answer("❌ لطفا یک عدد معتبر وارد کنید.")
-        
-    await state.set_state(AdminStates.waiting_for_global_traffic_days)
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 لغو", callback_data="admin_users", style="danger")
-    await message.answer(
-        "لطفاً **تعداد روز** مورد نظر برای اضافه شدن به تمامی کانفیگ‌های فعال را وارد کنید:\n(برای عدم تغییر 0 وارد کنید)",
-        reply_markup=builder.as_markup()
-    )
-
-@admin_users_router.message(AdminStates.waiting_for_global_traffic_days)
-async def global_traffic_execute(message: types.Message, state: FSMContext):
-    if not is_admin(message): return
-    try:
-        days = int(message.text)
-    except ValueError:
-        return await message.answer("❌ لطفا یک عدد معتبر وارد کنید.")
-        
-    data = await state.get_data()
-    gb = data.get('global_gb', 0)
     await state.clear()
     
-    if gb == 0 and days == 0:
-        return await message.answer("هیچ تغییری اعمال نشد.")
-        
-    msg = await message.answer("⏳ در حال دریافت لیست کانفیگ‌های فعال از دیتابیس... این فرآیند ممکن است طول بکشد.")
-    
-    # Run in background to prevent timeout
-    import asyncio
-    from bot.services.xui_client import XUIClient, build_client_email
-    
-    async def process_global_traffic():
-        licenses = await db_manager.get_all_active_xui_licenses_non_trial()
-        success = 0
-        failed = 0
-        
-        for row in licenses:
-            panel_url = row['panel_url']
-            token = row['bearer_token']
-            email = build_client_email(row['license_note'], row['user_id'], row['invoice_id'])
-            
-            try:
-                async with XUIClient(panel_url, token) as client:
-                    client_data = await client.get_client(email)
-                    if not client_data:
-                        failed += 1
-                        continue
-                        
-                    current_expiry = int(client_data.get("expiryTime") or 0)
-                    now_ms = int(time.time() * 1000)
-                    base = max(now_ms, current_expiry) if current_expiry else now_ms
-                    new_expiry = base + int(days) * 86400 * 1000
-                    
-                    current_total = int(client_data.get("totalGB") or 0)
-                    new_total = current_total + int(float(gb) * 1024 ** 3)
-                    
-                    await client.update_client(email, {
-                        "expiryTime": new_expiry,
-                        "totalGB": new_total,
-                        "enable": True
-                    })
-                    success += 1
-            except Exception as e:
-                failed += 1
-            
-            await asyncio.sleep(0.1) # Sleep to avoid spamming the panel
-            
-        await message.answer(f"✅ فرآیند حجم/زمان همگانی پایان یافت.\nموفق: {success}\nناموفق: {failed}")
-        
-    asyncio.create_task(process_global_traffic())
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔋 افزایش حجم همگانی (GB)", callback_data="admin_gt_type:traffic")
+    builder.button(text="⏳ افزایش زمان همگانی (روز)", callback_data="admin_gt_type:time")
+    builder.button(text="🔙 بازگشت به منوی کاربران", callback_data="admin_users", style="danger")
+    builder.adjust(1, 1, 1)
+
+    text = (
+        "⚙️ **مدیریت حجم یا زمان همگانی**\n\n"
+        "لطفاً مشخص کنید که قصد افزایش **حجم** دارید یا **زمان**:\n\n"
+        "📌 *نحوه عملکرد:* ربات به طور خودکار `clientStats` تمامی کلاینت‌های موجود در پنل‌های X-UI را "
+        "بررسی کرده و مقدار مورد نظر را **فقط به اشتراک‌های فعال و منقضی‌نشده** اضافه می‌نماید.\n\n"
+        "*(اشتراک‌های تست رایگان / تریال به صورت خودکار مستثنی خواهند شد.)*"
+    )
+    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+
+@admin_users_router.callback_query(F.data.startswith("admin_gt_type:"))
+async def global_traffic_value_prompt(callback: types.CallbackQuery, state: FSMContext):
+    if not is_admin(callback.message): return
+    choice = callback.data.split(":")[1]
     
     builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 لغو و بازگشت", callback_data="admin_global_traffic", style="danger")
+
+    if choice == "traffic":
+        await state.set_state(AdminStates.waiting_for_global_traffic_gb)
+        text = (
+            "🔋 **افزایش حجم همگانی**\n\n"
+            "لطفاً مقدار **حجم** مورد نظر برای اضافه شدن به تمامی اشتراک‌های فعال را به گیگابایت (GB) وارد کنید:\n"
+            "*(مثال: `5` یا `10.5`)*\n\n"
+            "⚠️ این حجم فقط به کانفیگ‌های **فعال و منقضی‌نشده** در X-UI اضافه می‌شود (اشتراک‌های تریال مستثنی هستند)."
+        )
+    else:
+        await state.set_state(AdminStates.waiting_for_global_traffic_days)
+        text = (
+            "⏳ **افزایش زمان همگانی**\n\n"
+            "لطفاً تعداد **روز** مورد نظر برای اضافه شدن به تمامی اشتراک‌های فعال را وارد کنید:\n"
+            "*(مثال: `7` یا `30`)*\n\n"
+            "⚠️ این زمان فقط به کانفیگ‌های **فعال و منقضی‌نشده** در X-UI اضافه می‌شود (اشتراک‌های تریال مستثنی هستند)."
+        )
+
+    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+
+@admin_users_router.message(AdminStates.waiting_for_global_traffic_gb)
+async def global_traffic_gb_execute(message: types.Message, state: FSMContext):
+    if not is_admin(message): return
+    raw_text = message.text or ""
+    from utils.date_formatter import normalize_persian_digits
+    cleaned = (
+        normalize_persian_digits(raw_text.strip())
+        .replace('،', '.')
+        .replace(',', '.')
+        .replace(' ', '')
+        .replace('+', '')
+    )
+    
+    try:
+        gb = float(cleaned)
+        if gb <= 0:
+            raise ValueError()
+    except ValueError:
+        builder = InlineKeyboardBuilder()
+        builder.button(text="🔙 لغو و بازگشت", callback_data="admin_global_traffic", style="danger")
+        return await message.answer(
+            "❌ لطفاً یک عدد معتبر و بزرگتر از صفر برای گیگابایت وارد کنید (مثال: `5` یا `10.5`).",
+            reply_markup=builder.as_markup(),
+            parse_mode="Markdown"
+        )
+
+    await state.clear()
+    await start_global_traffic_or_time_process(message, gb=gb, days=0)
+
+@admin_users_router.message(AdminStates.waiting_for_global_traffic_days)
+async def global_traffic_days_execute(message: types.Message, state: FSMContext):
+    if not is_admin(message): return
+    raw_text = message.text or ""
+    from utils.date_formatter import normalize_persian_digits
+    cleaned = (
+        normalize_persian_digits(raw_text.strip())
+        .replace('،', '')
+        .replace(',', '')
+        .replace(' ', '')
+        .replace('+', '')
+    )
+    
+    try:
+        days = int(cleaned)
+        if days <= 0:
+            raise ValueError()
+    except ValueError:
+        builder = InlineKeyboardBuilder()
+        builder.button(text="🔙 لغو و بازگشت", callback_data="admin_global_traffic", style="danger")
+        return await message.answer(
+            "❌ لطفاً یک عدد صحیح و بزرگتر از صفر برای تعداد روز وارد کنید (مثال: `7` یا `30`).",
+            reply_markup=builder.as_markup(),
+            parse_mode="Markdown"
+        )
+
+    await state.clear()
+    await start_global_traffic_or_time_process(message, gb=0, days=days)
+
+async def start_global_traffic_or_time_process(message: types.Message, gb: float = 0, days: int = 0):
+    op_title = f"{gb:g} گیگابایت حجم" if gb > 0 else f"{days} روز زمان"
+    
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 منوی کاربران", callback_data="admin_users", style="danger")
+    
+    await message.answer(
+        f"⏳ **در حال آغاز فرآیند همگانی ({op_title})...**\n\n"
+        "در حال اتصال به پنل‌های X-UI و بررسی وضعیت clientStats کلاینت‌ها...\n"
+        "این فرآیند در پس‌زمینه در حال اجرا است و پس از اتمام گزارش کامل ارسال خواهد شد.",
+        reply_markup=builder.as_markup(),
+        parse_mode="Markdown"
+    )
+
+    import asyncio
+    asyncio.create_task(run_global_traffic_or_time_task(message, gb, days, op_title))
+
+async def run_global_traffic_or_time_task(message: types.Message, gb: float, days: int, op_title: str):
+    import time
+    import json
+    import logging
+    from bot.services.xui_client import XUIClient, build_client_email
+    
+    task_logger = logging.getLogger(__name__)
+
+    panels = await db_manager.get_xui_panels()
+    if not panels:
+        return await message.answer("❌ هیچ پنل X-UI در دیتابیس ثبت نشده است.")
+
+    # 1. Fetch all known trial emails from DB
+    trial_emails = set()
+    try:
+        from database.db_manager import DB_PATH
+        import aiosqlite
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("""
+                SELECT xl.license_note, xl.user_id, xl.invoice_id
+                FROM xui_licenses xl
+                JOIN invoices i ON xl.invoice_id = i.id
+                WHERE i.base_price = 0 OR i.payment_method = 'free_test' OR xl.license_note = 'Free_Trial'
+            """) as cur:
+                rows = await cur.fetchall()
+                for r in rows:
+                    trial_emails.add(build_client_email(r['license_note'], r['user_id'], r['invoice_id']).lower())
+    except Exception as e:
+        task_logger.warning(f"Error fetching trial emails: {e}")
+
+    total_panels = len(panels)
+    total_clients_checked = 0
+    success = 0
+    skipped_expired = 0
+    skipped_trial = 0
+    failed = 0
+
+    now_ms = int(time.time() * 1000)
+
+    for panel in panels:
+        panel_url = panel["url"]
+        bearer_token = panel["bearer_token"]
+        panel_name = panel.get("name") or panel.get("label") or panel_url
+
+        try:
+            async with XUIClient(panel_url, bearer_token) as client:
+                try:
+                    inbounds = await client.get_inbounds()
+                except Exception as e:
+                    task_logger.error(f"Failed to fetch inbounds from panel {panel_name}: {e}")
+                    failed += 1
+                    continue
+
+                seen_emails = set()
+
+                for ib in inbounds:
+                    if not ib.get("enable", True):
+                        continue
+
+                    client_stats_list = ib.get("clientStats") or []
+                    stats_map = {cs.get("email"): cs for cs in client_stats_list if cs.get("email")}
+
+                    settings_raw = ib.get("settings") or ""
+                    clients_list = []
+                    if isinstance(settings_raw, str):
+                        try:
+                            settings_obj = json.loads(settings_raw)
+                            clients_list = settings_obj.get("clients") or []
+                        except Exception:
+                            clients_list = []
+                    elif isinstance(settings_raw, dict):
+                        clients_list = settings_raw.get("clients") or []
+
+                    clients_map = {c.get("email"): c for c in clients_list if c.get("email")}
+                    all_emails = set(clients_map.keys()) | set(stats_map.keys())
+
+                    for email in all_emails:
+                        if not email or email in seen_emails:
+                            continue
+                        seen_emails.add(email)
+                        total_clients_checked += 1
+
+                        c_obj = clients_map.get(email) or {}
+                        s_obj = stats_map.get(email) or {}
+
+                        # Check 1: Trial exclusion
+                        email_lower = email.lower()
+                        group = (c_obj.get("group") or s_obj.get("group") or "").strip().lower()
+                        if (
+                            group == "trial"
+                            or email_lower.startswith("free")
+                            or email_lower.startswith("test")
+                            or "trial" in email_lower
+                            or email_lower in trial_emails
+                        ):
+                            skipped_trial += 1
+                            continue
+
+                        # Check 2: Active / Disabled
+                        c_enable = c_obj.get("enable", True)
+                        s_enable = s_obj.get("enable", True)
+                        if c_enable is False or s_enable is False:
+                            skipped_expired += 1
+                            continue
+
+                        # Check 3: Expiry Time
+                        expiry_time = int(c_obj.get("expiryTime") or s_obj.get("expiryTime") or 0)
+                        if expiry_time > 0 and expiry_time <= now_ms:
+                            skipped_expired += 1
+                            continue
+
+                        # Check 4: Traffic Limit Expiry
+                        total_bytes = int(c_obj.get("totalGB") or s_obj.get("total") or 0)
+                        used_bytes = int(s_obj.get("up") or 0) + int(s_obj.get("down") or 0)
+                        if total_bytes > 0 and used_bytes >= total_bytes:
+                            skipped_expired += 1
+                            continue
+
+                        # Client is ACTIVE and NOT EXPIRED!
+                        try:
+                            changes = {}
+                            if gb > 0:
+                                extra_bytes = int(float(gb) * 1024 ** 3)
+                                if total_bytes > 0:
+                                    changes["totalGB"] = total_bytes + extra_bytes
+                            elif days > 0:
+                                extra_ms = int(days) * 86400 * 1000
+                                if expiry_time > 0:
+                                    changes["expiryTime"] = expiry_time + extra_ms
+                                elif expiry_time < 0:
+                                    changes["expiryTime"] = expiry_time - extra_ms
+
+                            if changes:
+                                await client.update_client(email, changes)
+                            success += 1
+                        except Exception as e:
+                            task_logger.error(f"Failed to update client {email} on {panel_name}: {e}")
+                            failed += 1
+
+                        import asyncio
+                        await asyncio.sleep(0.05)
+
+        except Exception as e:
+            task_logger.error(f"Panel connection error for {panel_name}: {e}")
+            failed += 1
+
+    # Send final report to admin
+    builder = InlineKeyboardBuilder()
     builder.button(text="🔙 بازگشت به منوی کاربران", callback_data="admin_users", style="danger")
-    await msg.edit_text(f"فرآیند اضافه کردن {gb} گیگابایت و {days} روز به کانفیگ‌ها در پس‌زمینه آغاز شد.", reply_markup=builder.as_markup())
+
+    report_text = (
+        f"✅ **عملیات افزایشی {op_title} همگانی با موفقیت به پایان رسید.**\n\n"
+        f"📊 **گزارش نهایی وضعیت کلاینت‌ها (clientStats):**\n"
+        f"• 👥 کل کلاینت‌های بررسی شده: **{total_clients_checked}**\n"
+        f"• ✅ اشتراک‌های فعال و به‌روزرسانی شده: **{success}**\n"
+        f"• ⏭ اشتراک‌های غیرفعال / منقضی‌شده (رد شده): **{skipped_expired}**\n"
+        f"• 🆓 اشتراک‌های تریال و تست رایگان (مستثنی شده): **{skipped_trial}**\n"
+        f"• 🌐 تعداد پنل‌های پردازش شده: **{total_panels}**\n"
+    )
+    if failed > 0:
+        report_text += f"• ⚠️ خطاهای بروزرسانی: **{failed}**\n"
+
+    try:
+        await message.answer(report_text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+    except Exception as e:
+        task_logger.error(f"Failed to send final report to admin: {e}")
 
 # ============================================================
 # DIRECT MESSAGE TO USER

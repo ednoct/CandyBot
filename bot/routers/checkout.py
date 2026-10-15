@@ -276,7 +276,7 @@ async def render_calculator(message: types.Message, state: FSMContext, plan_id: 
     
     if time_packages:
         # Header Time
-        builder.row(types.InlineKeyboardButton(text=f"زمان (روز) • هر روز {data['plan_price_day']:,} تومان 🕒", callback_data="none"))
+        builder.row(types.InlineKeyboardButton(text=f"زمان (روز) • هر روز {data['plan_price_day']:,} تومان 🕒", callback_data="none", style="success"))
         
         # Grid Time (max 3 per row)
         time_buttons = []
@@ -286,16 +286,16 @@ async def render_calculator(message: types.Message, state: FSMContext, plan_id: 
         builder.row(*time_buttons, width=3)
         
         # Selected Time summary
-        builder.row(types.InlineKeyboardButton(text=f"روز انتخاب شده: {sel_days} ✅", callback_data="none"))
+        builder.row(types.InlineKeyboardButton(text=f"روز انتخاب شده: {sel_days} ✅", callback_data="none", style="primary))
         
     if traffic_packages:
         # Header Traffic (پویا و حساس به پلکان)
         if tier_info['discount_percent'] > 0:
-            traffic_header_text = f"حجم • هر گیگ {dynamic_gb_price:,} تومان ({tier_info['discount_percent']}٪ تخفیف 🔥) 🔋"
+            traffic_header_text = f"حجم • هر گیگ {dynamic_gb_price:,} تومان ({tier_info['discount_percent']}٪ تخفیف 🔥) ⚡"
         else:
-            traffic_header_text = f"حجم (گیگ) • هر گیگ {dynamic_gb_price:,} تومان 🔋"
+            traffic_header_text = f"حجم (گیگ) • هر گیگ {dynamic_gb_price:,} تومان ⚡"
             
-        builder.row(types.InlineKeyboardButton(text=traffic_header_text, callback_data="none"))
+        builder.row(types.InlineKeyboardButton(text=traffic_header_text, callback_data="none", style="primary))
         
         # Grid Traffic
         traffic_buttons = []
@@ -311,7 +311,7 @@ async def render_calculator(message: types.Message, state: FSMContext, plan_id: 
         summary_gb_text = f"گیگ انتخاب شده: {sel_gb} ✅"
         if tier_info['saved_amount'] > 0:
             summary_gb_text += f" (سود شما: {tier_info['saved_amount']:,} ت)"
-        builder.row(types.InlineKeyboardButton(text=summary_gb_text, callback_data="none"))
+        builder.row(types.InlineKeyboardButton(text=summary_gb_text, callback_data="none", style="success"))
     
     # Payment Button (محاسبه با قیمت پلکانی جدید)
     base_price = (sel_days * data['plan_price_day']) + tier_info['total_traffic_price']
@@ -415,13 +415,7 @@ async def prepare_and_send_invoice(message: types.Message, user_id: int, data: d
         tier_info=tier_info
     )
     
-    builder = InlineKeyboardBuilder()
-    
-    # Modifiers
-    if wallet_balance > 0:
-        builder.row(types.InlineKeyboardButton(text="استفاده از کیف پول 💰", callback_data="none"))
-        builder.row(types.InlineKeyboardButton(text=f"موجودی: ({wallet_balance:,}) تومان", callback_data="none"))
-        
+    builder = InlineKeyboardBuilder()        
     builder.row(types.InlineKeyboardButton(text="🎫 ثبت کد تخفیف", callback_data="apply_discount"))
     builder.row(types.InlineKeyboardButton(text="🎁 ثبت کد هدیه", callback_data="apply_gift"))
     
@@ -451,9 +445,12 @@ async def prepare_and_send_invoice(message: types.Message, user_id: int, data: d
     
     if isinstance(message, types.Message):
         try:
-            await message.edit_text(text, reply_markup=builder.as_markup())
-        except AttributeError:
-            await message.answer(text, reply_markup=builder.as_markup())
+            await message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        except Exception:
+            # message.edit_text() raises TelegramBadRequest when called on a
+            # regular user message (only bot messages are editable).
+            # Fall back to sending a new message.
+            await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
 # === ROUTER: DISCOUNT CODE ===
 @checkout_router.callback_query(F.data == "apply_discount")
@@ -552,12 +549,11 @@ async def pay_free(callback: types.CallbackQuery, state: FSMContext):
         
     await state.clear()
     
+    # Use callback.bot — `bot` is not exported from the bot package
     from payment.confirm import PaymentConfirmationManager
-    from bot import bot
-    pcm = PaymentConfirmationManager(bot)
-    await pcm.confirm_paid(invoice_id, 0, 'free_discount')
-    
+    pcm = PaymentConfirmationManager(callback.bot)
     await callback.message.edit_text("✅ در حال تحویل لایسنس شما...")
+    await pcm.confirm_paid(invoice_id, 0, 'free_discount')
 
 # === ROUTER: FREE TEST ===
 @checkout_router.callback_query(F.data == "free_test")
