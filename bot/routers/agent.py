@@ -9,7 +9,7 @@ import logging
 from aiogram import Router, F, types, Bot
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-
+from aiogram.types import LinkPreviewOptions
 from database import db_manager
 from bot.states import AgentUserStates
 from bot.config import ADMIN_IDS
@@ -84,7 +84,25 @@ async def show_agent_menu(callback: types.CallbackQuery, state: FSMContext):
         types.InlineKeyboardButton(text="🔙 بازگشت", callback_data="main_menu", style="danger")
     )
 
-    await send_bottom_message(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    # غیرفعال‌سازی قطعی پیش‌نمایش لینک در پنل کاربر
+    preview_off = LinkPreviewOptions(is_disabled=True)
+    try:
+        await callback.message.delete()
+        await callback.message.answer(
+            text,
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML",
+            link_preview_options=preview_off,
+            disable_web_page_preview=True
+        )
+    except Exception:
+        await callback.message.edit_text(
+            text,
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML",
+            link_preview_options=preview_off,
+            disable_web_page_preview=True
+        )
 
 
 # === ROUTER: AGENT REFERRAL TAB (WITH ATTACHED BANNER) ===
