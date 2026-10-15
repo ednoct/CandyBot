@@ -40,19 +40,36 @@ class NotificationService:
         if hasattr(keyboard, "as_markup"):
             keyboard = keyboard.as_markup()
 
-        if keyboard is None and user_id:
-            try:
-                me = await self.bot.get_me()
-                keyboard = InlineKeyboardMarkup(
-                    inline_keyboard=[[
-                        InlineKeyboardButton(
-                            text="👤 مدیریت کاربر",
-                            url=f"https://t.me/{me.username}?start=manage_{user_id}"
-                        )
-                    ]]
-                )
-            except Exception as e:
-                logging.error(f"NotificationService: Failed to get bot username: {e}")
+        # Auto-detect user_id from text if not provided
+        if not user_id and text:
+            import re
+            m = re.search(r'(?:کاربر|آیدی|user(?:_id)?|شناسه)(?:[\s:]+|[\s:]*<code>?)(\d{5,15})', text, re.IGNORECASE)
+            if m:
+                try:
+                    user_id = int(m.group(1))
+                except ValueError:
+                    pass
+
+        # If user_id is identified, ensure "👤 مدیریت کاربر" button exists with group callback
+        if user_id:
+            manage_btn = InlineKeyboardButton(
+                text="👤 مدیریت کاربر",
+                callback_data=f"manage_user_group_{user_id}"
+            )
+            if keyboard is None:
+                keyboard = InlineKeyboardMarkup(inline_keyboard=[[manage_btn]])
+            elif isinstance(keyboard, InlineKeyboardMarkup):
+                has_btn = False
+                for row in keyboard.inline_keyboard:
+                    for idx, b in enumerate(row):
+                        if "مدیریت کاربر" in (b.text or "") or f"manage_user_group_{user_id}" in (b.callback_data or "") or (b.url and f"manage_{user_id}" in b.url):
+                            row[idx] = manage_btn
+                            has_btn = True
+                            break
+                    if has_btn:
+                        break
+                if not has_btn:
+                    keyboard.inline_keyboard.append([manage_btn])
 
         send_kwargs = {
             "chat_id": report_group_id,

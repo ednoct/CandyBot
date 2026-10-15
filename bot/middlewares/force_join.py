@@ -20,6 +20,11 @@ class ForceJoinMiddleware(BaseMiddleware):
         if not user or user.id in ADMIN_IDS:
             return await handler(event, data)
 
+        # Ignore force-join checks in group/supergroup chats (e.g. reports group)
+        chat = getattr(event, "chat", None) or (getattr(event, "message", None) and getattr(event.message, "chat", None))
+        if chat and getattr(chat, "type", None) in ["group", "supergroup"]:
+            return await handler(event, data)
+
         bot = data.get("bot")
         if not bot:
             return await handler(event, data)

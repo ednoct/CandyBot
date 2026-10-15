@@ -439,16 +439,12 @@ class PaymentConfirmationManager:
                     tg_types.InlineKeyboardButton(text="🔄 تلاش مجدد", callback_data=f"retry_provision_{invoice_id}")
                 )
                 if user_id:
-                    try:
-                        me = await self.bot.get_me()
-                        admin_builder.row(
-                            tg_types.InlineKeyboardButton(
-                                text="👤 مدیریت کاربر",
-                                url=f"https://t.me/{me.username}?start=manage_{user_id}"
-                            )
+                    admin_builder.row(
+                        tg_types.InlineKeyboardButton(
+                            text="👤 مدیریت کاربر",
+                            callback_data=f"manage_user_group_{user_id}"
                         )
-                    except Exception as me_err:
-                        logging.debug(f"Could not get bot username for user management button: {me_err}")
+                    )
 
                 # Send error report to Reports Group (error_report topic) instead of Admin PV
                 sent_to_group = False
@@ -457,6 +453,7 @@ class PaymentConfirmationManager:
                     sent_to_group = await notif_service.send_report(
                         topic_key="error_report",
                         text=error_text,
+                        user_id=user_id,
                         reply_markup=admin_builder.as_markup()
                     )
                 except Exception as e:

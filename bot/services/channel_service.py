@@ -14,13 +14,37 @@ from bot.config import ADMIN_IDS
 
 logger = logging.getLogger(__name__)
 
+import time
+
+_channels_cache: Tuple[List[Dict], float] = ([], 0.0)
+_membership_cache: Dict[Tuple[int, str | int], Tuple[bool, float]] = {}
+
+def invalidate_user_membership_cache(user_id: int):
+    """Invalidates the membership cache for a specific user (e.g. after clicking verify)."""
+    keys_to_del = [k for k in _membership_cache if k[0] == user_id]
+    for k in keys_to_del:
+        _membership_cache.pop(k, None)
+
+def invalidate_channels_cache():
+    """Invalidates channels list cache."""
+    global _channels_cache
+    _channels_cache = ([], 0.0)
+
 async def get_force_join_channels() -> List[Dict]:
-    """Fetches all active force join channels from the database."""
+    """Fetches all active force join channels with a 30s in-memory cache."""
+    global _channels_cache
+    now = time.time()
+    channels, expiry = _channels_cache
+    if now < expiry and channels:
+        return channels
+        
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT * FROM channels ORDER BY id ASC") as cur:
             rows = await cur.fetchall()
-            return [dict(r) for r in rows]
+            channels = [dict(r) for r in rows]
+            _channels_cache = (channels, now + 30.0)
+            return channels
 
 def extract_chat_id(link: Optional[str], linkjoin: Optional[str] = "") -> Optional[str | int]:
     """
@@ -59,13 +83,24 @@ def extract_chat_id(link: Optional[str], linkjoin: Optional[str] = "") -> Option
     return None
 
 async def check_user_membership(bot: Bot, chat_identifier: str | int, user_id: int) -> bool:
-    """Checks if a user is a member of the given chat."""
+    """Checks if a user is a member of the given chat with 120s TTL caching for verified members."""
+    cache_key = (user_id, chat_identifier)
+    now = time.time()
+    if cache_key in _membership_cache:
+        is_member, expiry = _membership_cache[cache_key]
+        if now < expiry and is_member:
+            return True
+
     try:
         member = await bot.get_chat_member(chat_id=chat_identifier, user_id=user_id)
         if member.status in [ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR]:
+            _membership_cache[cache_key] = (True, now + 120.0)
             return True
         elif member.status == ChatMemberStatus.RESTRICTED:
-            return getattr(member, 'is_member', True)
+            is_mem = getattr(member, 'is_member', True)
+            if is_mem:
+                _membership_cache[cache_key] = (True, now + 120.0)
+            return is_mem
         else:
             return False
     except Exception as e:

@@ -70,6 +70,12 @@ async def init_db():
                 logging.warning(f"[DB Migration] Could not rename legacy DB: {e}")
 
     async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute('PRAGMA journal_mode = WAL;')
+        await db.execute('PRAGMA synchronous = NORMAL;')
+        await db.execute('PRAGMA busy_timeout = 5000;')
+        await db.execute('PRAGMA cache_size = -64000;')
+        await db.execute('PRAGMA temp_store = MEMORY;')
+        await db.execute('PRAGMA mmap_size = 268435456;')
         await db.execute('PRAGMA foreign_keys = ON;')
         with open(SCHEMA_PATH, 'r', encoding='utf-8') as f:
             await db.executescript(f.read())
@@ -1891,9 +1897,8 @@ async def cleanup_expired_data(retention_days: int = 14) -> dict:
         # -------------------------------------------------------------
         try:
             await db.execute("PRAGMA optimize;")
-            await db.execute("VACUUM;")
         except Exception as e:
-            logger.error(f"Error executing VACUUM/optimize: {e}")
+            logger.error(f"Error executing PRAGMA optimize: {e}")
 
     db_size_after = os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0
     freed_bytes = max(0, db_size_before - db_size_after)

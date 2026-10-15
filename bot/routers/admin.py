@@ -14,16 +14,22 @@ from database import db_manager
 admin_router = Router()
 
 # === ADMIN FILTER ===
-def is_admin(message: types.Message):
+def is_admin(event: types.Message | types.CallbackQuery | int | None):
     """Handles is admin."""
-    if not message:
+    if not event:
         return False
-    user_id = getattr(message, 'from_user', None) and message.from_user.id
-    chat_id = getattr(message, 'chat', None) and message.chat.id
-    if user_id and user_id in ADMIN_IDS:
-        return True
-    if chat_id and chat_id in ADMIN_IDS:
-        return True
+    if isinstance(event, int):
+        return event in ADMIN_IDS
+    if isinstance(event, types.CallbackQuery):
+        return event.from_user.id in ADMIN_IDS
+    if isinstance(event, types.Message):
+        user_id = getattr(event, 'from_user', None) and event.from_user.id
+        chat_id = getattr(event, 'chat', None) and event.chat.id
+        if user_id and user_id in ADMIN_IDS:
+            return True
+        if chat_id and chat_id in ADMIN_IDS:
+            return True
+        return False
     return False
 
 

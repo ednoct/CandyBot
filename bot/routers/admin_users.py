@@ -11,13 +11,14 @@ from .admin import is_admin
 from ..states import AdminStates
 from database import db_manager
 import aiosqlite
+import logging
 
 admin_users_router = Router()
 
 # === ROUTER: USERS MENU ===
 @admin_users_router.callback_query(F.data == "admin_users")
 async def users_menu(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     await state.clear()
     
     from aiogram.types import InlineKeyboardButton
@@ -52,65 +53,126 @@ async def users_menu(callback: types.CallbackQuery, state: FSMContext):
 
 @admin_users_router.callback_query(F.data == "admin_search_user")
 async def search_user_prompt(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     await state.set_state(AdminStates.waiting_for_user_id)
     await callback.message.edit_text("لطفا شناسه عددی (Chat ID) یا نام کاربری را وارد کنید:")
 
-async def show_user_management_panel(message: types.Message, target_id: int | str):
+async def show_user_management_panel(
+    message: types.Message, 
+    target_id: int | str,
+    is_group: bool = False,
+    edit_message: bool = False
+):
     """Builds and sends the user management panel for a given user ID."""
     import html
-    user = await db_manager.get_user(target_id)
-    
-    if user:
-        wallet_bal = int(user['balance'] or 0)
-        comm_bal = int(user['agent_commission_balance'] or 0) if ('agent_commission_balance' in user.keys() and user['agent_commission_balance'] is not None) else 0
-        user_status = user['status'] if 'status' in user.keys() else 'active'
-        username_val = user.get('username')
-        username_str = f"@{html.escape(username_val)}" if username_val else "ندارد"
-        user_status_str = html.escape(str(user_status))
+    if not is_group and message.chat and message.chat.type in ["group", "supergroup"]:
+        is_group = True
 
-        text = (
-            f"👤 <b>اطلاعات کاربر</b>\n"
-            f"شناسه: <code>{user['id']}</code>\n"
-            f"نام کاربری: {username_str}\n"
-            f"💰 موجودی کیف پول: {wallet_bal:,} تومان\n"
-            f"💼 موجودی کمیسیون: {comm_bal:,} تومان\n"
-            f"وضعیت: {user_status_str}"
-        )
-        builder = InlineKeyboardBuilder()
-        builder.button(text="➕ شارژ کیف", callback_data=f"wallet_add_{user['id']}")
-        builder.button(text="➖ کسر کیف", callback_data=f"wallet_reduce_{user['id']}")
-        builder.button(text="⭕️ صفر کردن موجودی کیف", callback_data=f"wallet_zero_{user['id']}")
-        builder.button(text="💼 تغییر موجودی کمیسیون", callback_data=f"user_comm_bal_{user['id']}")
-        
-        if user_status == 'banned':
-            builder.button(text="✅ رفع مسدودی", callback_data=f"user_unban_{user['id']}")
-        else:
-            builder.button(text="🚫 مسدود کردن", callback_data=f"user_ban_{user['id']}")
-            
-        builder.button(text="🔄 انتقال حساب", callback_data=f"user_transfer_{user['id']}")
-        builder.button(text="📢 بدون نیاز به جوین", callback_data=f"user_bypass_{user['id']}")
-        builder.button(text="💳 تراکنش‌ها", callback_data=f"user_payments_{user['id']}")
-        
-        # New buttons: Send Message and Fast Gift
-        builder.button(text="📩 ارسال پیام مستقیم", callback_data=f"user_msg_{user['id']}")
-        builder.button(text="🎁 ارسال کد هدیه", callback_data=f"user_gift_{user['id']}")
-        
-        builder.button(text="🗑 حذف کامل کاربر", callback_data=f"user_delete_confirm_{user['id']}")
-        
-        builder.button(text="🔙 بازگشت", callback_data="admin_users", style="danger")
-        builder.adjust(2, 1, 1, 2, 2, 2, 1, 1)
-
-    else:
-        text = f"❌ کاربر با شناسه <code>{html.escape(str(target_id))}</code> یافت نشد."
-        builder = InlineKeyboardBuilder()
-        builder.button(text="🔙 بازگشت", callback_data="admin_users", style="danger")
-        
     try:
-        await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        user_row = await db_manager.get_user(target_id)
+        
+        if user_row:
+            user = dict(user_row)
+            wallet_bal = int(user.get('balance') or 0)
+            comm_bal = int(user.get('agent_commission_balance') or 0)
+            user_status = user.get('status') or 'active'
+            username_val = user.get('username')
+            username_str = f"@{html.escape(str(username_val))}" if username_val else "ندارد"
+            user_status_str = html.escape(str(user_status))
+
+            uid = user.get('id', target_id)
+            text = (
+                f"👤 <b>اطلاعات کاربر</b>\n"
+                f"شناسه: <code>{uid}</code>\n"
+                f"نام کاربری: {username_str}\n"
+                f"💰 موجودی کیف پول: {wallet_bal:,} تومان\n"
+                f"💼 موجودی کمیسیون: {comm_bal:,} تومان\n"
+                f"وضعیت: {user_status_str}"
+            )
+            builder = InlineKeyboardBuilder()
+            builder.button(text="➕ شارژ کیف", callback_data=f"wallet_add_{uid}")
+            builder.button(text="➖ کسر کیف", callback_data=f"wallet_reduce_{uid}")
+            builder.button(text="⭕️ صفر کردن موجودی کیف", callback_data=f"wallet_zero_{uid}")
+            builder.button(text="💼 تغییر موجودی کمیسیون", callback_data=f"user_comm_bal_{uid}")
+            
+            if user_status == 'banned':
+                builder.button(text="✅ رفع مسدودی", callback_data=f"user_unban_{uid}")
+            else:
+                builder.button(text="🚫 مسدود کردن", callback_data=f"user_ban_{uid}")
+                
+            builder.button(text="🔄 انتقال حساب", callback_data=f"user_transfer_{uid}")
+            builder.button(text="📢 بدون نیاز به جوین", callback_data=f"user_bypass_{uid}")
+            builder.button(text="💳 تراکنش‌ها", callback_data=f"user_payments_{uid}")
+            
+            # New buttons: Send Message and Fast Gift
+            builder.button(text="📩 ارسال پیام مستقیم", callback_data=f"user_msg_{uid}")
+            builder.button(text="🎁 ارسال کد هدیه", callback_data=f"user_gift_{uid}")
+            
+            builder.button(text="🗑 حذف کامل کاربر", callback_data=f"user_delete_confirm_{uid}")
+            
+            if is_group:
+                builder.button(text="❌ بستن منوی مدیریت", callback_data="close_user_panel", style="danger")
+            else:
+                builder.button(text="🔙 بازگشت", callback_data="admin_users", style="danger")
+            builder.adjust(2, 1, 1, 2, 2, 2, 1, 1)
+
+        else:
+            text = f"❌ کاربر با شناسه <code>{html.escape(str(target_id))}</code> در دیتابیس یافت نشد."
+            builder = InlineKeyboardBuilder()
+            if is_group:
+                builder.button(text="❌ بستن", callback_data="close_user_panel", style="danger")
+            else:
+                builder.button(text="🔙 بازگشت", callback_data="admin_users", style="danger")
+            
+        try:
+            if edit_message:
+                await message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+            elif is_group:
+                await message.reply(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+            else:
+                await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        except Exception as parse_err:
+            logging.warning(f"show_user_management_panel failed with HTML, retrying plain: {parse_err}")
+            if edit_message:
+                await message.edit_text(text, reply_markup=builder.as_markup())
+            elif is_group:
+                await message.reply(text, reply_markup=builder.as_markup())
+            else:
+                await message.answer(text, reply_markup=builder.as_markup())
+
     except Exception as e:
-        logging.warning(f"show_user_management_panel failed with HTML, retrying plain: {e}")
-        await message.answer(text, reply_markup=builder.as_markup())
+        logging.error(f"Error in show_user_management_panel: {e}", exc_info=True)
+        await message.answer(f"⚠️ خطا در نمایش منوی کاربر:\n<code>{html.escape(str(e))}</code>", parse_mode="HTML")
+
+
+# === ROUTER: OPEN USER MANAGEMENT DIRECTLY IN GROUP ===
+@admin_users_router.callback_query(F.data.startswith("manage_user_group_"))
+async def handle_group_manage_user(callback: types.CallbackQuery):
+    """Opens the user management panel directly in the reports group."""
+    if not is_admin(callback):
+        return await callback.answer("❌ دسترسی غیرمجاز. فقط ادمین‌ها مجاز به مدیریت کاربر هستند.", show_alert=True)
+        
+    await callback.answer()
+    target_id = callback.data.replace("manage_user_group_", "").strip()
+    
+    await show_user_management_panel(
+        message=callback.message,
+        target_id=target_id,
+        is_group=True,
+        edit_message=False
+    )
+
+
+# === ROUTER: CLOSE USER MANAGEMENT PANEL IN GROUP ===
+@admin_users_router.callback_query(F.data == "close_user_panel")
+async def handle_close_user_panel(callback: types.CallbackQuery):
+    """Closes and deletes the user management panel in the reports group."""
+    if not is_admin(callback):
+        return await callback.answer("❌ دسترسی غیرمجاز.", show_alert=True)
+    try:
+        await callback.message.delete()
+    except Exception:
+        await callback.message.edit_text("منوی مدیریت بسته شد.", reply_markup=None)
 
 @admin_users_router.message(AdminStates.waiting_for_user_id)
 async def search_user_result(message: types.Message, state: FSMContext):
@@ -124,7 +186,7 @@ async def search_user_result(message: types.Message, state: FSMContext):
 # === ROUTER: WALLET MANAGEMENT ===
 @admin_users_router.callback_query(F.data.startswith("wallet_add_"))
 async def prompt_wallet_add(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     target_id = callback.data.split("_")[2]
     await state.update_data(target_user_id=target_id)
     await state.set_state(AdminStates.waiting_for_add_balance)
@@ -153,7 +215,7 @@ async def process_wallet_add(message: types.Message, state: FSMContext):
     
 @admin_users_router.callback_query(F.data.startswith("wallet_reduce_"))
 async def prompt_wallet_reduce(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     target_id = callback.data.split("_")[2]
     await state.update_data(target_user_id=target_id)
     await state.set_state(AdminStates.waiting_for_reduce_balance)
@@ -183,14 +245,15 @@ async def process_wallet_reduce(message: types.Message, state: FSMContext):
 # === ROUTER: COMMISSION BALANCE MANAGEMENT ===
 @admin_users_router.callback_query(F.data.startswith("user_comm_bal_"))
 async def prompt_user_comm_balance(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
-    target_id = int(callback.data.replace("user_comm_bal_", ""))
-    user = await db_manager.get_user(target_id)
-    if not user:
+    if not is_admin(callback): return
+    target_id = callback.data.split("_")[3]
+    user_row = await db_manager.get_user(target_id)
+    if not user_row:
         return await callback.answer("❌ کاربر یافت نشد.", show_alert=True)
 
-    comm_bal = int(user['agent_commission_balance'] or 0) if ('agent_commission_balance' in user.keys() and user['agent_commission_balance'] is not None) else 0
-    username_str = f"@{user['username']}" if user.get('username') else str(target_id)
+    user = dict(user_row)
+    comm_bal = int(user.get('agent_commission_balance') or 0)
+    username_str = f"@{user.get('username')}" if user.get('username') else str(target_id)
 
     await state.update_data(target_user_id=target_id)
     await state.set_state(AdminStates.waiting_for_commission_balance_change)
@@ -289,7 +352,7 @@ async def process_user_comm_balance(message: types.Message, state: FSMContext):
 # === ROUTER: USER STATUS ===
 @admin_users_router.callback_query(F.data.startswith("user_ban_"))
 async def user_ban(callback: types.CallbackQuery):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     target_id = callback.data.split("_")[2]
     
     from database.db_manager import DB_PATH
@@ -297,11 +360,13 @@ async def user_ban(callback: types.CallbackQuery):
         await db.execute('UPDATE users SET status = ? WHERE id = ?', ('banned', target_id))
         await db.commit()
         
-    await callback.message.edit_text(f"🚫 کاربر {target_id} با موفقیت مسدود شد.")
+    await callback.answer(f"🚫 کاربر {target_id} با موفقیت مسدود شد.", show_alert=True)
+    is_group = bool(callback.message.chat and callback.message.chat.type in ["group", "supergroup"])
+    await show_user_management_panel(callback.message, target_id, is_group=is_group, edit_message=True)
 
 @admin_users_router.callback_query(F.data.startswith("user_unban_"))
 async def user_unban(callback: types.CallbackQuery):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     target_id = callback.data.split("_")[2]
     
     from database.db_manager import DB_PATH
@@ -309,20 +374,23 @@ async def user_unban(callback: types.CallbackQuery):
         await db.execute('UPDATE users SET status = ? WHERE id = ?', ('active', target_id))
         await db.commit()
         
-    await callback.message.edit_text(f"✅ مسدودی کاربر {target_id} برطرف شد.")
+    await callback.answer(f"✅ مسدودی کاربر {target_id} برطرف شد.", show_alert=True)
+    is_group = bool(callback.message.chat and callback.message.chat.type in ["group", "supergroup"])
+    await show_user_management_panel(callback.message, target_id, is_group=is_group, edit_message=True)
 
 # === ROUTER: DELETE USER (2-STEP CONFIRMATION) ===
 @admin_users_router.callback_query(F.data.startswith("user_delete_confirm_"))
 async def user_delete_confirm(callback: types.CallbackQuery):
     """Step 1: Ask admin to confirm permanent deletion."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     target_id = callback.data.split("_")[3]
 
-    user = await db_manager.get_user(target_id)
-    if not user:
+    user_row = await db_manager.get_user(target_id)
+    if not user_row:
         return await callback.answer("❌ کاربر یافت نشد.", show_alert=True)
 
-    username_display = f"@{user['username']}" if user.get('username') else "بدون یوزرنیم"
+    user = dict(user_row)
+    username_display = f"@{user.get('username')}" if user.get('username') else "بدون یوزرنیم"
 
     builder = InlineKeyboardBuilder()
     builder.row(
@@ -354,15 +422,16 @@ async def user_delete_confirm(callback: types.CallbackQuery):
 @admin_users_router.callback_query(F.data.startswith("user_delcancel_"))
 async def user_delete_back(callback: types.CallbackQuery):
     """Cancel delete and go back to user panel."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     target_id = callback.data.split("_")[2]
-    await show_user_management_panel(callback.message, target_id)
+    is_group = bool(callback.message.chat and callback.message.chat.type in ["group", "supergroup"])
+    await show_user_management_panel(callback.message, target_id, is_group=is_group, edit_message=True)
     await callback.answer()
 
 @admin_users_router.callback_query(F.data.startswith("user_delete_exec_"))
 async def user_delete_execute(callback: types.CallbackQuery):
     """Step 2: Execute the permanent deletion and report to admin."""
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     target_id = int(callback.data.split("_")[3])
 
     await callback.message.edit_text("⏳ در حال حذف کاربر از دیتابیس...")
@@ -397,7 +466,7 @@ async def user_delete_execute(callback: types.CallbackQuery):
 
 @admin_users_router.callback_query(F.data.startswith("user_payments_"))
 async def user_payments(callback: types.CallbackQuery):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     target_id = callback.data.split("_")[2]
     
     # Mocking view payments for now
@@ -409,7 +478,7 @@ async def user_payments(callback: types.CallbackQuery):
     await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
 @admin_users_router.callback_query(F.data.startswith("wallet_zero_"))
 async def wallet_zero(callback: types.CallbackQuery):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     target_id = callback.data.split("_")[2]
     
     from database.db_manager import DB_PATH
@@ -418,11 +487,13 @@ async def wallet_zero(callback: types.CallbackQuery):
         await db.execute('UPDATE users SET balance = 0 WHERE id = ?', (target_id,))
         await db.commit()
         
-    await callback.message.edit_text(f"⭕️ موجودی کاربر {target_id} با موفقیت صفر شد.")
+    await callback.answer(f"⭕️ موجودی کاربر {target_id} با موفقیت صفر شد.", show_alert=True)
+    is_group = bool(callback.message.chat and callback.message.chat.type in ["group", "supergroup"])
+    await show_user_management_panel(callback.message, target_id, is_group=is_group, edit_message=True)
 
 @admin_users_router.callback_query(F.data.startswith("user_bypass_"))
 async def user_bypass(callback: types.CallbackQuery):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     target_id = callback.data.split("_")[2]
     
     # In legacy this was `joinchannel` = "active"
@@ -438,7 +509,7 @@ async def user_bypass(callback: types.CallbackQuery):
 
 @admin_users_router.callback_query(F.data.startswith("user_transfer_"))
 async def user_transfer_prompt(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     target_id = callback.data.split("_")[2]
     
     await state.update_data(transfer_from_id=target_id)
@@ -488,7 +559,7 @@ import asyncio
 
 @admin_users_router.callback_query(F.data == "admin_broadcast_menu")
 async def broadcast_menu(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     await state.clear()
     
     from aiogram.types import InlineKeyboardButton
@@ -504,7 +575,7 @@ async def broadcast_menu(callback: types.CallbackQuery, state: FSMContext):
 
 @admin_users_router.callback_query(F.data.startswith("bcast_type_"))
 async def broadcast_audience(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     bcast_type = callback.data.split("_")[2] # "send" or "fwd"
     await state.update_data(bcast_type=bcast_type)
     
@@ -519,7 +590,7 @@ async def broadcast_audience(callback: types.CallbackQuery, state: FSMContext):
     
 @admin_users_router.callback_query(F.data.startswith("bcast_aud_"))
 async def broadcast_message_prompt(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     aud_type = callback.data.split("_")[2] # "all", "buyers", "nonbuyers"
     await state.update_data(bcast_aud=aud_type)
     
@@ -560,7 +631,7 @@ async def broadcast_pin_prompt(message: types.Message, state: FSMContext):
 
 @admin_users_router.callback_query(BroadcastStates.waiting_for_pin_decision, F.data.startswith("bcast_pin_"))
 async def broadcast_execute(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     
     pin = (callback.data == "bcast_pin_yes")
     data = await state.get_data()
@@ -654,7 +725,7 @@ async def handle_ignore_callback(callback: types.CallbackQuery):
 
 @admin_users_router.callback_query(F.data.startswith("admin_ulist_"))
 async def handle_paginated_users(callback: types.CallbackQuery):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     
     parts = callback.data.split("_")
     list_type = parts[2]
@@ -692,21 +763,25 @@ async def handle_paginated_users(callback: types.CallbackQuery):
 
 @admin_users_router.callback_query(F.data.startswith("user_manage_"))
 async def handle_user_manage_click(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     await state.clear()
     target_id = int(callback.data.split("_")[2])
-    try:
-        await callback.message.delete()
-    except Exception:
-        pass
-    await show_user_management_panel(callback.message, target_id)
+    is_group = bool(callback.message.chat and callback.message.chat.type in ["group", "supergroup"])
+    if is_group:
+        await show_user_management_panel(callback.message, target_id, is_group=True, edit_message=True)
+    else:
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        await show_user_management_panel(callback.message, target_id)
 
 # ============================================================
 # SEARCH ORDER
 # ============================================================
 @admin_users_router.callback_query(F.data == "admin_search_order")
 async def search_order_prompt(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     await state.set_state(AdminStates.waiting_for_order_id)
     
     builder = InlineKeyboardBuilder()
@@ -747,7 +822,7 @@ async def search_order_execute(message: types.Message, state: FSMContext):
 # ============================================================
 @admin_users_router.callback_query(F.data == "admin_global_charge")
 async def global_charge_prompt(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     await state.set_state(AdminStates.waiting_for_global_charge_amount)
     
     builder = InlineKeyboardBuilder()
@@ -819,7 +894,7 @@ async def global_charge_execute(message: types.Message, state: FSMContext):
 # ============================================================
 @admin_users_router.callback_query(F.data == "admin_global_traffic")
 async def global_traffic_type_prompt(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     await state.clear()
     
     builder = InlineKeyboardBuilder()
@@ -839,7 +914,7 @@ async def global_traffic_type_prompt(callback: types.CallbackQuery, state: FSMCo
 
 @admin_users_router.callback_query(F.data.startswith("admin_gt_type:"))
 async def global_traffic_value_prompt(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     choice = callback.data.split(":")[1]
     
     builder = InlineKeyboardBuilder()
@@ -1112,7 +1187,7 @@ async def run_global_traffic_or_time_task(message: types.Message, gb: float, day
 # ============================================================
 @admin_users_router.callback_query(F.data.startswith("user_msg_"))
 async def direct_message_prompt(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     target_id = callback.data.split("_")[2]
     await state.update_data(target_user_id=target_id)
     await state.set_state(AdminStates.waiting_for_admin_user_msg)
@@ -1147,7 +1222,7 @@ import uuid
 
 @admin_users_router.callback_query(F.data.startswith("user_gift_"))
 async def fast_gift_prompt(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     target_id = callback.data.split("_")[2]
     await state.update_data(target_user_id=target_id)
     await state.set_state(AdminStates.waiting_for_fast_gift_value)
@@ -1210,7 +1285,7 @@ async def fast_gift_generate(message: types.Message, state: FSMContext):
 # ============================================================
 @admin_users_router.callback_query(F.data == "admin_trial_charge")
 async def trial_charge_prompt(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.message): return
+    if not is_admin(callback): return
     await state.set_state(AdminStates.waiting_for_trial_charge_amount)
     
     builder = InlineKeyboardBuilder()

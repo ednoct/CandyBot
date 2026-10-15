@@ -28,45 +28,50 @@ async def cron_license_stats_check(bot=None):
         
     while True:
         try:
+            licenses = []
             async with aiosqlite.connect(DB_PATH) as db:
                 db.row_factory = aiosqlite.Row
-                
-                # Get all active licenses with sub_links
                 async with db.execute(
                     "SELECT l.id, l.user_id, l.sub_id, p.sub_link, l.alert_sent "
                     "FROM xui_licenses l "
                     "JOIN xui_panels p ON l.panel_id = p.id "
                     "WHERE p.sub_link IS NOT NULL AND p.sub_link != '' AND l.alert_sent = 0"
                 ) as cursor:
-                    licenses = await cursor.fetchall()
+                    rows = await cursor.fetchall()
+                    licenses = [dict(r) for r in rows]
+
+            alerted_lic_ids = []
+            for lic in licenses:
+                stats = await fetch_sub_stats(lic['sub_link'], lic['sub_id'])
+                if not stats:
+                    continue
                     
-                for lic in licenses:
-                    stats = await fetch_sub_stats(lic['sub_link'], lic['sub_id'])
-                    if not stats:
-                        continue
-                        
-                    needs_alert = False
-                    reason = ""
+                needs_alert = False
+                reason = ""
+                
+                if not stats['is_unlimited_traffic'] and stats['fraction'] < 0.10:
+                    needs_alert = True
+                    reason = f"حجم باقی‌مانده شما به کمتر از ۱۰ درصد ({stats['remaining_gb']:.2f} GB) رسیده است."
+                elif not stats['is_unlimited_time'] and stats['days_left'] < 3.0:
+                    needs_alert = True
+                    reason = f"اعتبار زمانی شما کمتر از ۳ روز ({int(stats['days_left'])} روز) است."
                     
-                    if not stats['is_unlimited_traffic'] and stats['fraction'] < 0.10:
-                        needs_alert = True
-                        reason = f"حجم باقی‌مانده شما به کمتر از ۱۰ درصد ({stats['remaining_gb']:.2f} GB) رسیده است."
-                    elif not stats['is_unlimited_time'] and stats['days_left'] < 3.0:
-                        needs_alert = True
-                        reason = f"اعتبار زمانی شما کمتر از ۳ روز ({int(stats['days_left'])} روز) است."
-                        
-                    if needs_alert:
-                        try:
-                            await bot.send_message(
-                                lic['user_id'],
-                                f"⚠️ <b>هشدار رو به اتمام بودن سرویس</b>\n\nکاربر گرامی، {reason}\nلطفاً برای تمدید سرویس خود اقدام کنید.",
-                                parse_mode="HTML"
-                            )
-                            # Mark alert as sent
-                            await db.execute("UPDATE xui_licenses SET alert_sent = 1 WHERE id = ?", (lic['id'],))
-                            await db.commit()
-                        except Exception as e:
-                            logging.error(f"Failed to send alert to user {lic['user_id']}: {e}")
+                if needs_alert:
+                    try:
+                        await bot.send_message(
+                            lic['user_id'],
+                            f"⚠️ <b>هشدار رو به اتمام بودن سرویس</b>\n\nکاربر گرامی، {reason}\nلطفاً برای تمدید سرویس خود اقدام کنید.",
+                            parse_mode="HTML"
+                        )
+                        alerted_lic_ids.append(lic['id'])
+                    except Exception as e:
+                        logging.error(f"Failed to send alert to user {lic['user_id']}: {e}")
+
+            if alerted_lic_ids:
+                async with aiosqlite.connect(DB_PATH) as db:
+                    placeholders = ",".join("?" for _ in alerted_lic_ids)
+                    await db.execute(f"UPDATE xui_licenses SET alert_sent = 1 WHERE id IN ({placeholders})", alerted_lic_ids)
+                    await db.commit()
                             
         except Exception as e:
             logging.error(f"Cron License Stats Check Error: {e}")
@@ -227,14 +232,16 @@ async def cron_biweekly_cleanup(bot=None):
 
             should_run = False
             if not last_cleanup:
-                should_run = True
+                await db_manager.set_setting("last_biweekly_cleanup", str(now))
+                should_run = False
             else:
                 try:
                     last_time = int(last_cleanup)
                     if (now - last_time) >= interval_seconds:
                         should_run = True
                 except ValueError:
-                    should_run = True
+                    await db_manager.set_setting("last_biweekly_cleanup", str(now))
+                    should_run = False
 
             if should_run:
                 logging.info("Starting bi-weekly database cleanup of expired tickets, licenses, and invoices...")

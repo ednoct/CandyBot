@@ -100,8 +100,16 @@ async def cmd_start(message: types.Message, state: FSMContext, command: CommandO
             user_id=message.from_user.id
         )
 
+    raw_args = ""
     if command and command.args:
-        if command.args.startswith("manage_"):
+        raw_args = command.args.strip()
+    elif message.text:
+        parts = message.text.split(maxsplit=1)
+        if len(parts) > 1:
+            raw_args = parts[1].strip()
+
+    if raw_args:
+        if raw_args.startswith("manage_"):
             user_id = message.from_user.id if message.from_user else message.chat.id
             is_adm = user_id in ADMIN_IDS
             if not is_adm:
@@ -118,22 +126,22 @@ async def cmd_start(message: types.Message, state: FSMContext, command: CommandO
                     pass
 
             if is_adm:
-                target_id = command.args[7:].strip()
+                target_id = raw_args[7:].strip()
                 await show_user_management_panel(message, target_id)
                 return
             else:
                 await message.answer("❌ شما دسترسی لازم برای مدیریت این کاربر را ندارید.")
                 return
-        elif command.args.startswith("ref_"):
+        elif raw_args.startswith("ref_"):
             try:
-                ref_code = int(command.args[4:])
+                ref_code = int(raw_args[4:])
                 if is_new_user and ref_code != message.from_user.id:
                     await db_manager.set_referred_by(message.from_user.id, ref_code)
             except ValueError:
                 pass
-        elif command.args.startswith("agent_"):
+        elif raw_args.startswith("agent_"):
             try:
-                agent_id = int(command.args[6:])
+                agent_id = int(raw_args[6:])
                 if is_new_user and agent_id != message.from_user.id:
                     await db_manager.set_agent_referrer(message.from_user.id, agent_id)
             except ValueError:
@@ -153,7 +161,8 @@ async def cmd_start(message: types.Message, state: FSMContext, command: CommandO
 @user_router.callback_query(F.data == "confirm_channel")
 async def confirm_channel_callback(callback: types.CallbackQuery, bot: Bot):
     """Verifies that the user has joined all required channels."""
-    from bot.services.channel_service import get_unjoined_channels, build_force_join_markup
+    from bot.services.channel_service import get_unjoined_channels, build_force_join_markup, invalidate_user_membership_cache
+    invalidate_user_membership_cache(callback.from_user.id)
     unjoined = await get_unjoined_channels(bot, callback.from_user.id)
     if unjoined:
         await callback.answer("❌ هنوز عضو کانال نشده‌اید.", show_alert=True)
