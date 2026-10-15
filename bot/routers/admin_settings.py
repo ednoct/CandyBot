@@ -80,30 +80,28 @@ async def handle_toggles(callback: types.CallbackQuery):
     
     if callback.data == "toggle_op_mode":
         current = await db_manager.get_operating_mode()
-        next_mode = {"NORMAL": "SALES_PAUSED", "SALES_PAUSED": "MAINTENANCE", "MAINTENANCE": "NORMAL"}[current]
-        async with aiosqlite.connect(db_manager.DB_PATH) as db:
-            await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('operating_mode', ?)", (next_mode,))
-            await db.commit()
+        mode_cycle = {
+            "NORMAL": "SALES_PAUSED",
+            "SALES_PAUSED": "MAINTENANCE",
+            "MAINTENANCE": "NORMAL"
+        }
+        next_mode = mode_cycle.get(current, "SALES_PAUSED" if current == "NORMAL" else "NORMAL")
+        await db_manager.set_operating_mode(next_mode)
             
     elif callback.data == "toggle_feedback":
         current = await db_manager.get_setting('feedback_enabled', '1')
         next_val = '0' if current == '1' else '1'
-        async with aiosqlite.connect(db_manager.DB_PATH) as db:
-            await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('feedback_enabled', ?)", (next_val,))
-            await db.commit()
+        await db_manager.set_setting('feedback_enabled', next_val)
             
     elif callback.data == "toggle_acquisition":
         current = await db_manager.get_setting('acquisition_survey_enabled', '0')
         next_val = '0' if current == '1' else '1'
-        async with aiosqlite.connect(db_manager.DB_PATH) as db:
-            await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('acquisition_survey_enabled', ?)", (next_val,))
-            await db.commit()
+        await db_manager.set_setting('acquisition_survey_enabled', next_val)
+
     elif callback.data == "toggle_qr_bg":
         current = await db_manager.get_setting('qr_bg_enabled', '0')
         next_val = '0' if current == '1' else '1'
-        async with aiosqlite.connect(db_manager.DB_PATH) as db:
-            await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('qr_bg_enabled', ?)", (next_val,))
-            await db.commit()
+        await db_manager.set_setting('qr_bg_enabled', next_val)
             
     await settings_menu(callback)
 

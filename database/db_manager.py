@@ -126,8 +126,9 @@ async def init_db():
             )
         """)
 
-        # Seed default operating mode if not set
+        # Seed default operating mode if not set and sanitize legacy values (such as 'api')
         await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('operating_mode', 'NORMAL')")
+        await db.execute("UPDATE settings SET value = 'NORMAL' WHERE key = 'operating_mode' AND value NOT IN ('NORMAL', 'SALES_PAUSED', 'MAINTENANCE')")
         
         # Insert default department if none exist
         async with db.execute("SELECT COUNT(*) FROM departments") as cursor:
@@ -990,13 +991,20 @@ async def get_operating_mode() -> str:
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute("SELECT value FROM settings WHERE key = 'operating_mode'") as cursor:
             row = await cursor.fetchone()
-            return (row[0] if row else 'NORMAL') or 'NORMAL'
+            val = (row[0] if row else 'NORMAL') or 'NORMAL'
+            if val not in ('NORMAL', 'SALES_PAUSED', 'MAINTENANCE'):
+                # Self-healing: if legacy/invalid value like 'api' was in DB, repair it to NORMAL
+                await db.execute("UPDATE settings SET value = 'NORMAL' WHERE key = 'operating_mode'")
+                await db.commit()
+                return 'NORMAL'
+            return val
 
 async def set_operating_mode(mode: str):
     """Set operating mode. mode must be NORMAL, SALES_PAUSED, or MAINTENANCE."""
-    assert mode in ('NORMAL', 'SALES_PAUSED', 'MAINTENANCE')
+    if mode not in ('NORMAL', 'SALES_PAUSED', 'MAINTENANCE'):
+        mode = 'NORMAL'
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('operating_mode', ?)", (mode,))
+        await db.execute("INSERT INTO settings (key, value) VALUES ('operating_mode', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", (mode,))
         await db.commit()
 
 async def get_setting(key: str, default: str = '') -> str:
