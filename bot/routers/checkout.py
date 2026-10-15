@@ -277,7 +277,7 @@ async def render_calculator(message: types.Message, state: FSMContext, plan_id: 
     
     if time_packages:
         # Header Time
-        builder.row(types.InlineKeyboardButton(text=f"زمان (روز) • هر روز {data['plan_price_day']:,} تومان 🕒", callback_data="none", style="primary"))
+        builder.row(types.InlineKeyboardButton(text=f"زمان (روز) • هر روز {data['plan_price_day']:,} تومان 🕒", callback_data="none", style="success"))
         
         # Grid Time (max 3 per row)
         time_buttons = []
@@ -287,7 +287,7 @@ async def render_calculator(message: types.Message, state: FSMContext, plan_id: 
         builder.row(*time_buttons, width=3)
         
         # Selected Time summary
-        builder.row(types.InlineKeyboardButton(text=f"روز انتخاب شده: {sel_days} ✅", callback_data="none", style="success"))
+        builder.row(types.InlineKeyboardButton(text=f"روز انتخاب شده: {sel_days} ✅", callback_data="none", style="primary"))
         
     if traffic_packages:
         # Header Traffic (پویا و حساس به پلکان)
