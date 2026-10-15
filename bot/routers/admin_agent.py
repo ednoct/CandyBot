@@ -123,8 +123,11 @@ async def process_default_text(message: types.Message, state: FSMContext):
     builder = InlineKeyboardBuilder()
     builder.row(types.InlineKeyboardButton(text="🔙 بازگشت به تنظیمات نمایندگان", callback_data="admin_agent", style="danger"))
 
-    await message.answer("✅ متن پیشفرض نمایندگی با موفقیت به‌روزرسانی شد.", reply_markup=builder.as_markup())
-
+    await message.answer(
+        "✅ متن پیشفرض نمایندگی با موفقیت به‌روزرسانی شد.", 
+        reply_markup=builder.as_markup(),
+        disable_web_page_preview=True
+    )
 
 # === SETTING 2: COMMISSION PERCENT ===
 @admin_agent_router.callback_query(F.data == "agent_admin_percent")
