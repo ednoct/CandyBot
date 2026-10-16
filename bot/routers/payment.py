@@ -12,6 +12,10 @@ import uuid
 import aiosqlite
 import time
 from database import db_manager
+import datetime
+import re
+from urllib.parse import urlparse
+from utils.date_formatter import get_jalali_date, get_current_jalali
 from utils.exchange import get_arz_usdt_rate, get_gram_irt_price
 
 payment_router = Router()
@@ -19,6 +23,42 @@ payment_router = Router()
 class PaymentState(StatesGroup):
     """Class representing PaymentState."""
     waiting_for_txid = State()
+    waiting_for_pingi_receipt = State()
+    waiting_for_txid_string = State()
+    waiting_for_appeal = State()
+
+class AdminRejectState(StatesGroup):
+    """FSM states for Admin Rejection workflow."""
+    waiting_for_reason = State()
+
+def extract_tx_hash(input_text: str) -> str:
+    """Extracts pure transaction hash from raw text or explorer URL."""
+    if not input_text or not isinstance(input_text, str):
+        return ""
+    text = input_text.strip()
+    if "/" in text:
+        clean = text.split("?")[0].split("#")[0].rstrip("/")
+        parts = [p.strip() for p in clean.split("/") if p.strip()]
+        if parts:
+            return parts[-1]
+    return text.strip()
+
+def format_date_to_jalali(dt_val) -> str:
+    """Converts a timestamp or datetime string to formatted Jalali date string."""
+    if not dt_val:
+        return get_current_jalali()
+    if isinstance(dt_val, (int, float)):
+        return get_jalali_date(int(dt_val))
+    if isinstance(dt_val, datetime.datetime):
+        return get_jalali_date(int(dt_val.timestamp()))
+    dt_str = str(dt_val).strip()
+    for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M:%S.%f'):
+        try:
+            d = datetime.datetime.strptime(dt_str, fmt)
+            return get_jalali_date(int(d.timestamp()))
+        except ValueError:
+            pass
+    return dt_str
 
 # === ROUTER: UNIFIED PAYMENT HANDLER ===
 @payment_router.callback_query(F.data.startswith("pay_"))
@@ -61,6 +101,15 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
         if gram_amount < 0.1:
             return await callback.answer("❌ خطا: کمترین مبلغ برای پرداخت در این درگاه 0.1 گرام می باشد.", show_alert=True)
 
+    crypto_amount = None
+    crypto_rate = None
+    if gateway_code == 'usdt':
+        crypto_amount = usdprice
+        crypto_rate = arz_usdt_rate
+    elif gateway_code == 'gram':
+        crypto_amount = gram_amount
+        crypto_rate = gram_irt_price
+
     invoice_id = str(uuid.uuid4())[:8].upper()
     
     # Generate Invoice in DB
@@ -69,16 +118,17 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
         license_note = data.get('license_note', '')
         await db.execute('''
             INSERT INTO invoices (id, user_id, plan_id, days, gb, base_price, wallet_deduction, 
-            discount_code, discount_deduction, gift_code, gift_deduction, final_amount, license_note, status, renew_license_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+            discount_code, discount_deduction, gift_code, gift_deduction, final_amount, license_note, status, renew_license_id, payment_method, crypto_amount, crypto_rate)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)
         ''', (invoice_id, callback.from_user.id, data.get('plan_id'), data.get('days'), data.get('gb'),
               data.get('base_price'), data.get('wallet_deduction'), data.get('discount_code'), 
               data.get('discount_amount', 0), data.get('gift_code'), data.get('gift_amount', 0), 
-              amount, license_note, data.get('renew_license_id')))
+              amount, license_note, data.get('renew_license_id'), gateway_code,
+              crypto_amount, crypto_rate))
               
         # Also create a legacy payment_report if offline
         if gateway_code in ['usdt', 'gram']:
-            expires_at = int(time.time()) + (7200 if gateway_code == 'usdt' else 86400)
+            expires_at = int(time.time()) + 86400  # 24 hours for both USDT and GRAM
             method = f"{gateway_code} offline"
             try:
                 await db.execute('''
@@ -108,7 +158,10 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
             types.InlineKeyboardButton(text="کپی آدرس", copy_text=types.CopyTextButton(text=str(walletaddressusdt)))
         )
         builder.row(
-            types.InlineKeyboardButton(text="📎 ارسال رسید / TxID", callback_data=f"sendtxid_{invoice_id}_usdt")
+            types.InlineKeyboardButton(text="📢 آموزش پیدا کردن هش رسید", url="https://t.me/CandyConnectHelp/4", style="primary"),
+        )
+        builder.row(
+            types.InlineKeyboardButton(text="💳 ارسال هش رسید (TXID / Hash)", callback_data=f"sendtxid_{invoice_id}_usdt", style="success")
         )
         
         text = (
@@ -119,7 +172,7 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
             f"💰 مقدار: <code>{usdprice}</code> USDT\n\n"
             f"📌 از دکمههای کپی زیر برای کپی مقدار تتر و آدرس کیف پول استفاده کنید، سپس واریز را انجام داده و رسید را ارسال کنید.\n\n"
             f"⚠️ هشدار: لطفاً دقت کنید که شبکه انتخابی شما حتماً BSC (BEP-20) باشد، در غیر این صورت ارز شما از دست خواهد رفت.\n"
-            f"⚠️ این فاکتور تا ٢ ساعت معتبر است.\n"
+            f"⚠️ این فاکتور تا ٢٤ ساعت معتبر است.\n"
             f"💡 <b>نکات مهم پیش از انتقال:</b>\n"
             f"لطفاً آدرس کیف پول مقصد و شبکه تتر را با دقت بررسی و وارد کنید. در صورت وارد کردن اشتباه آدرس، ارز شما از دست رفته و هرگز به دست ما نخواهد رسید. همچنین در صورت واریز از کیف صرافی (برداشت) هنگام خرید تتر مبلغ کارمزد برداشت صرافی را هم لحاظ کنید تا بتوانید دقیقاً مبلغ فاکتور را از صرافیتان به آدرس کیف پول ما انتقال دهید اگر هم از قبل در کیف صرافی تتر موجود دارید باید حداقل موجودیتان مبلغ فاکتور + کارمزد برداشت صرافیتان باشد\n"
             f"اگر از کیفپول شخصی، واریز را انجام میدهید دقت کنید در کیف پولتان به اندازه کارمزد شبکه BNB موجود داشته باشین تا بتوانید انتقال را انجام دهید و فاکتور تایید شود. در صورت دریافت مبلغ کمتر از مقدار درج شده در فاکتور، فاکتور شما تایید نخواهد شد اما با اینحال در صورتی که آدرس شبکه و نوع شبکه را درست وارد کرده باشید و مبلغ توسط ما دریافت شده باشد دارایی تان از دست نمی رود و کیف تان در ربات به اندازه مبلغ دریافتی شارژ میشود."
@@ -148,18 +201,20 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
         
         row2 = [types.InlineKeyboardButton(text="کپی کامنت", copy_text=types.CopyTextButton(text=str(memo_gram)))]
         if exchanger_gram and exchanger_gram != "0" and exchanger_gram.startswith("http"):
-            row2.append(types.InlineKeyboardButton(text="خرید از صرافی", web_app=types.WebAppInfo(url=exchanger_gram)))
+            row2.append(types.InlineKeyboardButton(text="صرافی بدون کارمزد", web_app=types.WebAppInfo(url=exchanger_gram)))
         builder.row(*row2)
-
         builder.row(
-            types.InlineKeyboardButton(text="📎 ارسال رسید / TxID", callback_data=f"sendtxid_{invoice_id}_gram")
+            types.InlineKeyboardButton(text="📢 آموزش پیدا کردن هش رسید", url="https://t.me/CandyConnectHelp/4", style="primary"),
+        )
+        builder.row(
+            types.InlineKeyboardButton(text="💳 ارسال هش رسید (TXID / Hash)", callback_data=f"sendtxid_{invoice_id}_gram", style="success")
         )
 
         text = (
             f"✅ فاکتور شما ایجاد شد\n\n"
             f"🛒 کد پیگیری: <code>{invoice_id}</code>\n"
             f"🌐 شبکه: TON OPEN NETWORK\n"
-            f"💵 (تون)نرخ هر واحد گرام (GRAM): {gram_irt_price:,} تومان\n"
+            f"💵 نرخ هر واحد گرام (GRAM): {gram_irt_price:,} تومان\n"
             f"💰 مقدار: <code>{gram_amount}</code> گرام (تون)\n"
             f"💳 آدرس ولت: <code>{walletaddressgram}</code>\n"
             f"📝 کامنت (Memo): <code>{memo_gram}</code>\n\n"
@@ -207,9 +262,15 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
             # Store frenzy_request_id in payment_reports
             async with aiosqlite.connect(db_manager.DB_PATH) as db:
                 try:
-                    await db.execute("UPDATE payment_reports SET gateway_request_id = ? WHERE invoice_id = ?", (request_id, invoice_id))
-                except:
-                    pass
+                    await db.execute('''
+                        INSERT INTO payment_reports (user_id, invoice_id, amount, payment_method, status, gateway_request_id)
+                        VALUES (?, ?, ?, 'frenzyex', 'pending', ?)
+                    ''', (callback.from_user.id, invoice_id, amount, request_id))
+                except Exception:
+                    try:
+                        await db.execute("UPDATE payment_reports SET gateway_request_id = ? WHERE invoice_id = ?", (request_id, invoice_id))
+                    except:
+                        pass
                 await db.commit()
             
             await callback.message.edit_text(
@@ -301,17 +362,63 @@ async def prompt_txid(callback: types.CallbackQuery, state: FSMContext):
     invoice_id = parts[1]
     gateway = parts[2] if len(parts) > 2 else 'usdt'
     
-    await state.update_data(txid_invoice_id=invoice_id, txid_gateway=gateway)
-    await state.set_state(PaymentState.waiting_for_txid)
+    # Check if invoice is already expired or processed
+    async with aiosqlite.connect(db_manager.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT status FROM invoices WHERE id = ?", (invoice_id,)) as cur:
+            inv = await cur.fetchone()
+            
+    if not inv or inv['status'] != 'pending':
+        return await callback.answer("⏳ این فاکتور منقضی شده یا قبلاً پردازش شده است.", show_alert=True)
+
+    # 1. GRAM Gateway: Show Pingi vs Personal Wallet/Other selection
+    if gateway == 'gram':
+        builder = InlineKeyboardBuilder()
+        builder.row(
+            types.InlineKeyboardButton(text="انتقال از صرافی پینگی", callback_data=f"gram_method_pingi_{invoice_id}")
+        )
+        builder.row(
+            types.InlineKeyboardButton(text="انتقال از کیف پول شخصی یا صرافی های دیگر", callback_data=f"gram_method_wallet_{invoice_id}")
+        )
+        builder.row(
+            types.InlineKeyboardButton(text="❌ انصراف", callback_data="cancel_txid", style="danger")
+        )
+        
+        prompt_text = (
+            "🧾 <b>انتخاب روش انتقال گرام:</b>\n\n"
+            "لطفاً روشی را که از طریق آن واریز گرام را انجام داده‌اید انتخاب کنید:"
+        )
+        
+        await callback.answer()
+        await callback.message.answer(
+            prompt_text,
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
+        )
+        return
+
+    # 2. USDT Gateway: Immediately prompt for TXID string only
+    await state.update_data(txid_invoice_id=invoice_id, txid_gateway='usdt', transfer_method='wallet_or_other')
+    await state.set_state(PaymentState.waiting_for_txid_string)
+    
+    async with aiosqlite.connect(db_manager.DB_PATH) as db:
+        await db.execute("UPDATE invoices SET transfer_method = 'wallet_or_other' WHERE id = ?", (invoice_id,))
+        try:
+            await db.execute("UPDATE payment_reports SET transfer_method = 'wallet_or_other' WHERE invoice_id = ?", (invoice_id,))
+        except Exception:
+            pass
+        await db.commit()
     
     builder = InlineKeyboardBuilder()
+    builder.row(
+        types.InlineKeyboardButton(text="📢 آموزش پیدا کردن هش رسید", url="https://t.me/CandyConnectHelp/4", style="primary"),
+    )
     builder.button(text="❌ انصراف", callback_data="cancel_txid", style="danger")
     
     prompt_text = (
-        "📎 <b>ارسال رسید پرداخت</b>\n\n"
-        "لطفاً <b>هش تراکنش (TxID)</b> یا <b>تصویر رسید</b> را ارسال کنید:\n\n"
-        "🖼 <i>میتوانید اسکرین‌شات رسید کیف پول را ارسال کنید</i>\n"
-        "🔢 <i>یا TxID (هش تراکنش) را به صورت متن paste کنید</i>"
+        "🔗 <b>ارسال هش تراکنش تتر (USDT)</b>\n\n"
+        "لطفاً فقط <b>هش تراکنش (TXID)</b> را به صورت متن ارسال کنید:\n\n"
+        "⚠️ <b>توجه:</b> در این مرحله فقط مجاز به ارسال متن هش تراکنش (String) هستید و ارسال تصویر، فایل یا هر فرمت دیگری مجاز نمی‌باشد."
     )
     
     await callback.answer()
@@ -321,81 +428,391 @@ async def prompt_txid(callback: types.CallbackQuery, state: FSMContext):
         parse_mode="HTML"
     )
 
+@payment_router.callback_query(F.data.startswith("gram_method_pingi_"))
+async def gram_pingi_choice(callback: types.CallbackQuery, state: FSMContext):
+    """Handles Gram: Transfer from Pingi exchange."""
+    invoice_id = callback.data.split('_')[3]
+    
+    async with aiosqlite.connect(db_manager.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT status FROM invoices WHERE id = ?", (invoice_id,)) as cur:
+            inv = await cur.fetchone()
+            
+    if not inv or inv['status'] != 'pending':
+        return await callback.answer("⏳ این فاکتور منقضی شده یا قبلاً پردازش شده است.", show_alert=True)
+
+    await state.update_data(txid_invoice_id=invoice_id, txid_gateway='gram', transfer_method='pingi')
+    await state.set_state(PaymentState.waiting_for_pingi_receipt)
+    
+    async with aiosqlite.connect(db_manager.DB_PATH) as db:
+        await db.execute("UPDATE invoices SET transfer_method = 'pingi' WHERE id = ?", (invoice_id,))
+        try:
+            await db.execute("UPDATE payment_reports SET transfer_method = 'pingi' WHERE invoice_id = ?", (invoice_id,))
+        except Exception:
+            pass
+        await db.commit()
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        types.InlineKeyboardButton(text="📢 آموزش پیدا کردن هش رسید", url="https://t.me/CandyConnectHelp/4", style="primary"),
+    )
+    builder.button(text="❌ انصراف", callback_data="cancel_txid", style="danger")
+    
+    prompt_text = (
+        "🧾 <b>انتقال از صرافی پینگی</b>\n\n"
+        "لطفاً <b>کد پیگیری تراکنش</b> یا <b>تصویر رسید (اسکرین‌شات)</b> را ارسال کنید:"
+    )
+    
+    await callback.answer()
+    await callback.message.edit_text(
+        prompt_text,
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
+    )
+
+@payment_router.callback_query(F.data.startswith("gram_method_wallet_"))
+async def gram_wallet_choice(callback: types.CallbackQuery, state: FSMContext):
+    """Handles Gram: Transfer from personal wallet or other exchanges."""
+    invoice_id = callback.data.split('_')[3]
+    
+    async with aiosqlite.connect(db_manager.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT status FROM invoices WHERE id = ?", (invoice_id,)) as cur:
+            inv = await cur.fetchone()
+            
+    if not inv or inv['status'] != 'pending':
+        return await callback.answer("⏳ این فاکتور منقضی شده یا قبلاً پردازش شده است.", show_alert=True)
+
+    await state.update_data(txid_invoice_id=invoice_id, txid_gateway='gram', transfer_method='wallet_or_other')
+    await state.set_state(PaymentState.waiting_for_txid_string)
+    
+    async with aiosqlite.connect(db_manager.DB_PATH) as db:
+        await db.execute("UPDATE invoices SET transfer_method = 'wallet_or_other' WHERE id = ?", (invoice_id,))
+        try:
+            await db.execute("UPDATE payment_reports SET transfer_method = 'wallet_or_other' WHERE invoice_id = ?", (invoice_id,))
+        except Exception:
+            pass
+        await db.commit()
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        types.InlineKeyboardButton(text="📢 آموزش پیدا کردن هش رسید", url="https://t.me/CandyConnectHelp/4", style="primary"),
+    )
+    builder.button(text="❌ انصراف", callback_data="cancel_txid", style="danger")
+    
+    prompt_text = (
+        "🔗 <b>انتقال از کیف پول شخصی یا صرافی های دیگر</b>\n\n"
+        "لطفاً فقط <b>هش تراکنش (TXID)</b> را به صورت متن ارسال کنید:\n\n"
+        "⚠️ <b>توجه:</b> در این مرحله فقط مجاز به ارسال متن هش تراکنش (String) هستید و ارسال تصویر، فایل یا هر فرمت دیگری مجاز نمی‌باشد."
+    )
+    
+    await callback.answer()
+    await callback.message.edit_text(
+        prompt_text,
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
+    )
+
 @payment_router.callback_query(F.data == "cancel_txid")
 async def cancel_txid(callback: types.CallbackQuery, state: FSMContext):
     """Handles cancel txid."""
     await state.clear()
-    await callback.message.delete()
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
     await callback.answer("عملیات لغو شد.")
 
-@payment_router.message(PaymentState.waiting_for_txid)
-async def process_txid(message: types.Message, state: FSMContext):
-    """Handles process txid — accepts both image and text."""
-    has_photo = bool(message.photo)
-    txid_text = message.text or message.caption or ''
-    
-    if not has_photo and not txid_text.strip():
-        return await message.answer(
-            "❌ لطفا تصویر رسید یا کد پیگیری / هش تراکنش را ارسال کنید.",
-            parse_mode="HTML"
-        )
-        
-    data = await state.get_data()
-    invoice_id = data.get('txid_invoice_id')
-    gateway = data.get('txid_gateway', 'usdt')
-    
-    # Store: for image receipts store the file_id in crypto_hash, text goes in crypto_hash too
-    stored_value = message.photo[-1].file_id if has_photo else txid_text.strip()
-    
-    async with aiosqlite.connect(db_manager.DB_PATH) as db:
-        # Try new schema column name first
-        try:
-            await db.execute('''
-                UPDATE payment_reports 
-                SET status = 'pending_receipt', crypto_hash = ? 
-                WHERE invoice_id = ?
-            ''', (stored_value, invoice_id))
-        except aiosqlite.OperationalError:
-            # Fallback for legacy schema
-            await db.execute('''
-                UPDATE payment_reports 
-                SET payment_Status = 'pending_receipt'
-                WHERE id_invoice = ?
-            ''', (invoice_id,))
-        await db.commit()
-        
-    await state.clear()
-    await message.reply("✅ رسید شما جهت بررسی ثبت شد. پس از تایید مدیر، حساب شما شارژ خواهد شد.")
-    
-    # Forward receipt to admins with inline buttons
+async def _forward_receipt_to_admins(
+    bot,
+    user_id: int,
+    invoice_id: str,
+    gateway: str,
+    transfer_method: str,
+    stored_value: str,
+    has_photo: bool,
+    receipt_text: str = "",
+    is_appeal: bool = False,
+    appeal_text: str = ""
+):
+    """Helper to forward payment receipt to admins with inline action buttons."""
     from bot.config import ADMIN_IDS
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     
-    admin_builder = InlineKeyboardBuilder()
-    admin_builder.button(text="✅ تایید", callback_data=f"confirm_receipt_{invoice_id}")
-    admin_builder.button(text="❌ رد", callback_data=f"reject_receipt_{invoice_id}")
+    # 1. Fetch Invoice
+    invoice = None
+    async with aiosqlite.connect(db_manager.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)) as cur:
+            invoice = await cur.fetchone()
+            
+    if not invoice:
+        invoice = {
+            'user_id': user_id,
+            'plan_id': 0,
+            'days': 0,
+            'gb': 0,
+            'base_price': 0,
+            'wallet_deduction': 0,
+            'discount_code': None,
+            'discount_deduction': 0,
+            'gift_code': None,
+            'gift_deduction': 0,
+            'final_amount': 0,
+            'license_note': '',
+            'created_at': None,
+            'crypto_amount': None,
+            'crypto_rate': None,
+            'transfer_method': transfer_method,
+            'renew_license_id': None
+        }
+
+    # 2. Fetch User & Purchase Stats
+    username = "ندارد"
+    purchase_count = 0
+    total_spent = 0
+    async with aiosqlite.connect(db_manager.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT username FROM users WHERE id = ?", (user_id,)) as cur:
+            u_row = await cur.fetchone()
+            if u_row and u_row['username']:
+                username = f"@{u_row['username']}"
+                
+        # Total successful purchases up to this point
+        async with db.execute("""
+            SELECT COUNT(*), COALESCE(SUM(final_amount), 0) 
+            FROM invoices 
+            WHERE user_id = ? AND status IN ('paid', 'approved', 'completed')
+        """, (user_id,)) as cur:
+            stats = await cur.fetchone()
+            if stats:
+                purchase_count = stats[0]
+                total_spent = stats[1]
+
+    # 3. Plan / Service Info
+    plan_id = invoice['plan_id'] if 'plan_id' in invoice.keys() else 0
+    is_wallet_charge = (not plan_id or plan_id == 0)
     
-    gateway_label = {'usdt': 'تتر (USDT)', 'gram': 'گرام (TON)'}.get(gateway, gateway)
+    plan_name = "سرویس سفارشی"
+    if not is_wallet_charge:
+        async with aiosqlite.connect(db_manager.DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT name FROM plans WHERE id = ?", (plan_id,)) as cur:
+                p_row = await cur.fetchone()
+                if p_row and p_row['name']:
+                    plan_name = p_row['name']
+
+    # 4. Dates
+    invoice_created_jalali = format_date_to_jalali(invoice['created_at'])
+    receipt_sent_jalali = get_current_jalali()
+
+    # 5. Amounts & Crypto
+    final_amount = invoice['final_amount'] or 0
+    base_price = invoice['base_price'] or final_amount
+    crypto_amount = invoice['crypto_amount'] if 'crypto_amount' in invoice.keys() else None
+    crypto_rate = invoice['crypto_rate'] if 'crypto_rate' in invoice.keys() else None
+    
+    # Fallback crypto if not stored at issue time
+    if gateway == 'usdt':
+        crypto_symbol = "USDT"
+        if not crypto_rate:
+            crypto_rate = await get_arz_usdt_rate() or 1
+        if not crypto_amount and crypto_rate:
+            crypto_amount = round(final_amount / crypto_rate, 2)
+    elif gateway == 'gram':
+        crypto_symbol = "GRAM"
+        if not crypto_rate:
+            crypto_rate = await get_gram_irt_price() or 1
+        if not crypto_amount and crypto_rate:
+            crypto_amount = round(final_amount / crypto_rate, 2)
+    else:
+        crypto_symbol = "ارز دیجیتال"
+        crypto_amount = crypto_amount or 0
+        crypto_rate = crypto_rate or 0
+
+    # 6. Gateway and Transfer method labels
+    if gateway == 'gram':
+        gateway_title = "گرام (TON)"
+        if transfer_method == 'pingi':
+            transfer_title = "انتقال از صرافی پینگی"
+        else:
+            transfer_title = "کیف پول شخصی یا صرافی‌های دیگر"
+    elif gateway == 'usdt':
+        gateway_title = "تتر USDT (شبکه BSC BEP-20)"
+        transfer_title = "کیف پول شخصی یا صرافی"
+    else:
+        gateway_title = gateway
+        transfer_title = transfer_method or "پیش‌فرض"
+
+    # 7. Discount & Gift codes
+    discount_code = invoice['discount_code'] if 'discount_code' in invoice.keys() else None
+    discount_deduction = (invoice['discount_deduction'] if 'discount_deduction' in invoice.keys() else 0) or 0
+    gift_code = invoice['gift_code'] if 'gift_code' in invoice.keys() else None
+    gift_deduction = (invoice['gift_deduction'] if 'gift_deduction' in invoice.keys() else 0) or 0
+    wallet_deduction = (invoice['wallet_deduction'] if 'wallet_deduction' in invoice.keys() else 0) or 0
+
+    if discount_code and discount_deduction > 0:
+        discount_text = f"✅ استفاده شده (کد: <code>{discount_code}</code>) ➔ کسر <b>{discount_deduction:,} تومان</b>"
+    else:
+        discount_text = "استفاده نشده"
+
+    if gift_code and gift_deduction > 0:
+        gift_text = f"✅ استفاده شده (کد: <code>{gift_code}</code>) ➔ کسر <b>{gift_deduction:,} تومان</b>"
+    else:
+        gift_text = "استفاده نشده"
+
+    # 8. Order / Service Details text
+    if is_wallet_charge:
+        order_section = (
+            f"💰 <b>نوع سفارش: شارژ کیف پول</b>\n"
+            f"• مبلغ درخواستی جهت شارژ: <b>{final_amount:,} تومان</b>"
+        )
+    else:
+        renew_id = invoice['renew_license_id'] if 'renew_license_id' in invoice.keys() else None
+        renew_str = f"تمدید سرویس (شناسه: {renew_id})" if renew_id else "سرویس جدید"
+        note_val = invoice['license_note'] if 'license_note' in invoice.keys() else ''
+        note_str = f"\n• یادداشت کاربر: <i>{note_val}</i>" if note_val else ""
+        order_section = (
+            f"📦 <b>نوع سفارش: خرید پلن / سرویس</b>\n"
+            f"• نام پلن: <b>{plan_name}</b>\n"
+            f"• مشخصات سرویس: <b>{invoice['days']} روزه | {invoice['gb']} گیگابایت</b>\n"
+            f"• وضعیت: <b>{renew_str}</b>"
+            f"{note_str}"
+        )
+
+    # 9. Header
+    header = "🔄 <b>تجدیدنظر رسید پرداخت</b>" if is_appeal else "📩 <b>رسید پرداخت جدید</b>"
+
+    # 10. Construct full message text
+    rate_str = f"{int(crypto_rate):,} تومان" if crypto_rate else "نامشخص"
+    amount_crypto_str = f"{crypto_amount} {crypto_symbol}" if crypto_amount is not None else "نامشخص"
+
     caption_text = (
-        f"📩 <b>رسید جدید</b>\n\n"
-        f"👤 کاربر: <code>{message.from_user.id}</code>\n"
-        f"🛒 فاکتور: <code>{invoice_id}</code>\n"
-        f"💳 درگاه: {gateway_label}\n"
-        f"📝 {'تصویر رسید' if has_photo else 'متن/هش'}: {'' if has_photo else (message.text or message.caption or '-')}"
+        f"{header}\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"👤 <b>اطلاعات کاربر:</b>\n"
+        f"• شناسه عددی: <code>{user_id}</code>\n"
+        f"• نام کاربری: {username}\n"
+        f"• تعداد خریدهای موفق کاربر: <b>{purchase_count} خرید</b>\n"
+        f"• جمع تومانی کل خریدهای موفق: <b>{total_spent:,} تومان</b>\n\n"
+        f"🛒 <b>مشخصات فاکتور و سرویس:</b>\n"
+        f"• شماره فاکتور: <code>{invoice_id}</code>\n"
+        f"{order_section}\n\n"
+        f"💵 <b>مبالغ مالی در زمان صدور فاکتور:</b>\n"
+        f"• مبلغ اولیه فاکتور: <b>{base_price:,} تومان</b>\n"
+        f"• کد تخفیف: {discount_text}\n"
+        f"• کد هدیه: {gift_text}\n"
     )
 
+    if wallet_deduction > 0:
+        caption_text += f"• کسر از کیف پول: <b>{wallet_deduction:,} تومان</b>\n"
+
+    caption_text += (
+        f"• <b>مبلغ نهایی فاکتور:</b> <b>{final_amount:,} تومان</b>\n"
+        f"• <b>مبلغ ارزی زمان صدور:</b> <code>{amount_crypto_str}</code>\n"
+        f"• نرخ هر واحد ارز: {rate_str}\n\n"
+        f"💳 <b>اطلاعات درگاه و پرداخت:</b>\n"
+        f"• درگاه: <b>{gateway_title}</b>\n"
+        f"• روش انتقال: <b>{transfer_title}</b>\n"
+    )
+
+    if has_photo:
+        caption_text += "• نوع رسید: <b>تصویر فیش / اسکرین‌شات</b>\n"
+        if receipt_text:
+            caption_text += f"• متن همراه: <i>{receipt_text}</i>\n"
+    else:
+        caption_text += f"• هش / کد پیگیری: <code>{stored_value}</code>\n"
+
+    caption_text += (
+        f"\n⏱ <b>زمان‌بندی:</b>\n"
+        f"• تاریخ صدور فاکتور: <b>{invoice_created_jalali}</b>\n"
+        f"• تاریخ ارسال رسید: <b>{receipt_sent_jalali}</b>\n"
+    )
+
+    if is_appeal and appeal_text:
+        caption_text += (
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"💬 <b>توضیحات و پاسخ جدید کاربر (تجدیدنظر):</b>\n"
+            f"<blockquote>{appeal_text}</blockquote>\n"
+        )
+
+    caption_text += "━━━━━━━━━━━━━━━━━━━━"
+
+    # 11. Extract Hash & Build Action Buttons
+    raw_hash_to_clean = stored_value if not has_photo else (receipt_text or "")
+    extracted_hash = extract_tx_hash(raw_hash_to_clean)
+
+    admin_builder = InlineKeyboardBuilder()
+
+    # Row 1 Button 1: User Management
+    btn_user_mgmt = types.InlineKeyboardButton(
+        text="👤 مدیریت کاربر", 
+        callback_data=f"manage_user_group_{user_id}"
+    )
+
+    # Row 1 Button 2: Validate Transaction
+    if gateway == 'gram' and transfer_method == 'pingi':
+        # Scenario 1: Pingi exchange -> No link, error alert when clicked
+        btn_validate = types.InlineKeyboardButton(
+            text="🔍 اعتبارسنجی تراکنش", 
+            callback_data=f"no_hash_{invoice_id}"
+        )
+    elif gateway == 'gram' and transfer_method != 'pingi':
+        # Scenario 2: Gram non-pingi -> Tonscan URL
+        if extracted_hash:
+            btn_validate = types.InlineKeyboardButton(
+                text="🔍 اعتبارسنجی تراکنش", 
+                url=f"https://tonscan.org/tx/{extracted_hash}"
+            )
+        else:
+            btn_validate = types.InlineKeyboardButton(
+                text="🔍 اعتبارسنجی تراکنش", 
+                callback_data=f"no_hash_{invoice_id}"
+            )
+    elif gateway == 'usdt':
+        # Scenario 3: USDT -> Bsctrace URL
+        if extracted_hash:
+            btn_validate = types.InlineKeyboardButton(
+                text="🔍 اعتبارسنجی تراکنش", 
+                url=f"https://bsctrace.com/tx/{extracted_hash}"
+            )
+        else:
+            btn_validate = types.InlineKeyboardButton(
+                text="🔍 اعتبارسنجی تراکنش", 
+                callback_data=f"no_hash_{invoice_id}"
+            )
+    else:
+        btn_validate = types.InlineKeyboardButton(
+            text="🔍 اعتبارسنجی تراکنش", 
+            callback_data=f"no_hash_{invoice_id}"
+        )
+
+    admin_builder.row(btn_user_mgmt, btn_validate)
+
+    # Row 2: Reject & Confirm
+    btn_reject = types.InlineKeyboardButton(
+        text="❌ رد", 
+        callback_data=f"reject_receipt_{invoice_id}"
+    )
+    btn_confirm = types.InlineKeyboardButton(
+        text="✅ تایید", 
+        callback_data=f"confirm_receipt_{invoice_id}"
+    )
+    admin_builder.row(btn_reject, btn_confirm)
+
+    # 12. Send to Admins
     for admin_id in ADMIN_IDS:
         try:
-            if message.photo:
-                await message.bot.send_photo(
+            if has_photo:
+                await bot.send_photo(
                     chat_id=admin_id,
-                    photo=message.photo[-1].file_id,
+                    photo=stored_value,
                     caption=caption_text,
                     parse_mode="HTML",
                     reply_markup=admin_builder.as_markup()
                 )
             else:
-                await message.bot.send_message(
+                await bot.send_message(
                     chat_id=admin_id, 
                     text=caption_text,
                     parse_mode="HTML",
@@ -404,57 +821,439 @@ async def process_txid(message: types.Message, state: FSMContext):
         except Exception:
             pass
 
-# === ROUTER: ADMIN RECEIPT APPROVAL ===
+@payment_router.callback_query(F.data.startswith("no_hash_"))
+async def admin_no_hash_alert(callback: types.CallbackQuery):
+    """Alerts admin that this receipt has no blockchain tx hash (Scenario 1: Pingi exchange)."""
+    await callback.answer(
+        "❌ خطای رسید هش ندارد\n(این واریزی از صرافی پینگی انجام شده و فاقد هش بلاکچین مستقیم است.)",
+        show_alert=True
+    )
 
-@payment_router.callback_query(F.data.startswith("confirm_receipt_"))
-async def admin_confirm_receipt(callback: types.CallbackQuery):
-    """Handles admin confirm receipt."""
+@payment_router.message(PaymentState.waiting_for_pingi_receipt)
+async def process_pingi_receipt(message: types.Message, state: FSMContext):
+    """Handles Pingi receipt — accepts either tracking code (text) or screenshot (photo)."""
+    has_photo = bool(message.photo)
+    has_text = bool(message.text and message.text.strip())
+    
+    if not has_photo and not has_text:
+        return await message.reply(
+            "❌ خطا: لطفاً کد پیگیری تراکنش (متن) یا تصویر رسید (اسکرین‌شات) را ارسال کنید.",
+            parse_mode="HTML"
+        )
+        
+    data = await state.get_data()
+    invoice_id = data.get('txid_invoice_id')
+    gateway = data.get('txid_gateway', 'gram')
+    transfer_method = data.get('transfer_method', 'pingi')
+    
+    stored_value = message.photo[-1].file_id if has_photo else message.text.strip()
+    receipt_text = message.caption or "" if has_photo else ""
+    
+    async with aiosqlite.connect(db_manager.DB_PATH) as db:
+        await db.execute('''
+            UPDATE invoices 
+            SET status = 'pending_receipt', transfer_method = ? 
+            WHERE id = ?
+        ''', (transfer_method, invoice_id))
+        try:
+            await db.execute('''
+                UPDATE payment_reports 
+                SET status = 'pending_receipt', crypto_hash = ?, transfer_method = ?, receipt_time = CURRENT_TIMESTAMP
+                WHERE invoice_id = ?
+            ''', (stored_value, transfer_method, invoice_id))
+        except aiosqlite.OperationalError:
+            await db.execute('''
+                UPDATE payment_reports 
+                SET payment_Status = 'pending_receipt', crypto_hash = ?
+                WHERE id_invoice = ?
+            ''', (stored_value, invoice_id))
+        await db.commit()
+        
+    await state.clear()
+    await message.reply("✅ رسید شما جهت بررسی ثبت شد. پس از تایید مدیر، حساب شما شارژ خواهد شد.")
+    
+    await _forward_receipt_to_admins(
+        bot=message.bot,
+        user_id=message.from_user.id,
+        invoice_id=invoice_id,
+        gateway=gateway,
+        transfer_method=transfer_method,
+        stored_value=stored_value,
+        has_photo=has_photo,
+        receipt_text=receipt_text
+    )
+
+@payment_router.message(PaymentState.waiting_for_txid_string)
+async def process_txid_string(message: types.Message, state: FSMContext):
+    """Handles TXID input — strictly requires a string/text. Rejects images and files with error."""
+    # Check if user sent photo, file, sticker, voice, video, or any non-text media
+    if message.photo or message.document or message.video or message.voice or message.audio or message.sticker or message.animation:
+        return await message.reply(
+            "❌ ارسال تصویر یا فایل مجاز نمی‌باشد!\nلطفاً فقط هش تراکنش (TXID) را به صورت متن (String) ارسال کنید.",
+            parse_mode="HTML"
+        )
+        
+    if not message.text or not isinstance(message.text, str) or not message.text.strip():
+        return await message.reply(
+            "❌ ورودی نامعتبر است. لطفاً فقط هش تراکنش (TXID) را به صورت متن (String) ارسال کنید.",
+            parse_mode="HTML"
+        )
+        
+    txid = message.text.strip()
+    if len(txid) < 5:
+        return await message.reply(
+            "❌ هش تراکنش نامعتبر است. لطفاً کد کامل هش تراکنش (TXID) را به صورت متن ارسال کنید.",
+            parse_mode="HTML"
+        )
+        
+    data = await state.get_data()
+    invoice_id = data.get('txid_invoice_id')
+    gateway = data.get('txid_gateway', 'usdt')
+    transfer_method = data.get('transfer_method', 'wallet_or_other')
+    
+    async with aiosqlite.connect(db_manager.DB_PATH) as db:
+        await db.execute('''
+            UPDATE invoices 
+            SET status = 'pending_receipt', transfer_method = ? 
+            WHERE id = ?
+        ''', (transfer_method, invoice_id))
+        try:
+            await db.execute('''
+                UPDATE payment_reports 
+                SET status = 'pending_receipt', crypto_hash = ?, transfer_method = ?, receipt_time = CURRENT_TIMESTAMP
+                WHERE invoice_id = ?
+            ''', (txid, transfer_method, invoice_id))
+        except aiosqlite.OperationalError:
+            await db.execute('''
+                UPDATE payment_reports 
+                SET payment_Status = 'pending_receipt', crypto_hash = ?
+                WHERE id_invoice = ?
+            ''', (txid, invoice_id))
+        await db.commit()
+        
+    await state.clear()
+    await message.reply("✅ هش تراکنش شما جهت بررسی ثبت شد. پس از تایید مدیر، حساب شما شارژ خواهد شد.")
+    
+    await _forward_receipt_to_admins(
+        bot=message.bot,
+        user_id=message.from_user.id,
+        invoice_id=invoice_id,
+        gateway=gateway,
+        transfer_method=transfer_method,
+        stored_value=txid,
+        has_photo=False
+    )
+
+@payment_router.message(PaymentState.waiting_for_txid)
+async def process_txid_legacy(message: types.Message, state: FSMContext):
+    """Fallback handler for legacy waiting_for_txid state."""
+    await process_txid_string(message, state)
+
+# === ROUTER: ADMIN RECEIPT REJECTION WORKFLOW ===
+
+@payment_router.callback_query(F.data.startswith("reject_receipt_"))
+async def admin_reject_receipt(callback: types.CallbackQuery, state: FSMContext):
+    """Handles admin reject receipt: starts rejection flow by asking for the reason."""
     from bot.config import ADMIN_IDS
     if callback.from_user.id not in ADMIN_IDS:
         return await callback.answer("❌ دسترسی غیرمجاز.", show_alert=True)
         
     invoice_id = callback.data.split('_')[2]
     
-    # Check if already processed
+    # Check if already confirmed
     async with aiosqlite.connect(db_manager.DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT status FROM invoices WHERE id = ?", (invoice_id,)) as cur:
             inv = await cur.fetchone()
             
-    if not inv or inv['status'] != 'pending':
-        return await callback.answer("این فاکتور قبلا پردازش شده است.", show_alert=True)
-        
-    await callback.message.edit_reply_markup(reply_markup=None)
-    await callback.message.reply(f"⏳ در حال صدور لایسنس برای فاکتور {invoice_id}...")
-    
-    # Delegate to PaymentConfirmationManager
-    from payment.confirm import PaymentConfirmationManager
-    pcm = PaymentConfirmationManager(callback.bot)
-    success = await pcm.confirm_paid(invoice_id, method="offline_receipt")
-    
-    if success:
-        await callback.answer("✅ تایید شد.", show_alert=True)
-    else:
-        await callback.answer("❌ خطا در فرآیند تایید.", show_alert=True)
+    if inv and inv['status'] in ('paid', 'approved', 'completed'):
+        return await callback.answer("⚠️ این فاکتور قبلاً تایید شده و امکان رد آن وجود ندارد.", show_alert=True)
 
-@payment_router.callback_query(F.data.startswith("reject_receipt_"))
-async def admin_reject_receipt(callback: types.CallbackQuery, state: FSMContext):
-    """Handles admin reject receipt."""
+    await state.update_data(reject_invoice_id=invoice_id)
+    await state.set_state(AdminRejectState.waiting_for_reason)
+    
+    cancel_builder = InlineKeyboardBuilder()
+    cancel_builder.button(text="🔙 انصراف", callback_data="cancel_admin_reject")
+    
+    await callback.answer()
+    await callback.message.reply(
+        f"✍️ <b>ثبت دلیل رد رسید فاکتور <code>{invoice_id}</code>:</b>\n\n"
+        f"لطفاً دلیل رد رسید را به صورت متنی ارسال نمایید (این متن برای کاربر ارسال خواهد شد):",
+        reply_markup=cancel_builder.as_markup(),
+        parse_mode="HTML"
+    )
+
+@payment_router.callback_query(F.data == "cancel_admin_reject")
+async def cancel_admin_reject(callback: types.CallbackQuery, state: FSMContext):
+    """Cancels admin reject flow."""
+    await state.clear()
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    await callback.answer("عملیات رد لغو شد.")
+
+@payment_router.message(AdminRejectState.waiting_for_reason)
+async def admin_reject_reason_received(message: types.Message, state: FSMContext):
+    """Receives rejection reason, then asks admin if 'Reply' button should be provided to user."""
+    from bot.config import ADMIN_IDS
+    if message.from_user.id not in ADMIN_IDS:
+        return
+        
+    if not message.text or not message.text.strip():
+        return await message.reply("❌ لطفاً دلیل رد را به صورت متنی وارد کنید:")
+        
+    reason = message.text.strip()
+    data = await state.get_data()
+    invoice_id = data.get('reject_invoice_id')
+    
+    await state.update_data(reject_reason=reason)
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(types.InlineKeyboardButton(text="✅ بله، دکمه پاسخ دادن فعال باشد", callback_data=f"set_reply_yes_{invoice_id}"))
+    builder.row(types.InlineKeyboardButton(text="❌ خیر، فقط پیام رد ارسال شود", callback_data=f"set_reply_no_{invoice_id}"))
+    builder.row(types.InlineKeyboardButton(text="🔙 انصراف و لغو رد", callback_data="cancel_admin_reject"))
+    
+    await message.reply(
+        f"📋 <b>دلیل ثبت شد:</b>\n"
+        f"<blockquote>{reason}</blockquote>\n\n"
+        f"❓ <b>آیا مایلید دکمه «💬 پاسخ دادن» برای کاربر فعال باشد؟</b>\n"
+        f"<i>(در صورت فعال بودن، کاربر می‌تواند توضیحات تکمیلی یا رسید اصلاحی جهت تجدیدنظر ارسال نماید.)</i>",
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
+    )
+
+@payment_router.callback_query(F.data.startswith("set_reply_yes_") | F.data.startswith("set_reply_no_"))
+async def admin_reject_decision(callback: types.CallbackQuery, state: FSMContext):
+    """Finalizes rejection and sends notification to user with or without reply button."""
+    from bot.config import ADMIN_IDS
+    if callback.from_user.id not in ADMIN_IDS:
+        return await callback.answer("❌ دسترسی غیرمجاز.", show_alert=True)
+        
+    allow_reply = callback.data.startswith("set_reply_yes_")
+    invoice_id = callback.data.split('_')[3]
+    
+    data = await state.get_data()
+    reason = data.get('reject_reason', 'رسید ارسالی مورد تایید مدیریت قرار نگرفت.')
+    await state.clear()
+    
+    # Update DB
+    async with aiosqlite.connect(db_manager.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)) as cur:
+            inv = await cur.fetchone()
+            
+        if not inv:
+            return await callback.answer("❌ فاکتور یافت نشد.", show_alert=True)
+            
+        await db.execute("UPDATE invoices SET status = 'rejected' WHERE id = ?", (invoice_id,))
+        try:
+            await db.execute("UPDATE payment_reports SET status = 'rejected' WHERE invoice_id = ?", (invoice_id,))
+        except Exception:
+            pass
+        await db.commit()
+        
+    user_id = inv['user_id']
+    
+    # Build user notification
+    user_text = (
+        f"❌ <b>کاربر گرامی، رسید پرداخت شما برای فاکتور <code>{invoice_id}</code> تایید نشد.</b>\n\n"
+        f"📝 <b>دلیل رد:</b>\n"
+        f"<blockquote>{reason}</blockquote>\n"
+    )
+    
+    user_markup = None
+    if allow_reply:
+        user_text += "\n💡 در صورتی که نیاز به توضیح یا ارسال مجدد رسید اصلاحی دارید، می‌توانید از دکمه زیر استفاده نمایید:"
+        u_builder = InlineKeyboardBuilder()
+        u_builder.button(text="💬 پاسخ دادن", callback_data=f"appeal_receipt_{invoice_id}")
+        user_markup = u_builder.as_markup()
+        
+    try:
+        await callback.bot.send_message(
+            chat_id=user_id,
+            text=user_text,
+            reply_markup=user_markup,
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+        
+    status_str = "همراه با دکمه پاسخ" if allow_reply else "بدون دکمه پاسخ"
+    await callback.answer("❌ فاکتور رد شد.", show_alert=True)
+    await callback.message.edit_text(
+        f"❌ فاکتور <code>{invoice_id}</code> با موفقیت رد شد و به کاربر اطلاع داده شد ({status_str}).",
+        parse_mode="HTML"
+    )
+
+# === ROUTER: USER APPEAL / REPLY WORKFLOW ===
+
+@payment_router.callback_query(F.data.startswith("appeal_receipt_"))
+async def user_start_appeal(callback: types.CallbackQuery, state: FSMContext):
+    """User clicks '💬 پاسخ دادن' on rejected receipt notification."""
+    invoice_id = callback.data.split('_')[2]
+    
+    async with aiosqlite.connect(db_manager.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)) as cur:
+            inv = await cur.fetchone()
+            
+    if not inv:
+        return await callback.answer("❌ فاکتور یافت نشد.", show_alert=True)
+        
+    if inv['status'] in ('paid', 'approved', 'completed'):
+        return await callback.answer("✅ این فاکتور قبلاً تایید شده است.", show_alert=True)
+        
+    await state.update_data(appeal_invoice_id=invoice_id)
+    await state.set_state(PaymentState.waiting_for_appeal)
+    
+    cancel_builder = InlineKeyboardBuilder()
+    cancel_builder.button(text="🔙 انصراف", callback_data="cancel_txid")
+    
+    await callback.answer()
+    await callback.message.reply(
+        f"✍️ <b>پاسخ به رد رسید (درخواست تجدیدنظر)</b>\n\n"
+        f"🛒 فاکتور: <code>{invoice_id}</code>\n\n"
+        f"لطفاً توضیحات جدید، کد پیگیری صحیح یا اسکرین‌شات اصلاحی خود را ارسال نمایید تا جهت بررسی برای مدیریت ارسال گردد:",
+        reply_markup=cancel_builder.as_markup(),
+        parse_mode="HTML"
+    )
+
+@payment_router.message(PaymentState.waiting_for_appeal)
+async def process_appeal_response(message: types.Message, state: FSMContext):
+    """Processes user's appeal message (text, photo, or photo+caption) and resends receipt to admins."""
+    has_photo = bool(message.photo)
+    has_text = bool(message.text and message.text.strip())
+    
+    if not has_photo and not has_text:
+        return await message.reply(
+            "❌ ورودی نامعتبر است. لطفاً توضیحات متنی یا تصویر رسید را ارسال فرمایید.",
+            parse_mode="HTML"
+        )
+        
+    data = await state.get_data()
+    invoice_id = data.get('appeal_invoice_id')
+    await state.clear()
+    
+    if not invoice_id:
+        return await message.reply("❌ خطا: فاکتور منقضی شده است. لطفاً مجدداً تلاش کنید.")
+
+    stored_value = message.photo[-1].file_id if has_photo else message.text.strip()
+    appeal_text = (message.caption or "").strip() if has_photo else message.text.strip()
+    if has_photo and not appeal_text:
+        appeal_text = "کاربر تصویر فیش جدید ارسال کرده است."
+
+    async with aiosqlite.connect(db_manager.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)) as cur:
+            inv = await cur.fetchone()
+            
+    gateway = inv['payment_method'] if inv and inv['payment_method'] else 'gram'
+    transfer_method = inv['transfer_method'] if inv and 'transfer_method' in inv.keys() and inv['transfer_method'] else 'wallet_or_other'
+
+    # Update DB to pending_receipt
+    async with aiosqlite.connect(db_manager.DB_PATH) as db:
+        await db.execute("UPDATE invoices SET status = 'pending_receipt' WHERE id = ?", (invoice_id,))
+        try:
+            await db.execute("""
+                UPDATE payment_reports 
+                SET status = 'pending_receipt', crypto_hash = ? 
+                WHERE invoice_id = ?
+            """, (stored_value, invoice_id))
+        except Exception:
+            pass
+        await db.commit()
+
+    await message.reply("✅ توضیحات و رسید جدید شما جهت تجدیدنظر برای مدیریت ارسال شد. لطفاً منتظر بررسی بمانید.")
+
+    # Resend to admins with appeal title and note
+    await _forward_receipt_to_admins(
+        bot=message.bot,
+        user_id=message.from_user.id,
+        invoice_id=invoice_id,
+        gateway=gateway,
+        transfer_method=transfer_method,
+        stored_value=stored_value,
+        has_photo=has_photo,
+        receipt_text=message.caption if has_photo else "",
+        is_appeal=True,
+        appeal_text=appeal_text
+    )
+
+# === ROUTER: ADMIN RECEIPT APPROVAL WITH STRICT SECURITY ===
+
+@payment_router.callback_query(F.data.startswith("confirm_receipt_"))
+async def admin_confirm_receipt(callback: types.CallbackQuery):
+    """Handles admin confirm receipt with strict deduplication and atomic safety."""
     from bot.config import ADMIN_IDS
     if callback.from_user.id not in ADMIN_IDS:
         return await callback.answer("❌ دسترسی غیرمجاز.", show_alert=True)
         
     invoice_id = callback.data.split('_')[2]
     
-    await callback.message.edit_reply_markup(reply_markup=None)
-    
-    # Notify failure
+    # 1. Check if already confirmed in DB
+    async with aiosqlite.connect(db_manager.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)) as cur:
+            inv = await cur.fetchone()
+            
+    if not inv:
+        return await callback.answer("❌ فاکتور یافت نشد.", show_alert=True)
+        
+    if inv['status'] in ('paid', 'approved', 'completed'):
+        try:
+            await callback.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        return await callback.answer("⚠️ این رسید قبلاً تایید شده است!", show_alert=True)
+
+    # 2. Strict Check for Hash Deduplication across all confirmed invoices
+    async with aiosqlite.connect(db_manager.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT crypto_hash FROM payment_reports WHERE invoice_id = ?", (invoice_id,)) as cur:
+            rep = await cur.fetchone()
+            
+    raw_hash = rep['crypto_hash'] if rep and rep['crypto_hash'] else None
+    if raw_hash and len(str(raw_hash).strip()) >= 8:
+        clean_h = extract_tx_hash(str(raw_hash))
+        async with aiosqlite.connect(db_manager.DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("""
+                SELECT pr.invoice_id 
+                FROM payment_reports pr
+                JOIN invoices inv ON pr.invoice_id = inv.id
+                WHERE (pr.crypto_hash = ? OR pr.crypto_hash = ? OR pr.crypto_hash LIKE ?)
+                  AND pr.invoice_id != ?
+                  AND (pr.status IN ('paid', 'approved', 'completed') OR inv.status IN ('paid', 'approved', 'completed'))
+                LIMIT 1
+            """, (raw_hash, clean_h, f"%{clean_h}%", invoice_id)) as cur:
+                duplicate_used = await cur.fetchone()
+                
+        if duplicate_used:
+            return await callback.answer(
+                f"⛔️ هشدار امنیتی!\nاین هش قبلاً در فاکتور {duplicate_used['invoice_id']} تایید شده است.\nامکان تایید مجدد وجود ندارد!",
+                show_alert=True
+            )
+
+    # 3. Remove buttons immediately to prevent fast double-clicks
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+    # 4. Delegate to PaymentConfirmationManager (Atomic rowcount check inside)
     from payment.confirm import PaymentConfirmationManager
     pcm = PaymentConfirmationManager(callback.bot)
-    await pcm.notify_failed(invoice_id, reason="رسید ارسالی مورد تایید مدیریت قرار نگرفت.")
+    success = await pcm.confirm_paid(invoice_id, method="offline_receipt")
     
-    await callback.answer("❌ رسید رد شد.", show_alert=True)
-    await callback.message.reply(f"فاکتور {invoice_id} رد شد.")
+    if success:
+        await callback.answer("✅ رسید با موفقیت تایید شد.", show_alert=True)
+        await callback.message.reply(
+            f"✅ رسید فاکتور <code>{invoice_id}</code> با موفقیت تایید و اعمال گردید.",
+            parse_mode="HTML"
+        )
+    else:
+        await callback.answer("⚠️ این رسید قبلاً تایید شده یا قابل پردازش نمی‌باشد.", show_alert=True)
 
 @payment_router.callback_query(F.data.startswith("retry_provision_"))
 async def admin_retry_provision(callback: types.CallbackQuery):

@@ -92,23 +92,45 @@ async def cron_payment_check(bot=None):
                 db.row_factory = aiosqlite.Row
                 current_time = int(time.time())
                 
-                # Check for expired offline payments (USDT / GRAM)
+                # Check for expired offline payments (USDT / GRAM) after 24 hours
+                expired_invoice_ids = set()
                 async with db.execute(
-                    "SELECT * FROM payment_reports WHERE status = 'Unpaid' AND payment_method IN ('usdt offline', 'gram offline') AND created_at < datetime('now', '-1 hour')"
+                    "SELECT * FROM payment_reports WHERE status IN ('Unpaid', 'pending') AND payment_method IN ('usdt offline', 'gram offline') AND created_at < datetime('now', '-24 hours')"
                 ) as cursor:
                     expired_reports = await cursor.fetchall()
                     
                 for report in expired_reports:
-                    logging.info(f"Expiring offline payment report {report['invoice_id']}")
+                    inv_id = report['invoice_id']
+                    expired_invoice_ids.add(inv_id)
+                    logging.info(f"Expiring offline payment report {inv_id}")
                     # Update status to expire
-                    await db.execute("UPDATE payment_reports SET status = 'expire' WHERE invoice_id = ?", (report['invoice_id'],))
+                    await db.execute("UPDATE payment_reports SET status = 'expire' WHERE invoice_id = ?", (inv_id,))
                     
                     # Also expire the main invoice
-                    await db.execute("UPDATE invoices SET status = 'expired' WHERE id = ?", (report['invoice_id'],))
+                    await db.execute("UPDATE invoices SET status = 'expired' WHERE id = ?", (inv_id,))
                     # Send the exact expiration notification
                     if bot:
                         try:
                             await bot.send_message(report['user_id'], 'فاکتور خرید شما منقضی شد. برای صدور مجدد اقدام کنید.')
+                        except Exception:
+                            pass
+
+                # Also expire any direct/orphan pending offline invoices older than 24 hours
+                async with db.execute(
+                    "SELECT * FROM invoices WHERE status = 'pending' AND payment_method IN ('usdt', 'gram') AND created_at < datetime('now', '-24 hours')"
+                ) as cursor:
+                    expired_invoices = await cursor.fetchall()
+
+                for inv in expired_invoices:
+                    inv_id = inv['id']
+                    if inv_id in expired_invoice_ids:
+                        continue
+                    logging.info(f"Expiring offline invoice {inv_id}")
+                    await db.execute("UPDATE invoices SET status = 'expired' WHERE id = ?", (inv_id,))
+                    await db.execute("UPDATE payment_reports SET status = 'expire' WHERE invoice_id = ?", (inv_id,))
+                    if bot:
+                        try:
+                            await bot.send_message(inv['user_id'], 'فاکتور خرید شما منقضی شد. برای صدور مجدد اقدام کنید.')
                         except Exception:
                             pass
                             

@@ -254,11 +254,12 @@ async def list_panels(callback: types.CallbackQuery):
 
     builder = InlineKeyboardBuilder()
     for p in panels:
-        # Display: panel ID + truncated URL
-        short_url = p["url"].replace("https://", "").replace("http://", "")[:35]
+        p_dict = dict(p) if not isinstance(p, dict) else p
+        short_url = p_dict["url"].replace("https://", "").replace("http://", "")[:35]
+        display_name = p_dict.get("name") or short_url
         builder.button(
-            text=f"🖥 پنل #{p['id']} — {short_url}",
-            callback_data=f"xui_panel_{p['id']}"
+            text=f"🖥 پنل #{p_dict['id']} — {display_name}",
+            callback_data=f"xui_panel_{p_dict['id']}"
         )
 
     builder.button(text="➕ اضافه کردن پنل", callback_data="xui_add_panel")
@@ -289,19 +290,25 @@ async def panel_detail(callback: types.CallbackQuery):
     if not panel:
         return await callback.answer("❌ پنل پیدا نشد.", show_alert=True)
 
+    if not isinstance(panel, dict):
+        panel = dict(panel)
+
     # Mask the bearer token in display
-    token = panel["bearer_token"] or ""
+    token = panel.get("bearer_token") or ""
     masked_token = token[:6] + "..." + token[-4:] if len(token) > 10 else "****"
+
+    panel_name = panel.get("name") or "ثبت نشده"
+    sub_link = panel.get("sub_link") or "ثبت نشده"
 
     text = (
         f"🖥 <b>جزئیات پنل #{panel['id']}</b>\n\n"
-        f"📛 <b>نام پنل:</b> <code>{panel.get('name', 'ثبت نشده')}</code>\n\n"
+        f"📛 <b>نام پنل:</b> <code>{panel_name}</code>\n\n"
         f"🌐 <b>آدرس پنل:</b>\n<code>{panel['url']}</code>\n\n"
-        f"🔗 <b>ساب لینک:</b>\n<code>{panel.get('sub_link', 'ثبت نشده')}</code>\n\n"
+        f"🔗 <b>ساب لینک:</b>\n<code>{sub_link}</code>\n\n"
         f"🔑 <b>توکن ورود:</b>\n<code>{masked_token}</code>\n\n"
-        f"📡 <b>آیدی اینباندها:</b>\n<code>{panel['inbound_ids']}</code>\n\n"
-        f"👥 <b>IP Limit:</b> <code>{panel['ip_limit']}</code>\n\n"
-        f"📅 <b>تاریخ ثبت:</b> {panel['created_at']}"
+        f"📡 <b>آیدی اینباندها:</b>\n<code>{panel.get('inbound_ids', '')}</code>\n\n"
+        f"👥 <b>IP Limit:</b> <code>{panel.get('ip_limit', 1)}</code>\n\n"
+        f"📅 <b>تاریخ ثبت:</b> {panel.get('created_at', '')}"
     )
 
     builder = InlineKeyboardBuilder()
@@ -327,5 +334,4 @@ async def delete_panel(callback: types.CallbackQuery):
     await callback.answer("✅ پنل با موفقیت حذف شد.", show_alert=True)
 
     # Redirect to list
-    callback.data = "xui_list_panels"
     await list_panels(callback)

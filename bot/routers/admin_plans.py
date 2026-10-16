@@ -159,12 +159,13 @@ async def add_plan_desc(message: types.Message, state: FSMContext):
 # ============================================================
 
 @admin_plans_router.callback_query(F.data.startswith("manageplan_"))
-async def plan_dashboard(callback: types.CallbackQuery, state: FSMContext = None):
+async def plan_dashboard(callback: types.CallbackQuery, state: FSMContext = None, plan_id: int = None):
     """Handles plan dashboard."""
     if not is_admin(callback): return
     if state:
         await state.clear()
-    plan_id = int(callback.data.split("_")[1])
+    if plan_id is None:
+        plan_id = int(callback.data.split("_")[1])
     plan = await db_manager.get_plan(plan_id)
     if not plan:
         return await callback.answer("پلن یافت نشد.", show_alert=True)
@@ -175,8 +176,10 @@ async def plan_dashboard(callback: types.CallbackQuery, state: FSMContext = None
     if binding:
         panel = await db_manager.get_xui_panel(binding["panel_id"])
         if panel:
-            short_url = panel["url"].replace("https://", "").replace("http://", "")[:40]
-            panel_info = f"✅ پنل #{panel['id']} — {short_url}"
+            p_dict = dict(panel) if not isinstance(panel, dict) else panel
+            short_url = p_dict["url"].replace("https://", "").replace("http://", "")[:40]
+            display_title = p_dict.get("name") or short_url
+            panel_info = f"✅ پنل #{p_dict['id']} — {display_title}"
 
     text = (
         f"📁 <b>مدیریت پلن:</b> {plan['name']}\n"
@@ -273,12 +276,17 @@ async def connect_panel_menu(callback: types.CallbackQuery):
 
     builder = InlineKeyboardBuilder()
     for p in panels:
-        short_url = p["url"].replace("https://", "").replace("http://", "")[:35]
-        tick = " ✅" if p["id"] == current_panel_id else ""
+        p_dict = dict(p) if not isinstance(p, dict) else p
+        short_url = p_dict["url"].replace("https://", "").replace("http://", "")[:35]
+        display_title = p_dict.get("name") or short_url
+        tick = " ✅" if p_dict["id"] == current_panel_id else ""
         builder.button(
-            text=f"🖥 پنل #{p['id']} — {short_url}{tick}",
-            callback_data=f"bind_panel_{plan_id}_{p['id']}"
+            text=f"🖥 پنل #{p_dict['id']} — {display_title}{tick}",
+            callback_data=f"bind_panel_{plan_id}_{p_dict['id']}"
         )
+
+    if current_panel_id:
+        builder.button(text="🔌 قطع اتصال پنل فعلی (Unlink)", callback_data=f"unbind_panel_{plan_id}")
 
     builder.button(text="🔙 بازگشت", callback_data=f"manageplan_{plan_id}", style="danger")
     builder.adjust(1)
@@ -304,13 +312,26 @@ async def bind_panel_to_plan(callback: types.CallbackQuery):
 
     await db_manager.set_plan_panel(plan_id, panel_id)
     panel = await db_manager.get_xui_panel(panel_id)
-    panel_label = panel["url"] if panel else f"#{panel_id}"
+    panel_dict = dict(panel) if (panel and not isinstance(panel, dict)) else panel
+    panel_label = (panel_dict.get("name") or panel_dict["url"]) if panel_dict else f"#{panel_id}"
 
     await callback.answer(f"✅ پنل {panel_label[:40]} به این پلن متصل شد.", show_alert=True)
 
     # Return to plan dashboard
-    callback.data = f"manageplan_{plan_id}"
-    await plan_dashboard(callback)
+    await plan_dashboard(callback, plan_id=plan_id)
+
+
+@admin_plans_router.callback_query(F.data.startswith("unbind_panel_"))
+async def unbind_panel_from_plan(callback: types.CallbackQuery):
+    """Unbind/disconnect panel from plan."""
+    if not is_admin(callback): return
+    plan_id = int(callback.data.split("_")[2])
+
+    await db_manager.remove_plan_panel(plan_id)
+    await callback.answer("✅ اتصال پنل از این پلن قطع شد.", show_alert=True)
+
+    # Return to plan dashboard
+    await plan_dashboard(callback, plan_id=plan_id)
 
 
 # ============================================================
@@ -318,12 +339,13 @@ async def bind_panel_to_plan(callback: types.CallbackQuery):
 # ============================================================
 
 @admin_plans_router.callback_query(F.data.startswith("pkgtime_"))
-async def manage_time_packages(callback: types.CallbackQuery, state: FSMContext = None):
+async def manage_time_packages(callback: types.CallbackQuery, state: FSMContext = None, plan_id: int = None):
     """Handles manage time packages."""
     if not is_admin(callback): return
     if state:
         await state.clear()
-    plan_id = int(callback.data.split("_")[1])
+    if plan_id is None:
+        plan_id = int(callback.data.split("_")[1])
     time_packages = await db_manager.get_time_packages(plan_id)
 
     existing = ", ".join(str(tp["days"]) for tp in time_packages) or "—"
@@ -358,8 +380,7 @@ async def delete_time_package(callback: types.CallbackQuery):
         await db.commit()
 
     await callback.answer("✅ پکیج زمان حذف شد.", show_alert=True)
-    callback.data = f"pkgtime_{plan_id}"
-    await manage_time_packages(callback, None)
+    await manage_time_packages(callback, None, plan_id=plan_id)
 
 
 @admin_plans_router.callback_query(F.data.startswith("addtime_"))
@@ -433,12 +454,13 @@ async def add_time_save(message: types.Message, state: FSMContext):
 # ============================================================
 
 @admin_plans_router.callback_query(F.data.startswith("pkgtraffic_"))
-async def manage_traffic_packages(callback: types.CallbackQuery, state: FSMContext = None):
+async def manage_traffic_packages(callback: types.CallbackQuery, state: FSMContext = None, plan_id: int = None):
     """Handles manage traffic packages."""
     if not is_admin(callback): return
     if state:
         await state.clear()
-    plan_id = int(callback.data.split("_")[1])
+    if plan_id is None:
+        plan_id = int(callback.data.split("_")[1])
     traffic_packages = await db_manager.get_traffic_packages(plan_id)
 
     existing = ", ".join(str(tp["gb"]) for tp in traffic_packages) or "—"
@@ -473,8 +495,7 @@ async def delete_traffic_package(callback: types.CallbackQuery):
         await db.commit()
 
     await callback.answer("✅ پکیج حجم حذف شد.", show_alert=True)
-    callback.data = f"pkgtraffic_{plan_id}"
-    await manage_traffic_packages(callback, None)
+    await manage_traffic_packages(callback, None, plan_id=plan_id)
 
 
 @admin_plans_router.callback_query(F.data.startswith("addtraffic_"))
@@ -556,6 +577,4 @@ async def delete_plan(callback: types.CallbackQuery):
         await db.commit()
 
     await callback.answer("✅ پلن و تمامی پکیج‌های مرتبط حذف شد.", show_alert=True)
-
-    callback.data = "admin_manage_plans"
     await manage_plans_menu(callback)

@@ -440,7 +440,10 @@ async def prepare_and_send_invoice(message: types.Message, user_id: int, data: d
         # درگاه‌های فعال را از db_manager بخواهیم (no raw SQL in router)
         active_gateways = await db_manager.get_active_payment_gateways()
         for name, cb_data in active_gateways:
-            builder.row(types.InlineKeyboardButton(text=f"💳 {name}", callback_data=cb_data))
+            if cb_data in ("pay_frenzyex", "frenzyex") or name == "کارت به کارت هوشمند":
+                builder.row(types.InlineKeyboardButton(text=f"💳 {name}", callback_data=cb_data, style="success"))
+            else:
+                builder.row(types.InlineKeyboardButton(text=f"💳 {name}", callback_data=cb_data))
     else:
         builder.row(types.InlineKeyboardButton(text="✅ تکمیل خرید (رایگان)", callback_data="pay_free"))
         

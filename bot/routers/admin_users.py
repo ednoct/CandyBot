@@ -1055,9 +1055,10 @@ async def run_global_traffic_or_time_task(message: types.Message, gb: float, day
     now_ms = int(time.time() * 1000)
 
     for panel in panels:
-        panel_url = panel["url"]
-        bearer_token = panel["bearer_token"]
-        panel_name = panel.get("name") or panel.get("label") or panel_url
+        p_dict = dict(panel) if not isinstance(panel, dict) else panel
+        panel_url = p_dict["url"]
+        bearer_token = p_dict["bearer_token"]
+        panel_name = p_dict.get("name") or p_dict.get("label") or panel_url
 
         try:
             async with XUIClient(panel_url, bearer_token) as client:

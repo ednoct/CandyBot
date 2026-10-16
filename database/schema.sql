@@ -133,6 +133,10 @@ CREATE TABLE IF NOT EXISTS invoices (
     status TEXT DEFAULT 'pending',
     renew_license_id INTEGER,
     last_error TEXT,
+    payment_method TEXT,
+    crypto_amount REAL,
+    crypto_rate REAL,
+    transfer_method TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -147,6 +151,8 @@ CREATE TABLE IF NOT EXISTS payment_reports (
     crypto_hash TEXT,
     crypto_address TEXT,
     gateway_request_id TEXT,
+    transfer_method TEXT,
+    receipt_time TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

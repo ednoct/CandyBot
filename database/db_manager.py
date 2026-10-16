@@ -99,6 +99,7 @@ async def init_db():
             "ALTER TABLE invoices ADD COLUMN panel_id INTEGER",
             "ALTER TABLE invoices ADD COLUMN renew_license_id INTEGER",
             "ALTER TABLE invoices ADD COLUMN last_error TEXT",
+            "ALTER TABLE invoices ADD COLUMN payment_method TEXT",
             "ALTER TABLE xui_licenses ADD COLUMN alert_sent INTEGER DEFAULT 0",
             "ALTER TABLE xui_panels ADD COLUMN name TEXT",
             "ALTER TABLE xui_panels ADD COLUMN sub_link TEXT",
@@ -116,6 +117,12 @@ async def init_db():
             "ALTER TABLE users ADD COLUMN agent_referrer_id INTEGER",
             "ALTER TABLE users ADD COLUMN agent_commission_balance INTEGER DEFAULT 0",
             "ALTER TABLE users ADD COLUMN agent_settlement_active INTEGER DEFAULT 0",
+            # New Payment Receipt columns
+            "ALTER TABLE invoices ADD COLUMN crypto_amount REAL",
+            "ALTER TABLE invoices ADD COLUMN crypto_rate REAL",
+            "ALTER TABLE invoices ADD COLUMN transfer_method TEXT",
+            "ALTER TABLE payment_reports ADD COLUMN transfer_method TEXT",
+            "ALTER TABLE payment_reports ADD COLUMN receipt_time TEXT",
         ]:
             try:
                 await db.execute(migration_sql)
@@ -791,6 +798,21 @@ async def get_advanced_bot_stats(timeframe_clause: str = "", timeframe_params: t
             
         async with db.execute(f"SELECT SUM(final_amount) FROM invoices WHERE status IN ('paid', 'approved') {order_timeframe}", timeframe_params) as cursor:
             total_sales_amount = (await cursor.fetchone())[0] or 0
+
+        async with db.execute(f"""
+            SELECT SUM(final_amount) FROM invoices 
+            WHERE status IN ('paid', 'approved') 
+              AND (
+                  LOWER(COALESCE(payment_method, '')) LIKE '%frenzy%' 
+                  OR id IN (
+                      SELECT invoice_id FROM payment_reports 
+                      WHERE LOWER(COALESCE(payment_method, '')) LIKE '%frenzy%' 
+                         OR (gateway_request_id IS NOT NULL AND gateway_request_id != '')
+                  )
+              )
+              {order_timeframe}
+        """, timeframe_params) as cursor:
+            frenzyex_sales_amount = (await cursor.fetchone())[0] or 0
             
         # Approximation for active services amount: total sales in last 30 days
         thirty_days_ago = time.time() - (30 * 24 * 3600)
@@ -828,6 +850,7 @@ async def get_advanced_bot_stats(timeframe_clause: str = "", timeframe_params: t
             "total_sales_count": total_sales_count,
             "active_services_sales_count": active_services_sales_count,
             "total_sales_amount": total_sales_amount,
+            "frenzyex_sales_amount": frenzyex_sales_amount,
             "active_services_sales_amount": active_services_sales_amount,
             "total_renewal_amount": total_renewal_amount,
             "conversion_rate": round(conversion_rate, 2),
@@ -903,14 +926,16 @@ async def get_xui_panels():
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute('SELECT * FROM xui_panels ORDER BY id') as cursor:
-            return await cursor.fetchall()
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
 
 async def get_xui_panel(panel_id: int):
     """Return a single XUI panel by id."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute('SELECT * FROM xui_panels WHERE id = ?', (panel_id,)) as cursor:
-            return await cursor.fetchone()
+            row = await cursor.fetchone()
+            return dict(row) if row else None
 
 async def delete_xui_panel(panel_id: int):
     """Delete a panel and its bindings (CASCADE)."""

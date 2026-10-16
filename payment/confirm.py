@@ -49,12 +49,18 @@ class PaymentConfirmationManager:
 
                 # Atomic check & update: only transition to 'paid' if not already paid/approved
                 cursor = await db.execute(
-                    "UPDATE invoices SET status = 'paid' WHERE id = ? AND status NOT IN ('paid', 'approved', 'completed')",
-                    (invoice_id,)
+                    "UPDATE invoices SET status = 'paid', payment_method = COALESCE(payment_method, ?) WHERE id = ? AND status NOT IN ('paid', 'approved', 'completed')",
+                    (method, invoice_id)
                 )
                 if cursor.rowcount == 0:
                     # Invoice was already paid or approved concurrently (prevent race condition / double provision)
                     return False
+
+                # Also update corresponding payment_reports status if exists
+                try:
+                    await db.execute("UPDATE payment_reports SET status = 'paid' WHERE invoice_id = ?", (invoice_id,))
+                except Exception:
+                    pass
 
                 user_id = invoice['user_id']
                 wallet_deduction = invoice['wallet_deduction'] if 'wallet_deduction' in invoice.keys() else 0

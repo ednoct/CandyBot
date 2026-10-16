@@ -604,10 +604,7 @@ async def renew_license_start(callback: types.CallbackQuery, state: FSMContext):
     """Start renewal flow for an existing license."""
     license_id = int(callback.data.split("_")[2])
     await state.update_data(renew_license_id=license_id)
-    
-    from bot.routers.user import cmd_shop
-    callback.data = "buy_subscription"
-    await cmd_shop(callback.message, state, callback)
+    await show_plans(callback, state)
 
 
 @user_router.callback_query(F.data == "wallet_charge")
@@ -661,8 +658,8 @@ async def process_wallet_charge(message: types.Message, state: FSMContext):
     
     from database.db_manager import DB_PATH
     available_gateways = [
-        ('گرام (TON)', 'gram', 'pay_gram'),
-        ('تتر (BSC)', 'usdt', 'pay_usdt'),
+        ('پرداخت با گرام (تون)', 'gram', 'pay_gram'),
+        (' پرداخت با تتر (BSC) ', 'usdt', 'pay_usdt'),
         ('کارت به کارت هوشمند', 'frenzyex', 'pay_frenzyex')
     ]
     
