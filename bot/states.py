@@ -106,6 +106,17 @@ class BroadcastStates(StatesGroup):
     waiting_for_message = State()
     waiting_for_pin_decision = State()
 
+# === FSM STATES: POST BROADCAST ===
+class PostStates(StatesGroup):
+    waiting_for_media_decision = State()
+    waiting_for_media_file = State()
+    waiting_for_post_caption = State()
+    waiting_for_post_button_url = State()
+    waiting_for_post_button_style = State()
+    waiting_for_post_send_confirmation = State()
+    waiting_for_post_target = State()
+    waiting_for_custom_target = State()
+
 # === FSM STATES: COMMISSION AGENT USER ===
 class AgentUserStates(StatesGroup):
     waiting_for_withdraw_amount = State()

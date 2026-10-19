@@ -416,7 +416,7 @@ async def show_affiliate(callback: types.CallbackQuery, state: FSMContext):
     await send_bottom_message(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
 # === ROUTER: INLINE BANNER SHARE HANDLER ===
-@user_router.inline_query()
+@user_router.inline_query(F.query.in_(["share_affiliate", "share_agent"]))
 async def affiliate_inline_banner_handler(inline_query: types.InlineQuery):
     """Handles inline sharing of the affiliate promotional banner."""
     query_text = (inline_query.query or "").strip()

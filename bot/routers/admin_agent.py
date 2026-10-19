@@ -379,7 +379,7 @@ async def mark_settlement_waiting(callback: types.CallbackQuery):
 
 @admin_agent_router.callback_query(F.data.startswith("agent_stl_done_"))
 async def mark_settlement_done_start(callback: types.CallbackQuery, state: FSMContext):
-    """Starts the settlement finalization flow by requesting the transaction hash link."""
+    """Starts the settlement finalization flow by requesting the transaction hash."""
     if not is_admin(callback):
         return await callback.answer("❌ دسترسی غیرمجاز.", show_alert=True)
 
@@ -394,31 +394,54 @@ async def mark_settlement_done_start(callback: types.CallbackQuery, state: FSMCo
         return await callback.answer("⚠️ این درخواست قبلاً تسویه شده است.", show_alert=True)
 
     await state.set_state(AdminAgentStates.waiting_for_settlement_tx_hash)
-    await state.update_data(settlement_id=settlement_id)
+    await state.update_data(
+        settlement_id=settlement_id,
+        origin_msg_id=callback.message.message_id,
+        origin_chat_id=callback.message.chat.id
+    )
 
     text = (
         f"🔗 <b>ثبت واریز تسویه #{s['id']}</b>\n\n"
-        f"💰 مبلغ تومانی: {s['amount_irt']:,} تومان\n"
+        f"💰 مبلغ تومانی: <b>{s['amount_irt']:,} تومان</b>\n"
         f"💎 معادل ارزی: <code>{s['amount_gram']}</code> گرام\n"
-        f"👛 آدرس کیف پول: <code>{s['wallet_address']}</code>\n\n"
-        "لطفاً <b>لینک هش تراکنش (TxHash)</b> واریزی را ارسال نمایید:"
+        f"👛 آدرس کیف پول TON:\n<code>{s['wallet_address']}</code>\n\n"
+        "لطفاً <b>هش تراکنش (TXID / Hash)</b> واریزی را ارسال نمایید:"
     )
 
     builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text="🔙 انصراف", callback_data="agent_unsettled_page_0", style="danger"))
+    builder.row(types.InlineKeyboardButton(text="🔙 انصراف", callback_data=f"cancel_agent_settle_{settlement_id}", style="danger"))
 
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    try:
+        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    except Exception:
+        await callback.message.reply(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+
+
+@admin_agent_router.callback_query(F.data.startswith("cancel_agent_settle_"))
+async def cancel_agent_settle(callback: types.CallbackQuery, state: FSMContext):
+    """Cancels settlement tx hash input and restores original view if possible."""
+    await state.clear()
+    settlement_id = int(callback.data.split("_")[3])
+    await callback.answer("عملیات تسویه لغو شد.")
+    try:
+        callback.data = f"agent_stl_view_{settlement_id}"
+        await view_settlement_item(callback)
+    except Exception:
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
 
 
 @admin_agent_router.message(AdminAgentStates.waiting_for_settlement_tx_hash)
 async def process_settlement_tx_hash(message: types.Message, state: FSMContext):
-    """Processes tx hash from admin, marks settlement settled, and notifies agent."""
+    """Processes tx hash from admin, marks settlement settled, and notifies agent with Tonscan link button."""
     if message.from_user.id not in ADMIN_IDS:
         return
 
-    tx_hash = (message.text or "").strip()
-    if not tx_hash:
-        return await message.answer("❌ هش تراکنش نمی‌تواند خالی باشد. لطفاً لینک یا هش معتبر را ارسال نمایید.")
+    raw_input = (message.text or "").strip()
+    if not raw_input:
+        return await message.answer("❌ هش تراکنش نمی‌تواند خالی باشد. لطفاً هش یا لینک معتبر تراکنش را ارسال فرمایید:")
 
     data = await state.get_data()
     settlement_id = data.get("settlement_id")
@@ -426,11 +449,28 @@ async def process_settlement_tx_hash(message: types.Message, state: FSMContext):
         await state.clear()
         return
 
+    from bot.routers.payment import extract_tx_hash
+    clean_hash = extract_tx_hash(raw_input)
+    tx_hash = clean_hash if clean_hash else raw_input
+
     updated_s = await db_manager.set_settlement_done(settlement_id, tx_hash)
     await state.clear()
 
     if not updated_s:
         return await message.answer("❌ خطا در ثبت تسویه حساب.")
+
+    # Remove buttons from original admin message if possible
+    origin_msg_id = data.get("origin_msg_id")
+    origin_chat_id = data.get("origin_chat_id")
+    if origin_msg_id and origin_chat_id:
+        try:
+            await message.bot.edit_message_reply_markup(
+                chat_id=origin_chat_id,
+                message_id=origin_msg_id,
+                reply_markup=None
+            )
+        except Exception:
+            pass
 
     # Notify the agent
     agent_id = updated_s['agent_id']
@@ -440,25 +480,47 @@ async def process_settlement_tx_hash(message: types.Message, state: FSMContext):
         f"💰 <b>مبلغ تومانی:</b> {updated_s['amount_irt']:,} تومان\n"
         f"💎 <b>مقدار واریز شده:</b> <code>{updated_s['amount_gram']}</code> گرام (تون)\n"
         f"👛 <b>آدرس کیف پول شما:</b> <code>{updated_s['wallet_address']}</code>\n\n"
-        f"🔗 <b>لینک پیگیری تراکنش (هش):</b>\n{tx_hash}\n\n"
+        f"🔗 <b>هش تراکنش (TXID):</b>\n<code>{tx_hash}</code>\n\n"
         "با سپاس از همکاری و همراهی ارزشمند شما با مجموعه کندی کانکت 💎"
     )
 
+    agent_builder = InlineKeyboardBuilder()
+    agent_builder.row(
+        types.InlineKeyboardButton(
+            text="🔍 پیگیری تراکنش در تون‌اسکن",
+            url=f"https://tonscan.org/tx/{tx_hash}",
+            style="primary"
+        )
+    )
+
     try:
-        await message.bot.send_message(chat_id=agent_id, text=agent_notif_text, parse_mode="HTML")
+        await message.bot.send_message(
+            chat_id=agent_id, 
+            text=agent_notif_text, 
+            reply_markup=agent_builder.as_markup(), 
+            parse_mode="HTML"
+        )
     except Exception as e:
         logger.error(f"Failed to send settlement notification to agent {agent_id}: {e}")
 
-    builder = InlineKeyboardBuilder()
-    builder.row(
+    admin_builder = InlineKeyboardBuilder()
+    admin_builder.row(
+        types.InlineKeyboardButton(
+            text="🔍 پیگیری در تون‌اسکن",
+            url=f"https://tonscan.org/tx/{tx_hash}",
+            style="primary"
+        )
+    )
+    admin_builder.row(
         types.InlineKeyboardButton(text="🔙 بازگشت به لیست تسویه نشده‌ها", callback_data="agent_unsettled_page_0", style="danger")
     )
 
     confirm_admin = (
         f"✅ <b>تسویه حساب #{settlement_id} با موفقیت انجام شد!</b>\n\n"
-        "این مورد از لیست تسویه نشده‌ها خارج شد و پیام تایید به همراه لینک هش برای نماینده ارسال گردید."
+        f"🔗 <b>هش ثبت شده:</b> <code>{tx_hash}</code>\n\n"
+        "این مورد از لیست تسویه نشده‌ها خارج شد و پیام تایید به همراه دکمه پیگیری تراکنش در تون‌اسکن برای نماینده ارسال گردید."
     )
-    await message.answer(confirm_admin, reply_markup=builder.as_markup(), parse_mode="HTML")
+    await message.answer(confirm_admin, reply_markup=admin_builder.as_markup(), parse_mode="HTML")
 
 
 # === FEATURE 2: ACTIVATION REQUESTS LIST ===

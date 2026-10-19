@@ -167,37 +167,161 @@ async def set_crypto_wallet_process(message: types.Message, state: FSMContext):
 
 
 
+import logging
+
 # === ROUTER: PENDING RECEIPTS ===
-@admin_finance_router.callback_query(F.data == 'fin_pending_receipts')
+@admin_finance_router.callback_query((F.data == 'fin_pending_receipts') | (F.data.startswith('fin_pending_page_')))
 async def pending_receipts_menu(callback: types.CallbackQuery):
-    """Handles pending receipts menu."""
+    """Handles pending receipts menu with pagination (max 10 receipts per page)."""
     if not is_admin(callback): return
+    
+    page = 0
+    if callback.data.startswith("fin_pending_page_"):
+        try:
+            page = int(callback.data.replace("fin_pending_page_", "").strip())
+        except ValueError:
+            page = 0
     
     from database.db_manager import DB_PATH
     import aiosqlite
     from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram import types
     
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM payment_reports WHERE status = 'pending'") as cursor:
+        async with db.execute("""
+            SELECT * FROM payment_reports 
+            WHERE status IN ('pending', 'pending_receipt')
+            ORDER BY created_at ASC, id ASC
+        """) as cursor:
             pending = await cursor.fetchall()
             
     builder = InlineKeyboardBuilder()
     
     if not pending:
-        builder.button(text="🔙 بازگشت", callback_data="admin_finance", style="danger")
-        return await safe_edit_message(callback, "💵 **رسیدهای تایید نشده**\n\nدر حال حاضر رسید تایید نشده‌ای وجود ندارد.", reply_markup=builder.as_markup(), parse_mode="Markdown")
+        builder.row(types.InlineKeyboardButton(text="🔙 بازگشت به مدیریت مالی", callback_data="admin_finance", style="danger"))
+        empty_text = "💵 <b>رسیدهای تایید نشده</b>\n\nدر حال حاضر رسید تایید نشده‌ای وجود ندارد."
+        if callback.message.photo:
+            try:
+                await callback.message.delete()
+            except Exception:
+                pass
+            return await callback.message.answer(empty_text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        return await safe_edit_message(callback, empty_text, reply_markup=builder.as_markup(), parse_mode="HTML")
         
-    for p in pending:
-        builder.button(text=f"💳 {p['user_id']} - {p['amount']}T", callback_data=f"none")
-        builder.button(text="✅", callback_data=f"confirm_receipt_{p['id']}")
-        builder.button(text="❌", callback_data=f"reject_receipt_{p['id']}")
-        
-    builder.button(text="❌ حذف همه رسیدها", callback_data="del_all_receipts")
-    builder.button(text="🔙 بازگشت", callback_data="admin_finance", style="danger")
-    builder.adjust(3, *([3]*len(pending)), 1, 1)
+    PAGE_SIZE = 10
+    total_items = len(pending)
+    total_pages = (total_items - 1) // PAGE_SIZE + 1
     
-    await safe_edit_message(callback, f"💵 **رسیدهای تایید نشده ({len(pending)} مورد)**\n\nلطفاً رسیدها را بررسی و تایید یا رد کنید:", reply_markup=builder.as_markup(), parse_mode="Markdown")
+    if page >= total_pages:
+        page = total_pages - 1
+    if page < 0:
+        page = 0
+        
+    start_idx = page * PAGE_SIZE
+    end_idx = min(start_idx + PAGE_SIZE, total_items)
+    page_items = pending[start_idx:end_idx]
+    
+    for p in page_items:
+        builder.row(types.InlineKeyboardButton(text=f"🧾 فاکتور: {p['invoice_id']}", callback_data=f"view_receipt_{p['invoice_id']}_{page}"))
+        
+    # Navigation row if more than 1 page
+    if total_pages > 1:
+        nav_buttons = []
+        if page > 0:
+            nav_buttons.append(types.InlineKeyboardButton(text="⬅️ قبلی", callback_data=f"fin_pending_page_{page - 1}"))
+            
+        nav_buttons.append(types.InlineKeyboardButton(text=f"📄 {page + 1} از {total_pages}", callback_data="fin_noop"))
+        
+        if page < total_pages - 1:
+            nav_buttons.append(types.InlineKeyboardButton(text="بعدی ➡️", callback_data=f"fin_pending_page_{page + 1}"))
+            
+        builder.row(*nav_buttons)
+        
+    builder.row(types.InlineKeyboardButton(text="🔙 بازگشت به مدیریت مالی", callback_data="admin_finance", style="danger"))
+    
+    list_text = (
+        f"💵 <b>رسیدهای تایید نشده ({total_items} مورد)</b>\n"
+        f"📄 صفحه {page + 1} از {total_pages}\n\n"
+        f"<i>(مرتب‌شده از قدیمی‌ترین به جدیدترین)</i>\n"
+        f"برای مشاهده مشخصات کامل هر رسید و تایید یا رد آن، روی شماره فاکتور کلیک کنید:"
+    )
+    
+    if callback.message.photo:
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        return await callback.message.answer(list_text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    await safe_edit_message(callback, list_text, reply_markup=builder.as_markup(), parse_mode="HTML")
+
+
+@admin_finance_router.callback_query(F.data == "fin_noop")
+async def fin_noop_handler(callback: types.CallbackQuery):
+    """Prevents loading spinner on noop/counter buttons."""
+    try:
+        await callback.answer()
+    except Exception:
+        pass
+
+
+@admin_finance_router.callback_query(F.data.startswith("view_receipt_"))
+async def view_pending_receipt_detail(callback: types.CallbackQuery):
+    """Shows full receipt details exactly like the initial payment notification, with back button."""
+    if not is_admin(callback): return
+    
+    raw_data = callback.data.replace("view_receipt_", "").strip()
+    if "_" in raw_data:
+        invoice_id, page_str = raw_data.rsplit("_", 1)
+        try:
+            page = int(page_str)
+        except ValueError:
+            invoice_id = raw_data
+            page = 0
+    else:
+        invoice_id = raw_data
+        page = 0
+        
+    from bot.routers.payment import build_receipt_notification_content
+    
+    caption_text, reply_markup, has_photo, stored_value = await build_receipt_notification_content(
+        invoice_id=invoice_id,
+        with_back_button=f"fin_pending_page_{page}"
+    )
+    
+    if has_photo and stored_value:
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        try:
+            return await callback.message.answer_photo(
+                photo=stored_value,
+                caption=caption_text,
+                reply_markup=reply_markup,
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            logging.warning(f"Could not send receipt photo: {e}. Falling back to text.")
+            
+    # Text fallback or non-photo receipt
+    if callback.message.photo:
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        return await callback.message.answer(
+            text=caption_text,
+            reply_markup=reply_markup,
+            parse_mode="HTML"
+        )
+        
+    await safe_edit_message(
+        callback,
+        caption_text,
+        reply_markup=reply_markup,
+        parse_mode="HTML"
+    )
 
 # === ROUTER: LIMITS MENU ===
 @admin_finance_router.callback_query(F.data == 'fin_limits_menu')

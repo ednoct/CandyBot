@@ -523,22 +523,34 @@ async def cancel_txid(callback: types.CallbackQuery, state: FSMContext):
         pass
     await callback.answer("عملیات لغو شد.")
 
-async def _forward_receipt_to_admins(
-    bot,
-    user_id: int,
+async def build_receipt_notification_content(
     invoice_id: str,
-    gateway: str,
-    transfer_method: str,
-    stored_value: str,
-    has_photo: bool,
+    user_id: int | None = None,
+    gateway: str | None = None,
+    transfer_method: str | None = None,
+    stored_value: str | None = None,
+    has_photo: bool | None = None,
     receipt_text: str = "",
     is_appeal: bool = False,
-    appeal_text: str = ""
-):
-    """Helper to forward payment receipt to admins with inline action buttons."""
-    from bot.config import ADMIN_IDS
+    appeal_text: str = "",
+    with_back_button: bool = False
+) -> tuple[str, types.InlineKeyboardMarkup, bool, str]:
+    """Helper to build payment receipt details, caption, and inline action buttons."""
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     
+    # 0. Fetch Payment Report if missing fields
+    if not user_id or stored_value is None or gateway is None:
+        async with aiosqlite.connect(db_manager.DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT * FROM payment_reports WHERE invoice_id = ?", (invoice_id,)) as cur:
+                p_row = await cur.fetchone()
+                if p_row:
+                    user_id = user_id or p_row['user_id']
+                    gateway = gateway or p_row['payment_method']
+                    transfer_method = transfer_method or p_row['transfer_method']
+                    if stored_value is None:
+                        stored_value = p_row['crypto_hash']
+
     # 1. Fetch Invoice
     invoice = None
     async with aiosqlite.connect(db_manager.DB_PATH) as db:
@@ -548,7 +560,7 @@ async def _forward_receipt_to_admins(
             
     if not invoice:
         invoice = {
-            'user_id': user_id,
+            'user_id': user_id or 0,
             'plan_id': 0,
             'days': 0,
             'gb': 0,
@@ -566,6 +578,18 @@ async def _forward_receipt_to_admins(
             'transfer_method': transfer_method,
             'renew_license_id': None
         }
+    else:
+        if not user_id:
+            user_id = invoice['user_id']
+        if not gateway:
+            gateway = invoice['gateway'] if 'gateway' in invoice.keys() else (invoice['payment_method'] if 'payment_method' in invoice.keys() else 'unknown')
+        if not transfer_method:
+            transfer_method = invoice['transfer_method'] if 'transfer_method' in invoice.keys() else None
+
+    # Detect if stored_value is a photo file_id
+    if has_photo is None:
+        sv = str(stored_value or "").strip()
+        has_photo = bool(sv and not sv.startswith("0x") and len(sv) > 50 and " " not in sv)
 
     # 2. Fetch User & Purchase Stats
     username = "ندارد"
@@ -578,7 +602,6 @@ async def _forward_receipt_to_admins(
             if u_row and u_row['username']:
                 username = f"@{u_row['username']}"
                 
-        # Total successful purchases up to this point
         async with db.execute("""
             SELECT COUNT(*), COALESCE(SUM(final_amount), 0) 
             FROM invoices 
@@ -612,37 +635,29 @@ async def _forward_receipt_to_admins(
     crypto_amount = invoice['crypto_amount'] if 'crypto_amount' in invoice.keys() else None
     crypto_rate = invoice['crypto_rate'] if 'crypto_rate' in invoice.keys() else None
     
-    # Fallback crypto if not stored at issue time
-    if gateway == 'usdt':
-        crypto_symbol = "USDT"
-        if not crypto_rate:
-            crypto_rate = await get_arz_usdt_rate() or 1
-        if not crypto_amount and crypto_rate:
-            crypto_amount = round(final_amount / crypto_rate, 2)
-    elif gateway == 'gram':
+    # Gateway and Transfer method labels
+    if gateway == 'gram':
+        gateway_title = "گرام (TON)"
+        transfer_title = "انتقال از صرافی پینگی" if transfer_method == 'pingi' else "کیف پول شخصی یا صرافی‌های دیگر"
         crypto_symbol = "GRAM"
         if not crypto_rate:
             crypto_rate = await get_gram_irt_price() or 1
         if not crypto_amount and crypto_rate:
             crypto_amount = round(final_amount / crypto_rate, 2)
-    else:
-        crypto_symbol = "ارز دیجیتال"
-        crypto_amount = crypto_amount or 0
-        crypto_rate = crypto_rate or 0
-
-    # 6. Gateway and Transfer method labels
-    if gateway == 'gram':
-        gateway_title = "گرام (TON)"
-        if transfer_method == 'pingi':
-            transfer_title = "انتقال از صرافی پینگی"
-        else:
-            transfer_title = "کیف پول شخصی یا صرافی‌های دیگر"
     elif gateway == 'usdt':
         gateway_title = "تتر USDT (شبکه BSC BEP-20)"
         transfer_title = "کیف پول شخصی یا صرافی"
+        crypto_symbol = "USDT"
+        if not crypto_rate:
+            crypto_rate = await get_arz_usdt_rate() or 1
+        if not crypto_amount and crypto_rate:
+            crypto_amount = round(final_amount / crypto_rate, 2)
     else:
-        gateway_title = gateway
+        gateway_title = gateway or "کارت به کارت / درگاه"
         transfer_title = transfer_method or "پیش‌فرض"
+        crypto_symbol = "ارز دیجیتال"
+        crypto_amount = crypto_amount or 0
+        crypto_rate = crypto_rate or 0
 
     # 7. Discount & Gift codes
     discount_code = invoice['discount_code'] if 'discount_code' in invoice.keys() else None
@@ -672,10 +687,12 @@ async def _forward_receipt_to_admins(
         renew_str = f"تمدید سرویس (شناسه: {renew_id})" if renew_id else "سرویس جدید"
         note_val = invoice['license_note'] if 'license_note' in invoice.keys() else ''
         note_str = f"\n• یادداشت کاربر: <i>{note_val}</i>" if note_val else ""
+        days_val = invoice['days'] if 'days' in invoice.keys() else 0
+        gb_val = invoice['gb'] if 'gb' in invoice.keys() else 0
         order_section = (
             f"📦 <b>نوع سفارش: خرید پلن / سرویس</b>\n"
             f"• نام پلن: <b>{plan_name}</b>\n"
-            f"• مشخصات سرویس: <b>{invoice['days']} روزه | {invoice['gb']} گیگابایت</b>\n"
+            f"• مشخصات سرویس: <b>{days_val} روزه | {gb_val} گیگابایت</b>\n"
             f"• وضعیت: <b>{renew_str}</b>"
             f"{note_str}"
         )
@@ -721,7 +738,7 @@ async def _forward_receipt_to_admins(
         if receipt_text:
             caption_text += f"• متن همراه: <i>{receipt_text}</i>\n"
     else:
-        caption_text += f"• هش / کد پیگیری: <code>{stored_value}</code>\n"
+        caption_text += f"• هش / کد پیگیری: <code>{stored_value or 'ثبت نشده'}</code>\n"
 
     caption_text += (
         f"\n⏱ <b>زمان‌بندی:</b>\n"
@@ -740,7 +757,7 @@ async def _forward_receipt_to_admins(
 
     # 11. Extract Hash & Build Action Buttons
     raw_hash_to_clean = stored_value if not has_photo else (receipt_text or "")
-    extracted_hash = extract_tx_hash(raw_hash_to_clean)
+    extracted_hash = extract_tx_hash(str(raw_hash_to_clean or ""))
 
     admin_builder = InlineKeyboardBuilder()
 
@@ -752,13 +769,11 @@ async def _forward_receipt_to_admins(
 
     # Row 1 Button 2: Validate Transaction
     if gateway == 'gram' and transfer_method == 'pingi':
-        # Scenario 1: Pingi exchange -> No link, error alert when clicked
         btn_validate = types.InlineKeyboardButton(
             text="🔍 اعتبارسنجی تراکنش", 
             callback_data=f"no_hash_{invoice_id}"
         )
     elif gateway == 'gram' and transfer_method != 'pingi':
-        # Scenario 2: Gram non-pingi -> Tonscan URL
         if extracted_hash:
             btn_validate = types.InlineKeyboardButton(
                 text="🔍 اعتبارسنجی تراکنش", 
@@ -770,7 +785,6 @@ async def _forward_receipt_to_admins(
                 callback_data=f"no_hash_{invoice_id}"
             )
     elif gateway == 'usdt':
-        # Scenario 3: USDT -> Bsctrace URL
         if extracted_hash:
             btn_validate = types.InlineKeyboardButton(
                 text="🔍 اعتبارسنجی تراکنش", 
@@ -800,23 +814,61 @@ async def _forward_receipt_to_admins(
     )
     admin_builder.row(btn_reject, btn_confirm)
 
-    # 12. Send to Admins
+    # Row 3: Back button (if requested)
+    if with_back_button:
+        back_cb = with_back_button if isinstance(with_back_button, str) else "fin_pending_receipts"
+        btn_back = types.InlineKeyboardButton(
+            text="🔙 بازگشت", 
+            callback_data=back_cb,
+            style="danger"
+        )
+        admin_builder.row(btn_back)
+
+    return caption_text, admin_builder.as_markup(), has_photo, (stored_value or "")
+
+
+async def _forward_receipt_to_admins(
+    bot,
+    user_id: int,
+    invoice_id: str,
+    gateway: str,
+    transfer_method: str,
+    stored_value: str,
+    has_photo: bool,
+    receipt_text: str = "",
+    is_appeal: bool = False,
+    appeal_text: str = ""
+):
+    """Helper to forward payment receipt to admins with inline action buttons."""
+    from bot.config import ADMIN_IDS
+    caption_text, reply_markup, has_photo_val, stored_val = await build_receipt_notification_content(
+        invoice_id=invoice_id,
+        user_id=user_id,
+        gateway=gateway,
+        transfer_method=transfer_method,
+        stored_value=stored_value,
+        has_photo=has_photo,
+        receipt_text=receipt_text,
+        is_appeal=is_appeal,
+        appeal_text=appeal_text,
+        with_back_button=False
+    )
     for admin_id in ADMIN_IDS:
         try:
-            if has_photo:
+            if has_photo_val:
                 await bot.send_photo(
                     chat_id=admin_id,
-                    photo=stored_value,
+                    photo=stored_val,
                     caption=caption_text,
                     parse_mode="HTML",
-                    reply_markup=admin_builder.as_markup()
+                    reply_markup=reply_markup
                 )
             else:
                 await bot.send_message(
-                    chat_id=admin_id, 
+                    chat_id=admin_id,
                     text=caption_text,
                     parse_mode="HTML",
-                    reply_markup=admin_builder.as_markup()
+                    reply_markup=reply_markup
                 )
         except Exception:
             pass

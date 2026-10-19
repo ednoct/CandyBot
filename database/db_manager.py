@@ -1497,6 +1497,45 @@ async def enable_user(user_id: int):
         await db.execute("UPDATE users SET is_active = 1 WHERE id = ?", (user_id,))
         await db.commit()
 
+async def get_all_users_for_broadcast() -> list[int]:
+    """Gets list of all active user IDs for broadcasting."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT id FROM users WHERE is_active = 1") as cur:
+            rows = await cur.fetchall()
+            return [r[0] for r in rows]
+
+async def get_users_with_purchase() -> list[int]:
+    """Gets list of active user IDs who have completed purchases."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("""
+            SELECT DISTINCT user_id FROM invoices 
+            WHERE status IN ('paid', 'completed')
+              AND user_id IN (SELECT id FROM users WHERE is_active = 1)
+        """) as cur:
+            rows = await cur.fetchall()
+            return [r[0] for r in rows]
+
+async def get_users_without_purchase() -> list[int]:
+    """Gets list of active user IDs who have not made any purchases."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("""
+            SELECT id FROM users 
+            WHERE is_active = 1
+              AND id NOT IN (
+                  SELECT DISTINCT user_id FROM invoices WHERE status IN ('paid', 'completed')
+              )
+        """) as cur:
+            rows = await cur.fetchall()
+            return [r[0] for r in rows]
+
+async def get_all_channels() -> list[dict]:
+    """Gets all registered channels."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT id, remark, linkjoin, link FROM channels ORDER BY id ASC") as cur:
+            rows = await cur.fetchall()
+            return [dict(r) for r in rows]
+
 async def get_invoice_details(invoice_id: str):
     """Fetch complete details of an invoice for search."""
     async with aiosqlite.connect(DB_PATH) as db:

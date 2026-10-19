@@ -553,8 +553,8 @@ async def user_transfer_process(message: types.Message, state: FSMContext):
 # ============================================================
 # BROADCASTING LOGIC
 # ============================================================
-from bot.states import BroadcastStates
-from bot.services.broadcast import safe_broadcast
+from bot.states import BroadcastStates, PostStates
+from bot.services.broadcast import safe_broadcast, safe_post_broadcast
 import asyncio
 
 @admin_users_router.callback_query(F.data == "admin_broadcast_menu")
@@ -567,6 +567,7 @@ async def broadcast_menu(callback: types.CallbackQuery, state: FSMContext):
     
     builder.row(InlineKeyboardButton(text="ارسال همگانی", callback_data="bcast_type_send"))
     builder.row(InlineKeyboardButton(text="فوروارد همگانی", callback_data="bcast_type_fwd"))
+    builder.row(InlineKeyboardButton(text="📮 ارسال پست", callback_data="admin_post_start"))
     builder.row(InlineKeyboardButton(text="تعداد روزی که استفاده نکردند", callback_data="bcast_inactive_days"))
     builder.row(InlineKeyboardButton(text="لغو پیام های پین شده", callback_data="bcast_unpin_all"))
     builder.row(InlineKeyboardButton(text="بازگشت به منوی اصلی", callback_data="admin_users", style="danger"))
@@ -675,6 +676,404 @@ async def broadcast_execute(callback: types.CallbackQuery, state: FSMContext):
     )
     
     await callback.message.edit_text(f"✅ فرآیند ارسال در پس‌زمینه آغاز شد. گزارش نهایی به زودی ارسال می‌شود.")
+
+# ============================================================
+# POST BROADCASTING WIZARD
+# ============================================================
+
+POST_STYLE_MAP = {
+    "1": "default",
+    "2": "success",
+    "3": "primary",
+    "4": "danger"
+}
+
+@admin_users_router.callback_query(F.data == "admin_post_start")
+async def post_start(callback: types.CallbackQuery, state: FSMContext):
+    if not is_admin(callback): return
+    await state.clear()
+    await state.set_state(PostStates.waiting_for_media_decision)
+    
+    from aiogram.types import InlineKeyboardButton
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="📸 بله (عکس یا ویدیو)", callback_data="post_media_yes"),
+        InlineKeyboardButton(text="📝 خیر (فقط متن)", callback_data="post_media_no")
+    )
+    builder.row(InlineKeyboardButton(text="🔙 بازگشت به منوی قبل", callback_data="admin_broadcast_menu", style="danger"))
+    
+    await callback.message.edit_text(
+        "📌 <b>مرحله اول:</b> آیا پست شما دارای مدیا (عکس یا ویدیو) است؟",
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
+    )
+
+@admin_users_router.callback_query(PostStates.waiting_for_media_decision, F.data == "post_media_yes")
+async def post_media_yes_handler(callback: types.CallbackQuery, state: FSMContext):
+    if not is_admin(callback): return
+    await state.set_state(PostStates.waiting_for_media_file)
+    
+    from aiogram.types import InlineKeyboardButton
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🔙 بازگشت به منوی قبل", callback_data="admin_broadcast_menu", style="danger"))
+    
+    await callback.message.edit_text(
+        "📸 <b>لطفاً عکس یا ویدیوی خود را ارسال کنید:</b>",
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
+    )
+
+@admin_users_router.callback_query(PostStates.waiting_for_media_decision, F.data == "post_media_no")
+async def post_media_no_handler(callback: types.CallbackQuery, state: FSMContext):
+    if not is_admin(callback): return
+    await state.update_data(
+        has_media=False,
+        media_type=None,
+        file_id=None
+    )
+    await state.set_state(PostStates.waiting_for_post_caption)
+    
+    from aiogram.types import InlineKeyboardButton
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🔙 بازگشت به منوی قبل", callback_data="admin_broadcast_menu", style="danger"))
+    
+    await callback.message.edit_text(
+        "✍️ <b>مرحله دوم: ثبت متن پست</b>\n\n"
+        "لطفاً متن پست خود را ارسال کنید.\n"
+        "⚠️ <b>توجه:</b> از آنجا که پست شما بدون مدیا است، سقف مجاز متن <b>حداکثر ۴۰۹۶ کاراکتر</b> می‌باشد.",
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
+    )
+
+@admin_users_router.message(PostStates.waiting_for_media_file)
+async def post_media_file_handler(message: types.Message, state: FSMContext):
+    if not is_admin(message): return
+    
+    media_type = None
+    file_id = None
+    
+    if message.photo:
+        media_type = "photo"
+        file_id = message.photo[-1].file_id
+    elif message.video:
+        media_type = "video"
+        file_id = message.video.file_id
+    else:
+        return await message.answer(
+            "❌ لطفاً فقط یک عکس یا ویدیو ارسال کنید:\n(برای انصراف از دکمه بازگشت استفاده کنید)"
+        )
+        
+    await state.update_data(
+        has_media=True,
+        media_type=media_type,
+        file_id=file_id
+    )
+    await state.set_state(PostStates.waiting_for_post_caption)
+    
+    from aiogram.types import InlineKeyboardButton
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🔙 بازگشت به منوی قبل", callback_data="admin_broadcast_menu", style="danger"))
+    
+    await message.answer(
+        "✍️ <b>مرحله دوم: ثبت کپشن پست</b>\n\n"
+        "لطفاً متن کپشن خود را ارسال کنید.\n"
+        "⚠️ <b>توجه:</b> از آنجا که پست شما دارای مدیا است، سقف مجاز کپشن <b>حداکثر ۱۰۲۴ کاراکتر</b> می‌باشد.",
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
+    )
+
+@admin_users_router.message(PostStates.waiting_for_post_caption)
+async def post_caption_handler(message: types.Message, state: FSMContext):
+    if not is_admin(message): return
+    
+    caption_text = message.text or message.caption or ""
+    if not caption_text.strip():
+        return await message.answer("❌ متن ارسالی نمی‌تواند خالی باشد. لطفاً مجدداً متن یا کپشن را ارسال کنید:")
+        
+    data = await state.get_data()
+    has_media = data.get("has_media", False)
+    
+    limit = 1024 if has_media else 4096
+    curr_len = len(caption_text)
+    
+    if curr_len > limit:
+        type_str = "کپشن مدیا" if has_media else "متن پست"
+        return await message.answer(
+            f"❌ <b>خطا در ثبت {type_str}!</b>\n\n"
+            f"طول پیام ارسالی ({curr_len} کاراکتر) بیشتر از سقف مجاز {limit} کاراکتر است.\n\n"
+            f"⚠️ لطفاً دوباره متن خود را با رعایت سقف مجاز (حداکثر {limit} کاراکتر) وارد نمایید:",
+            parse_mode="HTML"
+        )
+        
+    await state.update_data(caption=caption_text)
+    await state.set_state(PostStates.waiting_for_post_button_url)
+    
+    from aiogram.types import InlineKeyboardButton
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🔙 بازگشت به منوی قبل", callback_data="admin_broadcast_menu", style="danger"))
+    
+    await message.answer(
+        "🔗 <b>مرحله سوم: تعیین آدرس دکمه زیر پست</b>\n\n"
+        "لطفاً آدرس اینترنتی (لینک) دکمه زیر پست را وارد کنید:\n"
+        "(می‌توانید عنوان دکمه را هم به همراه لینک یا فقط لینک بفرستید):\n\n"
+        "🔹 مثال فقط آدرس: <code>https://t.me/CandyConnect</code>\n"
+        "🔹 مثال عنوان و آدرس: <code>ورود به ربات | https://t.me/CandyConnect</code>",
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
+    )
+
+@admin_users_router.message(PostStates.waiting_for_post_button_url)
+async def post_button_url_handler(message: types.Message, state: FSMContext):
+    if not is_admin(message): return
+    
+    raw_input = (message.text or "").strip()
+    if "|" in raw_input:
+        parts = raw_input.split("|", 1)
+        btn_text = parts[0].strip()
+        btn_url = parts[1].strip()
+    elif " - " in raw_input:
+        parts = raw_input.split(" - ", 1)
+        btn_text = parts[0].strip()
+        btn_url = parts[1].strip()
+    else:
+        btn_text = "مشاهده"
+        btn_url = raw_input
+        
+    if btn_url.startswith("t.me/"):
+        btn_url = "https://" + btn_url
+    elif btn_url.startswith("ble.ir/"):
+        btn_url = "https://" + btn_url
+        
+    if not (btn_url.startswith("http://") or btn_url.startswith("https://")):
+        return await message.answer(
+            "❌ آدرس لینک نامعتبر است! آدرس باید با <code>https://</code> یا <code>http://</code> شروع شود.\n\n"
+            "لطفاً آدرس صحیح را مجدداً وارد نمایید:",
+            parse_mode="HTML"
+        )
+        
+    await state.update_data(btn_text=btn_text, btn_url=btn_url)
+    await state.set_state(PostStates.waiting_for_post_button_style)
+    
+    from aiogram.types import InlineKeyboardButton
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="1: بی‌رنگ (default)", callback_data="post_style_1", style="default"),
+        InlineKeyboardButton(text="2: سبز (success)", callback_data="post_style_2", style="success")
+    )
+    builder.row(
+        InlineKeyboardButton(text="3: آبی (primary)", callback_data="post_style_3", style="primary"),
+        InlineKeyboardButton(text="4: قرمز (danger)", callback_data="post_style_4", style="danger")
+    )
+    builder.row(InlineKeyboardButton(text="🔙 بازگشت به منوی قبل", callback_data="admin_broadcast_menu", style="danger"))
+    
+    await message.answer(
+        "🎨 <b>مرحله چهارم: تعیین استایل و رنگ دکمه زیر پست</b>\n\n"
+        "لطفاً عدد رنگ مورد نظر خود را وارد کنید یا از دکمه‌های زیر انتخاب نمایید:\n\n"
+        "▫️ <b>عدد 1</b> : style=\"default\" (بی‌رنگ)\n"
+        "🟢 <b>عدد 2</b> : style=\"success\" (سبز)\n"
+        "🔵 <b>عدد 3</b> : style=\"primary\" (آبی)\n"
+        "🔴 <b>عدد 4</b> : style=\"danger\" (قرمز)",
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
+    )
+
+ADMIN_POST_CACHE: dict[int, dict] = {}
+
+async def _proceed_to_post_preview(target_obj, state: FSMContext, style_str: str):
+    await state.update_data(btn_style=style_str)
+    
+    data = await state.get_data()
+    has_media = data.get("has_media", False)
+    media_type = data.get("media_type")
+    file_id = data.get("file_id")
+    caption = data.get("caption", "")
+    btn_text = data.get("btn_text", "مشاهده")
+    btn_url = data.get("btn_url", "")
+    admin_id = target_obj.from_user.id
+    
+    # Cache post for inline sharing
+    ADMIN_POST_CACHE[admin_id] = {
+        "has_media": has_media,
+        "media_type": media_type,
+        "file_id": file_id,
+        "caption": caption,
+        "btn_text": btn_text,
+        "btn_url": btn_url,
+        "btn_style": style_str
+    }
+    
+    await state.clear()
+    
+    from aiogram.types import InlineKeyboardButton, SwitchInlineQueryChosenChat
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text=btn_text, url=btn_url, style=style_str))
+    builder.row(
+        InlineKeyboardButton(
+            text="ارسال",
+            switch_inline_query_chosen_chat=SwitchInlineQueryChosenChat(
+                query="admin_post",
+                allow_user_chats=True,
+                allow_bot_chats=False,
+                allow_group_chats=True,
+                allow_channel_chats=True
+            ),
+            style="primary"
+        ),
+        InlineKeyboardButton(text="انصراف", callback_data="post_action_cancel", style="danger")
+    )
+    
+    markup = builder.as_markup()
+    bot = target_obj.bot
+    chat_id = target_obj.from_user.id
+    
+    if has_media:
+        if media_type == "photo":
+            await bot.send_photo(chat_id=chat_id, photo=file_id, caption=caption, reply_markup=markup, parse_mode="HTML")
+        elif media_type == "video":
+            await bot.send_video(chat_id=chat_id, video=file_id, caption=caption, reply_markup=markup, parse_mode="HTML")
+    else:
+        await bot.send_message(chat_id=chat_id, text=caption, reply_markup=markup, parse_mode="HTML")
+
+@admin_users_router.callback_query(PostStates.waiting_for_post_button_style, F.data.startswith("post_style_"))
+async def post_style_callback(callback: types.CallbackQuery, state: FSMContext):
+    if not is_admin(callback): return
+    style_num = callback.data.replace("post_style_", "").strip()
+    style_str = POST_STYLE_MAP.get(style_num, "default")
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    await _proceed_to_post_preview(callback, state, style_str)
+
+@admin_users_router.message(PostStates.waiting_for_post_button_style)
+async def post_style_message(message: types.Message, state: FSMContext):
+    if not is_admin(message): return
+    raw = (message.text or "").strip()
+    persian_digits = "۰۱۲۳۴۵۶۷۸۹"
+    english_digits = "0123456789"
+    trans = str.maketrans(persian_digits, english_digits)
+    raw = raw.translate(trans)
+    
+    if raw not in POST_STYLE_MAP:
+        return await message.answer("❌ عدد نامعتبر است! لطفاً عددی بین 1 تا 4 وارد نمایید:")
+        
+    style_str = POST_STYLE_MAP[raw]
+    await _proceed_to_post_preview(message, state, style_str)
+
+@admin_users_router.callback_query(F.data == "post_action_cancel")
+async def post_cancel(callback: types.CallbackQuery, state: FSMContext):
+    if not is_admin(callback): return
+    ADMIN_POST_CACHE.pop(callback.from_user.id, None)
+    await state.clear()
+    
+    from aiogram.types import InlineKeyboardButton
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🔙 بازگشت به منوی ارسال پیام", callback_data="admin_broadcast_menu", style="danger"))
+    
+    await callback.message.answer("❌ ارسال پست با موفقیت لغو گردید.", reply_markup=builder.as_markup())
+
+# === ROUTER: INLINE QUERY POST HANDLER ===
+@admin_users_router.inline_query(F.query.startswith("admin_post"))
+async def admin_post_inline_handler(inline_query: types.InlineQuery):
+    """
+    Handles inline sharing of the admin created post.
+    Opens directly in PVs of users, channels, and groups of the admin account.
+    """
+    admin_id = inline_query.from_user.id
+    from bot.config import ADMIN_IDS
+    from database.db_manager import get_db_admin_ids
+    
+    is_admin_user = (admin_id in ADMIN_IDS)
+    if not is_admin_user:
+        try:
+            db_admins = await get_db_admin_ids()
+            if admin_id in db_admins:
+                is_admin_user = True
+        except Exception:
+            pass
+            
+    if not is_admin_user:
+        return await inline_query.answer(results=[], cache_time=1, is_personal=True)
+        
+    post = ADMIN_POST_CACHE.get(admin_id)
+    if not post:
+        return await inline_query.answer(results=[], cache_time=1, is_personal=True)
+        
+    has_media = post.get("has_media")
+    media_type = post.get("media_type")
+    file_id = post.get("file_id")
+    caption = post.get("caption", "")
+    btn_text = post.get("btn_text", "مشاهده")
+    btn_url = post.get("btn_url", "")
+    btn_style = post.get("btn_style", "default")
+    
+    reply_markup = types.InlineKeyboardMarkup(inline_keyboard=[[
+        types.InlineKeyboardButton(text=btn_text, url=btn_url, style=btn_style)
+    ]])
+    
+    import time
+    unique_id = f"post_{admin_id}_{int(time.time())}"
+    results = []
+    
+    if has_media and media_type == "photo" and file_id:
+        results.append(
+            types.InlineQueryResultCachedPhoto(
+                id=unique_id,
+                photo_file_id=file_id,
+                title="ارسال پست تصویری",
+                description="ارسال پست با دکمه شیشه‌ای",
+                caption=caption,
+                parse_mode="HTML",
+                reply_markup=reply_markup
+            )
+        )
+    elif has_media and media_type == "video" and file_id:
+        results.append(
+            types.InlineQueryResultCachedVideo(
+                id=unique_id,
+                video_file_id=file_id,
+                title="ارسال پست ویدیویی",
+                description="ارسال پست با دکمه شیشه‌ای",
+                caption=caption,
+                parse_mode="HTML",
+                reply_markup=reply_markup
+            )
+        )
+    else:
+        results.append(
+            types.InlineQueryResultArticle(
+                id=unique_id,
+                title="ارسال پست متنی",
+                description="ارسال پست با دکمه شیشه‌ای",
+                input_message_content=types.InputTextMessageContent(
+                    message_text=caption,
+                    parse_mode="HTML"
+                ),
+                reply_markup=reply_markup
+            )
+        )
+        
+    try:
+        await inline_query.answer(
+            results=results,
+            cache_time=1,
+            is_personal=True
+        )
+    except Exception as e:
+        logging.warning(f"Admin post inline answer failed: {e}. Falling back to article...")
+        fallback = [
+            types.InlineQueryResultArticle(
+                id=f"fb_{unique_id}",
+                title="ارسال پست",
+                description="ارسال پست با دکمه شیشه‌ای",
+                input_message_content=types.InputTextMessageContent(
+                    message_text=caption,
+                    parse_mode="HTML"
+                ),
+                reply_markup=reply_markup
+            )
+        ]
+        await inline_query.answer(results=fallback, cache_time=1, is_personal=True)
 
 # ============================================================
 # PAGINATED USER LISTS
