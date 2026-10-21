@@ -160,8 +160,19 @@ def build_force_join_markup(unjoined_channels: List[Dict]) -> Tuple[str, types.I
         types.InlineKeyboardButton(
             text="بررسی عضویت ✅", 
             callback_data="confirm_channel", 
-            style="danger"
+            style="primary"
         )
     )
 
     return text, builder.as_markup()
+
+
+class ChannelService:
+    """Service wrapper for channel force join and membership verification."""
+    get_force_join_channels = staticmethod(get_force_join_channels)
+    extract_chat_id = staticmethod(extract_chat_id)
+    check_user_membership = staticmethod(check_user_membership)
+    get_unjoined_channels = staticmethod(get_unjoined_channels)
+    build_force_join_markup = staticmethod(build_force_join_markup)
+    invalidate_user_membership_cache = staticmethod(invalidate_user_membership_cache)
+    invalidate_channels_cache = staticmethod(invalidate_channels_cache)
