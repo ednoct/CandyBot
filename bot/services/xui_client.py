@@ -99,7 +99,12 @@ class XUIClient:
     """
 
     def __init__(self, base_url: str, bearer_token: str, timeout: float = 15.0):
-        self.base_url = (base_url or "").strip().rstrip("/")
+        raw_url = (base_url or "").strip().rstrip("/")
+        # Auto-normalize: strip trailing web UI suffixes like /panel, /panel/inbounds, /panel/setting
+        for suffix in ("/panel/inbounds", "/panel/setting", "/panel/settings", "/panel"):
+            if raw_url.endswith(suffix):
+                raw_url = raw_url[:-len(suffix)].rstrip("/")
+        self.base_url = raw_url
         self.bearer_token = (bearer_token or "").strip()
         self.timeout = httpx.Timeout(timeout, connect=5.0)
         self._cookies: dict[str, str] = {}
@@ -125,6 +130,14 @@ class XUIClient:
         self._client = None
         self._logged_in = False
 
+    def _build_url(self, path: str) -> str:
+        """Constructs an absolute URL, avoiding duplicated /panel path segments."""
+        clean_path = "/" + path.lstrip("/")
+        base = self.base_url.rstrip("/")
+        if base.endswith("/panel") and clean_path.startswith("/panel/"):
+            clean_path = clean_path[len("/panel"):]
+        return f"{base}{clean_path}"
+
     def _headers(self) -> dict[str, str]:
         headers = {
             "Accept": "application/json",
@@ -145,16 +158,50 @@ class XUIClient:
             return
         if ":" in self.bearer_token and " " not in self.bearer_token:
             username, password = self.bearer_token.split(":", 1)
+            login_url = self._build_url("/login")
+            # 1. Try form-encoded data (standard for 3x-UI Gin engine)
             try:
                 resp = await client.post(
-                    f"{self.base_url}/login",
+                    login_url,
+                    data={"username": username, "password": password},
+                )
+                if resp.status_code == 200:
+                    try:
+                        res_json = resp.json()
+                        if res_json.get("success") is False:
+                            logger.warning("XUI form login failed: %s", res_json.get("msg"))
+                        else:
+                            self._cookies.update(dict(resp.cookies))
+                            self._logged_in = True
+                            return
+                    except Exception:
+                        self._cookies.update(dict(resp.cookies))
+                        self._logged_in = True
+                        return
+            except Exception as exc:
+                logger.debug("XUI form login error: %s", exc)
+
+            # 2. Try JSON payload fallback
+            try:
+                resp = await client.post(
+                    login_url,
                     json={"username": username, "password": password},
                 )
                 if resp.status_code == 200:
-                    self._cookies.update(dict(resp.cookies))
-                    self._logged_in = True
+                    try:
+                        res_json = resp.json()
+                        if res_json.get("success") is False:
+                            logger.warning("XUI JSON login failed: %s", res_json.get("msg"))
+                        else:
+                            self._cookies.update(dict(resp.cookies))
+                            self._logged_in = True
+                            return
+                    except Exception:
+                        self._cookies.update(dict(resp.cookies))
+                        self._logged_in = True
+                        return
             except Exception as exc:
-                logger.debug("XUI session login attempt skipped/failed: %s", exc)
+                logger.debug("XUI JSON login error: %s", exc)
 
     async def _request(
         self,
@@ -163,7 +210,7 @@ class XUIClient:
         *,
         json_payload: Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
-        url = f"{self.base_url}/{path.lstrip('/')}"
+        url = self._build_url(path)
         if self._client is not None and not self._client.is_closed:
             await self._authenticate_if_needed(self._client)
             resp = await self._client.request(
@@ -189,16 +236,18 @@ class XUIClient:
                 )
 
         if resp.status_code >= 400:
-            raise RuntimeError(f"XUI HTTP {resp.status_code} on {path}: {resp.text[:250]}")
+            resp_detail = (resp.text or "").strip()[:250]
+            raise RuntimeError(f"XUI HTTP {resp.status_code} on {path}: {resp_detail}")
         try:
             return resp.json()
         except Exception:
-            return {"success": resp.status_code < 300, "raw": resp.text[:250]}
+            return {"success": resp.status_code < 300, "raw": (resp.text or "")[:250]}
 
     async def list_inbounds(self) -> list[dict[str, Any]]:
         """Fetches all inbounds from the 3x-UI panel."""
         for endpoint in (
             "/panel/api/inbounds/list",
+            "/api/inbounds/list",
             "/xui/API/inbounds/",
             "/panel/inbound/list",
         ):
@@ -223,23 +272,35 @@ class XUIClient:
         """
         if not self.base_url:
             return False, "آدرس پنل خالی است."
-        try:
-            for endpoint in (
-                "/panel/api/inbounds/list",
-                "/xui/API/inbounds/",
-                "/panel/inbound/list",
-            ):
-                try:
-                    data = await self._request("GET", endpoint)
-                    if isinstance(data, dict) and data.get("success") is True:
-                        inbounds = data.get("obj") or []
-                        count = len(inbounds) if isinstance(inbounds, list) else 0
-                        return True, f"اتصال موفق ({count} اینباند دریافت شد)."
-                except Exception:
-                    continue
-            return False, "عدم دریافت پاسخ معتبر از اندپوینت‌های پنل (توکن یا آدرس را بررسی کنید)."
-        except Exception as exc:
-            return False, f"خطا در اتصال به پنل: {str(exc)[:150]}"
+
+        errors: list[str] = []
+        for endpoint in (
+            "/panel/api/inbounds/list",
+            "/api/inbounds/list",
+            "/xui/API/inbounds/",
+            "/panel/inbound/list",
+        ):
+            try:
+                data = await self._request("GET", endpoint)
+                if isinstance(data, dict) and data.get("success") is True:
+                    inbounds = data.get("obj") or []
+                    count = len(inbounds) if isinstance(inbounds, list) else 0
+                    inb_summary = []
+                    if isinstance(inbounds, list):
+                        for inb in inbounds[:5]:
+                            inb_id = inb.get("id")
+                            inb_proto = inb.get("protocol") or "unknown"
+                            inb_port = inb.get("port") or "?"
+                            inb_summary.append(f"ID {inb_id} ({inb_proto}:{inb_port})")
+                    summary_str = f"\nاینباندهای فعال: {', '.join(inb_summary)}" if inb_summary else ""
+                    return True, f"اتصال موفق ({count} اینباند دریافت شد).{summary_str}"
+                elif isinstance(data, dict) and data.get("msg"):
+                    errors.append(f"{endpoint}: {data.get('msg')}")
+            except Exception as exc:
+                errors.append(f"{endpoint}: {exc}")
+
+        err_detail = " | ".join(errors[:2]) if errors else "عدم دریافت پاسخ معتبر."
+        return False, f"خطا در برقراری ارتباط:\n{err_detail[:180]}"
 
     async def provision(
         self,
@@ -285,6 +346,13 @@ class XUIClient:
         last_error: Optional[Exception] = None
         success_count = 0
 
+        endpoints = (
+            "/panel/api/inbounds/addClient",
+            "/api/inbounds/addClient",
+            "/xui/API/inbounds/addClient",
+            "/panel/inbound/addClient",
+        )
+
         for idx, inbound_id in enumerate(parsed_inbounds):
             client_email = email if idx == 0 else f"{email}_inb{inbound_id}"
             client_uuid = str(uuid.uuid4())
@@ -309,11 +377,10 @@ class XUIClient:
             }
 
             added = False
-            for endpoint in (
-                "/panel/api/inbounds/addClient",
-                "/xui/API/inbounds/addClient",
-                "/panel/inbound/addClient",
-            ):
+            primary_error: Optional[Exception] = None
+            attempt_errors: list[str] = []
+
+            for ep_idx, endpoint in enumerate(endpoints):
                 try:
                     res = await self._request("POST", endpoint, json_payload=payload)
                     if isinstance(res, dict) and res.get("success") is False:
@@ -322,10 +389,18 @@ class XUIClient:
                     success_count += 1
                     break
                 except Exception as exc:
+                    attempt_errors.append(f"{endpoint} -> {exc}")
+                    if ep_idx == 0:
+                        primary_error = exc
                     last_error = exc
 
-            if not added and last_error:
-                logger.warning("Failed to add client %s to inbound %s: %s", client_email, inbound_id, last_error)
+            if not added:
+                effective_err = primary_error or last_error
+                last_error = effective_err
+                logger.warning(
+                    "Failed to add client %s to inbound %s. Attempted endpoints: %s",
+                    client_email, inbound_id, " | ".join(attempt_errors)
+                )
 
         if success_count == 0:
             raise RuntimeError(f"خطا در ساخت کلاینت روی پنل 3x-UI: {last_error}")
@@ -431,6 +506,7 @@ class XUIClient:
             updated_ok = False
             for endpoint in (
                 f"/panel/api/inbounds/updateClient/{client_uuid}",
+                f"/api/inbounds/updateClient/{client_uuid}",
                 f"/xui/API/inbounds/updateClient/{client_uuid}",
                 f"/panel/inbound/updateClient/{client_uuid}",
             ):

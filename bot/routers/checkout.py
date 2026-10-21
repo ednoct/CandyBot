@@ -324,7 +324,7 @@ async def render_calculator(message: types.Message, state: FSMContext, plan_id: 
     
     # Payment Button (محاسبه با قیمت پلکانی جدید)
     base_price = (sel_days * data['plan_price_day']) + tier_info['total_traffic_price']
-    builder.row(types.InlineKeyboardButton(text=f"💸 پرداخت {base_price:,} تومان", callback_data="checkout_confirm"))
+    builder.row(types.InlineKeyboardButton(text=f"💸 پرداخت {base_price:,} تومان", callback_data="checkout_confirm", style="success"))
     
     # Back
     builder.row(types.InlineKeyboardButton(text="🔙 برگشت", callback_data="main_menu", style="danger"))

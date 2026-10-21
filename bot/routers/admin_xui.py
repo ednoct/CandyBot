@@ -92,7 +92,12 @@ async def add_panel_url(message: types.Message, state: FSMContext):
             parse_mode="HTML"
         )
 
-    await state.update_data(panel_url=url.rstrip("/"))
+    clean_url = url.rstrip("/")
+    for suffix in ("/panel/inbounds", "/panel/setting", "/panel/settings", "/panel"):
+        if clean_url.endswith(suffix):
+            clean_url = clean_url[:-len(suffix)].rstrip("/")
+
+    await state.update_data(panel_url=clean_url)
     await state.set_state(AdminStates.waiting_for_panel_sub_link)
 
     builder = InlineKeyboardBuilder()
@@ -120,7 +125,7 @@ async def add_panel_sub_link(message: types.Message, state: FSMContext):
     builder.button(text="❌ انصراف", callback_data="admin_xui", style="danger")
     await message.answer(
         "🔑 <b>مرحله ۴/۶ — توکن ورود (Bearer Token)</b>\n\n"
-        "توکن API پنل ثنا را وارد کنید.\n"
+        "توکن API پنل ثنا یا فرمت <code>username:password</code> را وارد کنید.\n"
         "<i>این مقدار را از بخش Settings → Security → API Token پنل کپی کنید.</i>",
         reply_markup=builder.as_markup(),
         parse_mode="HTML"
@@ -134,8 +139,8 @@ async def add_panel_token(message: types.Message, state: FSMContext):
         return
 
     token = message.text.strip()
-    if len(token) < 8:
-        return await message.answer("❌ توکن خیلی کوتاه است. لطفاً توکن کامل را وارد کنید.")
+    if len(token) < 4:
+        return await message.answer("❌ توکن خیلی کوتاه است. لطفاً توکن یا نام کاربری و رمز معتبر وارد کنید.")
 
     await state.update_data(panel_token=token)
     await state.set_state(AdminStates.waiting_for_panel_inbound_ids)
@@ -145,9 +150,8 @@ async def add_panel_token(message: types.Message, state: FSMContext):
     await message.answer(
         "📡 <b>مرحله ۵/۶ — آیدی اینباند(ها)</b>\n\n"
         "آیدی اینباند یا اینباندهایی که لایسنس‌های خریداری شده روی آن‌ها ساخته خواهند شد را وارد کنید.\n\n"
-        "<i>(برای یک آیدی، فقط عدد را وارد کنید. "
-        "برای چند آیدی، اعداد را با ویرگول از هم جدا کنید. "
-        "مثال: <code>1,3,5</code>)</i>",
+        "⚠️ <b>نکته مهم:</b> آیدی اینباند یک عدد ترتیبی کوچک (مثل <code>1</code> یا <code>2</code>) است که در ستون <b>ID</b> جدول اینباندهای پنل نمایش داده می‌شود؛ <b>پورت</b> (مثل 2083 یا 443) را به عنوان آیدی وارد نکنید!\n\n"
+        "<i>(برای یک آیدی، فقط عدد را وارد کنید. برای چند آیدی، اعداد را با ویرگول از هم جدا کنید. مثال: <code>1,2</code>)</i>",
         reply_markup=builder.as_markup(),
         parse_mode="HTML"
     )
@@ -510,6 +514,9 @@ async def save_edited_panel_url(message: types.Message, state: FSMContext):
     await state.clear()
 
     clean_url = url.rstrip("/")
+    for suffix in ("/panel/inbounds", "/panel/setting", "/panel/settings", "/panel"):
+        if clean_url.endswith(suffix):
+            clean_url = clean_url[:-len(suffix)].rstrip("/")
     await db_manager.update_xui_panel(panel_id, url=clean_url)
 
     builder = InlineKeyboardBuilder()
