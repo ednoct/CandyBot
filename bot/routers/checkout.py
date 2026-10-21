@@ -451,9 +451,6 @@ async def prepare_and_send_invoice(message: types.Message, user_id: int, data: d
             if cb_data in ("pay_frenzyex", "frenzyex"):
                 builder.row(types.InlineKeyboardButton(text=f"💳 {name}", callback_data=cb_data, style="success"))
             else:
-                cb_data in ("pay_gram", "gram"):
-                builder.row(types.InlineKeyboardButton(text=f"💳 {name}", callback_data=cb_data, style="success"))
-            else:
                 builder.row(types.InlineKeyboardButton(text=f"💳 {name}", callback_data=cb_data))
     else:
         builder.row(types.InlineKeyboardButton(text="✅ تکمیل خرید (رایگان)", callback_data="pay_free"))
