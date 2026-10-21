@@ -4,6 +4,7 @@ admin_discounts.py
 Admin router for managing discount codes and gift codes.
 """
 # === IMPORTS ===
+import logging
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -13,6 +14,7 @@ from database import db_manager
 from utils.ui_helpers import safe_edit_message
 import aiosqlite
 
+logger = logging.getLogger(__name__)
 admin_discounts_router = Router()
 
 # ============================================================
@@ -271,8 +273,7 @@ async def add_gift_save(message: types.Message, state: FSMContext):
             )
             await db.commit()
     except Exception as e:
-        import logging
-        logging.error(f"Gift code save failed: {e}", exc_info=True)
+        logger.error(f"Gift code save failed: {e}", exc_info=True)
         await state.clear()
         return await message.answer(f"❌ خطا در ذخیره کد هدیه:\n<code>{str(e)[:300]}</code>", parse_mode="HTML")
         

@@ -6,6 +6,7 @@ Module containing functionalities for user.
 # === IMPORTS ===
 import logging
 from aiogram import Router, F, types, Bot
+from aiogram.types import BufferedInputFile
 from aiogram.filters import CommandStart, StateFilter, CommandObject
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
@@ -570,8 +571,7 @@ async def view_license(callback: types.CallbackQuery):
         else:
             live_status = "\nوضعیت: ⚠️ پنل فاقد ساب لینک است"
     except Exception as e:
-        import logging
-        logging.error(f"Error fetching live status for license {license_id}: {e}")
+        logger.error(f"Error fetching live status for license {license_id}: {e}")
         live_status = "\nوضعیت: ⚠️ خطا در ارتباط با سرور"
 
     caption = (
@@ -592,28 +592,36 @@ async def view_license(callback: types.CallbackQuery):
     builder.row(types.InlineKeyboardButton(text="🗑 حذف لایسنس", callback_data=f"delete_lic_prompt_{license_id}", style="danger"))
     builder.row(types.InlineKeyboardButton(text="🔙 بازگشت به سرویس‌ها", callback_data="my_services", style="danger"))
 
-    from bot.services.xui_client import generate_qr_bytes
-    qr_buf = await generate_qr_bytes(sub_id)
-
-    # === ۱. انتهای تابع view_license در bot/routers/user.py (رفع BUG-02 با حفظ sub_id) ===
     try:
         from bot.services.xui_client import generate_qr_bytes
         qr_buf = await generate_qr_bytes(sub_id)
-        photo_file = BufferedInputFile(qr_buf.getvalue(), filename=f"license_{lic_id}.png")
+        photo_file = BufferedInputFile(qr_buf.getvalue(), filename=f"license_{license_id}.png")
         try:
             await callback.message.delete()
         except Exception:
             pass
         await callback.message.answer_photo(
             photo=photo_file,
-            caption=text,
+            caption=caption,
             reply_markup=builder.as_markup(),
             parse_mode="HTML"
         )
     except Exception as e:
-        logging.error(f"Error sending QR photo in view_license for {lic_id}: {e}")
-        await _safe_edit_or_send(callback, text, reply_markup=builder.as_markup())
-    await callback.answer()
+        logger.error(f"Error sending QR photo in view_license for {license_id}: {e}")
+        try:
+            await callback.bot.send_message(
+                chat_id=callback.from_user.id,
+                text=caption,
+                reply_markup=builder.as_markup(),
+                parse_mode="HTML"
+            )
+        except Exception as e_send:
+            logger.error(f"Fallback send_message failed in view_license for {license_id}: {e_send}")
+    finally:
+        try:
+            await callback.answer()
+        except Exception:
+            pass
 
 
 # === ROUTER: DELETE LICENSE FLOW ===
@@ -647,7 +655,7 @@ async def delete_license_prompt(callback: types.CallbackQuery):
     await callback.answer()
 
 
-@user_router.callback_query(F.data.startswith("del_lic_confirm_"))
+@user_router.callback_query(F.data.startswith("delete_lic_confirm_") | F.data.startswith("del_lic_confirm_"))
 async def delete_license_confirm(callback: types.CallbackQuery):
     """Deletes the license from both the 3x-UI panel and the bot's SQLite database."""
     lic_id = int(callback.data.split("_")[-1])
@@ -685,7 +693,7 @@ async def delete_license_confirm(callback: types.CallbackQuery):
                 async with XUIClient(lic['panel_url'], lic['bearer_token']) as client:
                     await client.delete_client(email, sub_id=lic.get('sub_id'))
             except Exception as e:
-                logging.error(f"Error deleting license {lic_id} from XUI panel: {e}")
+                logger.error(f"Error deleting license {lic_id} from XUI panel: {e}")
 
         # 2. Delete from bot database
         await db.execute("DELETE FROM xui_licenses WHERE id = ? AND user_id = ?", (lic_id, user_id))
