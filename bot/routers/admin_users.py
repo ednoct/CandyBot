@@ -1275,9 +1275,8 @@ async def search_order_execute(message: types.Message, state: FSMContext):
         f"سرور: {order.get('panel_url', 'نامشخص')}\n\n"
     )
     if order.get('sub_id'):
-        from bot.services.xui_client import build_sub_url
-        sub_link = build_sub_url(order['panel_url'], order['sub_id'])
-        text += f"🔗 لینک اتصال:\n`{sub_link}`"
+        sub_id_val = str(order['sub_id']).strip()
+        text += f"🔑 کلید لایسنس:\n<code>{sub_id_val}</code>\n"
         
     await message.answer(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
 

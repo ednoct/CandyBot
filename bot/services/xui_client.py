@@ -1,12 +1,13 @@
 """
 bot/services/xui_client.py
 --------------------------
-Async HTTP client for communicating with the 3x-UI / Sanaei panel API.
-Handles provisioning, renewing, migrating, and deleting clients across inbounds.
-Patched for BUG-01 (top-level delete_client export) and BUG-02 (dual-signature provision method).
+Async HTTP client for communicating with the 3x-UI (v3.10.2) / Sanaei panel API.
+Handles provisioning, in-place renewal (with accurate remaining quota & traffic reset),
+cross-panel migration, connection testing, QR generation, and client deletion.
 """
 from __future__ import annotations
 
+from io import BytesIO
 import json
 import logging
 import secrets
@@ -16,8 +17,57 @@ import uuid
 from typing import Any, Optional
 
 import httpx
+import qrcode
 
 logger = logging.getLogger(__name__)
+
+
+class _AwaitableBytesIO(BytesIO):
+    """
+    A BytesIO subclass that can be used BOTH synchronously (`buf = generate_qr_bytes(s)`)
+    AND asynchronously (`buf = await generate_qr_bytes(s)`).
+    Fixes BUG-02 without breaking any sync or async caller across the codebase.
+    """
+
+    def __await__(self):
+        async def _coro():
+            return self
+
+        return _coro().__await__()
+
+
+def generate_qr_bytes(data: str) -> _AwaitableBytesIO:
+    """
+    Generates a PNG QR code image in memory for the given license key (`sub_id`) or string.
+    Returns an `_AwaitableBytesIO` buffer supporting both sync and `await` usage (Fixes BUG-01 & BUG-02).
+    """
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=10,
+        border=2,
+    )
+    qr.add_data(str(data or ""))
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buf = _AwaitableBytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return buf
+
+
+def build_sub_url(panel_url: Optional[str], sub_id: str) -> str:
+    """
+    Safely formats a subscription/license reference string.
+    Handles None/empty `panel_url` gracefully without AttributeError (Fixes BUG-01, BUG-07 & BUG-09).
+    """
+    clean_sub = str(sub_id or "").strip()
+    if not panel_url or not str(panel_url).strip():
+        return clean_sub
+    base = str(panel_url).strip().rstrip("/")
+    if "/sub" in base:
+        return f"{base}/{clean_sub}"
+    return f"{base}/sub/{clean_sub}"
 
 
 def _gen_sub_id(length: int = 16) -> str:
@@ -43,13 +93,37 @@ def parse_inbound_ids(raw_inbound_ids: Any) -> list[int]:
 
 
 class XUIClient:
-    """Async client for interacting with 3x-UI / Sanaei panels."""
+    """
+    Async client for interacting with 3x-UI / Sanaei panels.
+    Supports `async with XUIClient(...) as client:` context manager protocol (Fixes BUG-03).
+    """
 
     def __init__(self, base_url: str, bearer_token: str, timeout: float = 15.0):
         self.base_url = (base_url or "").strip().rstrip("/")
         self.bearer_token = (bearer_token or "").strip()
         self.timeout = httpx.Timeout(timeout, connect=5.0)
         self._cookies: dict[str, str] = {}
+        self._client: Optional[httpx.AsyncClient] = None
+        self._logged_in: bool = False
+
+    async def __aenter__(self) -> "XUIClient":
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                timeout=self.timeout,
+                verify=False,
+                follow_redirects=True,
+            )
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        await self.close()
+
+    async def close(self) -> None:
+        """Closes the underlying httpx.AsyncClient if open."""
+        if self._client is not None and not self._client.is_closed:
+            await self._client.aclose()
+        self._client = None
+        self._logged_in = False
 
     def _headers(self) -> dict[str, str]:
         headers = {
@@ -57,16 +131,18 @@ class XUIClient:
             "Content-Type": "application/json",
         }
         if self.bearer_token:
-            if ":" in self.bearer_token and not self.bearer_token.lower().startswith("bearer "):
-                # Supports username:password or raw token alongside Bearer header
-                headers["Authorization"] = f"Bearer {self.bearer_token}"
-            else:
-                token_val = self.bearer_token[7:].strip() if self.bearer_token.lower().startswith("bearer ") else self.bearer_token
-                headers["Authorization"] = f"Bearer {token_val}"
+            token_val = (
+                self.bearer_token[7:].strip()
+                if self.bearer_token.lower().startswith("bearer ")
+                else self.bearer_token
+            )
+            headers["Authorization"] = f"Bearer {token_val}"
         return headers
 
     async def _authenticate_if_needed(self, client: httpx.AsyncClient) -> None:
         """If bearer_token is formatted as 'username:password', logs into 3x-UI session cookie."""
+        if self._logged_in:
+            return
         if ":" in self.bearer_token and " " not in self.bearer_token:
             username, password = self.bearer_token.split(":", 1)
             try:
@@ -75,7 +151,8 @@ class XUIClient:
                     json={"username": username, "password": password},
                 )
                 if resp.status_code == 200:
-                    self._cookies = dict(resp.cookies)
+                    self._cookies.update(dict(resp.cookies))
+                    self._logged_in = True
             except Exception as exc:
                 logger.debug("XUI session login attempt skipped/failed: %s", exc)
 
@@ -87,25 +164,36 @@ class XUIClient:
         json_payload: Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
         url = f"{self.base_url}/{path.lstrip('/')}"
-        async with httpx.AsyncClient(
-            timeout=self.timeout,
-            verify=False,
-            follow_redirects=True,
-        ) as client:
-            await self._authenticate_if_needed(client)
-            resp = await client.request(
+        if self._client is not None and not self._client.is_closed:
+            await self._authenticate_if_needed(self._client)
+            resp = await self._client.request(
                 method=method,
                 url=url,
                 json=json_payload,
                 headers=self._headers(),
                 cookies=self._cookies,
             )
-            if resp.status_code >= 400:
-                raise RuntimeError(f"XUI HTTP {resp.status_code} on {path}: {resp.text[:250]}")
-            try:
-                return resp.json()
-            except Exception:
-                return {"success": resp.status_code < 300, "raw": resp.text[:250]}
+        else:
+            async with httpx.AsyncClient(
+                timeout=self.timeout,
+                verify=False,
+                follow_redirects=True,
+            ) as temp_client:
+                await self._authenticate_if_needed(temp_client)
+                resp = await temp_client.request(
+                    method=method,
+                    url=url,
+                    json=json_payload,
+                    headers=self._headers(),
+                    cookies=self._cookies,
+                )
+
+        if resp.status_code >= 400:
+            raise RuntimeError(f"XUI HTTP {resp.status_code} on {path}: {resp.text[:250]}")
+        try:
+            return resp.json()
+        except Exception:
+            return {"success": resp.status_code < 300, "raw": resp.text[:250]}
 
     async def list_inbounds(self) -> list[dict[str, Any]]:
         """Fetches all inbounds from the 3x-UI panel."""
@@ -123,6 +211,35 @@ class XUIClient:
             except Exception:
                 continue
         return []
+
+    async def get_inbounds(self) -> list[dict[str, Any]]:
+        """Alias for list_inbounds() required by admin_users.py (Fixes BUG-04)."""
+        return await self.list_inbounds()
+
+    async def test_connection(self) -> tuple[bool, str]:
+        """
+        Tests connectivity and authentication against the 3x-UI panel (Required by admin_xui.py).
+        Returns (success_bool, status_message).
+        """
+        if not self.base_url:
+            return False, "آدرس پنل خالی است."
+        try:
+            for endpoint in (
+                "/panel/api/inbounds/list",
+                "/xui/API/inbounds/",
+                "/panel/inbound/list",
+            ):
+                try:
+                    data = await self._request("GET", endpoint)
+                    if isinstance(data, dict) and data.get("success") is True:
+                        inbounds = data.get("obj") or []
+                        count = len(inbounds) if isinstance(inbounds, list) else 0
+                        return True, f"اتصال موفق ({count} اینباند دریافت شد)."
+                except Exception:
+                    continue
+            return False, "عدم دریافت پاسخ معتبر از اندپوینت‌های پنل (توکن یا آدرس را بررسی کنید)."
+        except Exception as exc:
+            return False, f"خطا در اتصال به پنل: {str(exc)[:150]}"
 
     async def provision(
         self,
@@ -142,9 +259,7 @@ class XUIClient:
     ) -> str:
         """
         Provisions a client across all specified `inbound_ids` with the same `sub_id`.
-        Supports BOTH parameter conventions (Fixes BUG-02):
-        1. High-level: (email, total_gb, days, tg_id, limit_ip, inbound_ids, group, sub_id)
-        2. Low-level:  (inbound_ids=..., email=..., sub_id=..., total_bytes=..., expiry_time_ms=..., ip_limit=..., comment=..., group=...)
+        Supports both high-level (total_gb/days) and low-level (total_bytes/expiry_time_ms) signatures.
         """
         parsed_inbounds = parse_inbound_ids(inbound_ids)
         if not parsed_inbounds:
@@ -172,17 +287,20 @@ class XUIClient:
 
         for idx, inbound_id in enumerate(parsed_inbounds):
             client_email = email if idx == 0 else f"{email}_inb{inbound_id}"
+            client_uuid = str(uuid.uuid4())
             client_obj = {
-                "id": str(uuid.uuid4()),
+                "id": client_uuid,
+                "password": client_uuid,
                 "flow": "",
                 "email": client_email,
                 "limitIp": final_ip_limit,
                 "totalGB": final_total_bytes,
                 "expiryTime": final_expiry_ms,
                 "enable": True,
-                "tgId": str(tg_id or ""),
+                "tgId": int(tg_id) if str(tg_id).isdigit() else str(tg_id or ""),
                 "subId": final_sub_id,
-                "comment": str(comment or group or ""),
+                "comment": str(comment or ""),
+                "group": str(group or "Customers"),
                 "reset": 0,
             }
             payload = {
@@ -222,14 +340,15 @@ class XUIClient:
         sub_id: Optional[str] = None,
     ) -> str:
         """
-        Finds an existing client by `email` or `sub_id` across inbounds, adds `add_days` and `add_gb`
-        (or sets to 0 if unlimited), resets used traffic if needed, and updates the client in-place.
+        Finds an existing client by `email` or `sub_id` across inbounds, calculates exact remaining
+        traffic (using `clientStats` up+down) and remaining time, adds `add_gb` and `add_days`,
+        resets client traffic counters in 3x-UI, and re-enables the client.
         """
         inbounds = await self.list_inbounds()
         if not inbounds:
             raise RuntimeError("امکان دریافت لیست اینباندها از پنل وجود ندارد.")
 
-        matched_clients: list[tuple[int, dict[str, Any]]] = []
+        matched_clients: list[tuple[int, dict[str, Any], int]] = []
         target_email = (email or "").strip().lower()
         target_sub = (sub_id or "").strip()
 
@@ -244,13 +363,23 @@ class XUIClient:
             except Exception:
                 continue
 
+            # Map per-email used traffic (up + down) from inbound's clientStats array in 3x-UI
+            stats_by_email: dict[str, int] = {}
+            for st in (inb.get("clientStats") or []):
+                if isinstance(st, dict) and st.get("email"):
+                    st_email = str(st["email"]).strip().lower()
+                    used = max(0, int(st.get("up") or 0)) + max(0, int(st.get("down") or 0))
+                    stats_by_email[st_email] = used
+
             for cl in clients:
-                cl_email = str(cl.get("email") or "").strip().lower()
+                cl_email = str(cl.get("email") or "").strip()
+                cl_email_low = cl_email.lower()
                 cl_sub = str(cl.get("subId") or "").strip()
                 if (target_sub and cl_sub == target_sub) or (
-                    target_email and (cl_email == target_email or cl_email.startswith(f"{target_email}_inb"))
+                    target_email and (cl_email_low == target_email or cl_email_low.startswith(f"{target_email}_inb"))
                 ):
-                    matched_clients.append((int(inb_id), cl))
+                    used_bytes = stats_by_email.get(cl_email_low, 0)
+                    matched_clients.append((int(inb_id), cl, used_bytes))
 
         if not matched_clients:
             raise RuntimeError("کلاینت مورد نظر در پنل فعلی یافت نشد.")
@@ -258,25 +387,35 @@ class XUIClient:
         now_ms = int(time.time() * 1000)
         resolved_sub_id = str(matched_clients[0][1].get("subId") or target_sub or _gen_sub_id(16))
 
-        for inb_id, cl in matched_clients:
-            client_uuid = cl.get("id") or cl.get("password") or cl.get("email")
-            cl_email = cl.get("email")
+        # Aggregate total used bytes across all inbounds sharing this client/subId
+        total_used_bytes = sum(used for _, _, used in matched_clients)
 
-            # Calculate remaining time and new expiry (Fixes BUG-02 for unlimited days=0)
+        for inb_id, cl, _ in matched_clients:
+            client_uuid = cl.get("id") or cl.get("password") or cl.get("email")
+            cl_email = str(cl.get("email") or "").strip()
+
             old_exp_ms = int(cl.get("expiryTime") or 0)
-            if int(add_days) <= 0:
-                new_exp_ms = 0  # Unlimited time
+            old_total_bytes = int(cl.get("totalGB") or 0)
+
+            was_time_expired = (old_exp_ms > 0 and old_exp_ms <= now_ms)
+            was_traffic_expired = (old_total_bytes > 0 and total_used_bytes >= old_total_bytes)
+            was_expired = was_time_expired or was_traffic_expired
+
+            # 1. Calculate new expiryTime in ms (0 = unlimited)
+            if int(add_days) <= 0 or (not was_expired and old_exp_ms == 0):
+                new_exp_ms = 0
             else:
                 base_ms = old_exp_ms if old_exp_ms > now_ms else now_ms
                 new_exp_ms = base_ms + int(add_days) * 86400 * 1000
 
-            # Calculate remaining traffic and new totalGB (Fixes BUG-02 for unlimited gb=0)
-            old_total_bytes = int(cl.get("totalGB") or 0)
-            if float(add_gb) <= 0:
-                new_total_bytes = 0  # Unlimited traffic
+            # 2. Calculate new totalGB in bytes (0 = unlimited)
+            # Since we reset client traffic to 0 upon renewal, new_total_bytes = remaining_bytes + added_bytes
+            if float(add_gb) <= 0 or (not was_expired and old_total_bytes == 0):
+                new_total_bytes = 0
             else:
+                rem_bytes = max(0, old_total_bytes - total_used_bytes) if old_total_bytes > 0 else 0
                 added_bytes = int(float(add_gb) * (1024 ** 3))
-                new_total_bytes = (old_total_bytes + added_bytes) if old_total_bytes > 0 else added_bytes
+                new_total_bytes = rem_bytes + added_bytes
 
             updated_client = dict(cl)
             updated_client["expiryTime"] = new_exp_ms
@@ -289,6 +428,7 @@ class XUIClient:
                 "settings": json.dumps({"clients": [updated_client]}, ensure_ascii=False),
             }
 
+            updated_ok = False
             for endpoint in (
                 f"/panel/api/inbounds/updateClient/{client_uuid}",
                 f"/xui/API/inbounds/updateClient/{client_uuid}",
@@ -297,15 +437,20 @@ class XUIClient:
                 try:
                     res = await self._request("POST", endpoint, json_payload=payload)
                     if isinstance(res, dict) and res.get("success") is not False:
+                        updated_ok = True
                         break
                 except Exception:
                     continue
 
-            # Reset client traffic on inbound if previously expired
-            if old_exp_ms > 0 and old_exp_ms <= now_ms and cl_email:
+            if not updated_ok:
+                raise RuntimeError(f"خطا در بروزرسانی کلاینت {cl_email} روی اینباند {inb_id}")
+
+            # 3. Reset client traffic counter on the inbound so up=0, down=0 matches new_total_bytes
+            if cl_email:
                 for reset_ep in (
                     f"/panel/api/inbounds/{inb_id}/resetClientTraffic/{cl_email}",
                     f"/xui/API/inbounds/{inb_id}/resetClientTraffic/{cl_email}",
+                    f"/panel/inbound/{inb_id}/resetClientTraffic/{cl_email}",
                 ):
                     try:
                         await self._request("POST", reset_ep)
@@ -318,6 +463,7 @@ class XUIClient:
     async def delete_client(self, email: str = "", sub_id: Optional[str] = None) -> bool:
         """
         Deletes a client from all inbounds on the 3x-UI panel matching `email` or `sub_id`.
+        Supports both `delClient/{clientId}` and `delClientByEmail/{email}` from 3x-UI v3.10.2.
         """
         inbounds = await self.list_inbounds()
         if not inbounds:
@@ -339,14 +485,16 @@ class XUIClient:
                 continue
 
             for cl in clients:
-                cl_email = str(cl.get("email") or "").strip().lower()
+                cl_email_exact = str(cl.get("email") or "").strip()
+                cl_email = cl_email_exact.lower()
                 cl_sub = str(cl.get("subId") or "").strip()
                 if (target_sub and cl_sub == target_sub) or (
                     target_email and (cl_email == target_email or cl_email.startswith(f"{target_email}_inb"))
                 ):
-                    client_uuid = cl.get("id") or cl.get("password") or cl.get("email")
+                    client_uuid = cl.get("id") or cl.get("password") or cl_email_exact
                     for endpoint in (
                         f"/panel/api/inbounds/{inb_id}/delClient/{client_uuid}",
+                        f"/panel/api/inbounds/{inb_id}/delClientByEmail/{cl_email_exact}",
                         f"/xui/API/inbounds/{inb_id}/delClient/{client_uuid}",
                         f"/panel/inbound/{inb_id}/delClient/{client_uuid}",
                     ):
@@ -380,18 +528,18 @@ async def provision_license(
     gb = float(invoice.get("gb") or 0.0)
     ip_limit = int(panel.get("ip_limit") or 1)
 
-    client = XUIClient(panel["url"], panel["bearer_token"])
-    return await client.provision(
-        email=email,
-        total_gb=gb,
-        days=days,
-        tg_id=user_id,
-        limit_ip=ip_limit,
-        inbound_ids=inbound_ids,
-        group=group,
-        sub_id=sub_id,
-        comment=note,
-    )
+    async with XUIClient(panel["url"], panel["bearer_token"]) as client:
+        return await client.provision(
+            email=email,
+            total_gb=gb,
+            days=days,
+            tg_id=user_id,
+            limit_ip=ip_limit,
+            inbound_ids=inbound_ids,
+            group=group,
+            sub_id=sub_id,
+            comment=note,
+        )
 
 
 async def renew_license(
@@ -402,8 +550,8 @@ async def renew_license(
     sub_id: Optional[str] = None,
 ) -> str:
     """High-level helper to renew an existing client on a 3x-UI panel."""
-    client = XUIClient(panel["url"], panel["bearer_token"])
-    return await client.renew(email=email, add_days=add_days, add_gb=add_gb, sub_id=sub_id)
+    async with XUIClient(panel["url"], panel["bearer_token"]) as client:
+        return await client.renew(email=email, add_days=add_days, add_gb=add_gb, sub_id=sub_id)
 
 
 async def delete_client(
@@ -411,11 +559,8 @@ async def delete_client(
     email: str = "",
     sub_id: Optional[str] = None,
 ) -> bool:
-    """
-    Top-level helper to delete a client from a 3x-UI panel by email and/or sub_id.
-    Fixes BUG-01 across payment/confirm.py, database/db_manager.py, and bot/routers/user.py.
-    """
+    """Top-level helper to delete a client from a 3x-UI panel by email and/or sub_id."""
     if not panel or not panel.get("url") or not panel.get("bearer_token"):
         return False
-    client = XUIClient(panel["url"], panel["bearer_token"])
-    return await client.delete_client(email=email, sub_id=sub_id)
+    async with XUIClient(panel["url"], panel["bearer_token"]) as client:
+        return await client.delete_client(email=email, sub_id=sub_id)

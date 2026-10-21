@@ -3,10 +3,8 @@ payment/confirm.py
 ------------------
 Handles side effects of payment states: Paid, Failed, Expired.
 Patched for:
-- BUG-01: Uses both XUIClient.delete_client and top-level delete_client safely without ImportError.
-- BUG-02: Calls XUIClient.provision with compatible parameters and properly handles unlimited (0) GB/days.
-- BUG-03 (Previous audit): Validates non-empty inbound_ids before provisioning.
-- Overhaul 1 & 2: Atomic wallet ledgering, hybrid payment shortfall recovery, and full renewal flows.
+- BUG-08: Reads `renew_mode` ('change_plan' vs 'keep_plan') from invoices table (with fallback to transfer_method).
+- 3x-UI v3.10.2 sync: Passes `sub_id=preserved_sub_id` to `renew_license` so multi-inbound clients are matched by subId.
 """
 
 # === IMPORTS ===
@@ -76,16 +74,15 @@ class PaymentConfirmationManager:
 
     @staticmethod
     async def _safe_delete_xui_client(panel: dict, email: str, sub_id: Optional[str] = None) -> bool:
-        """Safely deletes a client from a 3x-UI panel using XUIClient instance (Fixes BUG-01)."""
+        """Safely deletes a client from a 3x-UI panel using XUIClient instance."""
         if not panel or not panel.get("url") or not panel.get("bearer_token"):
             return False
         from bot.services.xui_client import XUIClient
-        client = XUIClient(panel["url"], panel["bearer_token"])
-        try:
-            return await client.delete_client(email, sub_id=sub_id)
-        except TypeError:
-            # Fallback if delete_client on XUIClient only accepts (self, email)
-            return await client.delete_client(email)
+        async with XUIClient(panel["url"], panel["bearer_token"]) as client:
+            try:
+                return await client.delete_client(email, sub_id=sub_id)
+            except TypeError:
+                return await client.delete_client(email)
 
     @staticmethod
     async def _safe_provision_xui_client(
@@ -99,22 +96,21 @@ class PaymentConfirmationManager:
         comment: str = "",
         group: str = "Customers",
     ) -> str:
-        """
-        Safely provisions a client on 3x-UI matching XUIClient.provision's signature (Fixes BUG-02).
-        """
+        """Safely provisions a client on 3x-UI matching XUIClient.provision's signature."""
         from bot.services.xui_client import XUIClient
-        client = XUIClient(panel["url"], panel["bearer_token"])
         limit_ip = int(panel.get("ip_limit") or 1)
-        return await client.provision(
-            email=email,
-            total_gb=float(total_gb),
-            days=int(days),
-            tg_id=user_id,
-            limit_ip=limit_ip,
-            inbound_ids=inbound_ids,
-            group=group,
-            sub_id=sub_id,
-        )
+        async with XUIClient(panel["url"], panel["bearer_token"]) as client:
+            return await client.provision(
+                email=email,
+                total_gb=float(total_gb),
+                days=int(days),
+                tg_id=user_id,
+                limit_ip=limit_ip,
+                inbound_ids=inbound_ids,
+                group=group,
+                sub_id=sub_id,
+                comment=comment,
+            )
 
     # ------------------------------------------------------------------
     # PUBLIC: confirm_paid
@@ -422,7 +418,7 @@ class PaymentConfirmationManager:
         return inbound_ids
 
     # ------------------------------------------------------------------
-    # PRIVATE: _provision_and_deliver (Fixes BUG-01 & BUG-02)
+    # PRIVATE: _provision_and_deliver (Fixes BUG-08)
     # ------------------------------------------------------------------
     async def _provision_and_deliver(self, invoice_id: str, user_id: int, invoice, is_free_test: bool = False) -> None:
         if not isinstance(invoice, dict):
@@ -498,9 +494,15 @@ class PaymentConfirmationManager:
 
                 inv_days = int(full_invoice.get('days') or 0)
                 inv_gb = float(full_invoice.get('gb') or 0.0)
-                transfer_method = str(full_invoice.get('transfer_method') or '').strip().lower()
 
-                is_change_plan = transfer_method in ('change_plan', 'new_plan', 'switch_plan')
+                # Fix BUG-08: Read `renew_mode` column first (where 'change_plan' / 'keep_plan' is stored)
+                renew_mode = str(
+                    full_invoice.get('renew_mode')
+                    or full_invoice.get('transfer_method')
+                    or ''
+                ).strip().lower()
+
+                is_change_plan = renew_mode in ('change_plan', 'new_plan', 'switch_plan')
 
                 if is_change_plan:
                     # Mode 2 (Change Plan on expired license):
@@ -537,7 +539,13 @@ class PaymentConfirmationManager:
 
                     if old_panel_id == panel['id']:
                         try:
-                            sub_id = await renew_license(panel, email, inv_days, inv_gb)
+                            sub_id = await renew_license(
+                                panel,
+                                email,
+                                inv_days,
+                                inv_gb,
+                                sub_id=preserved_sub_id,
+                            )
                             renewed_in_place = True
                         except Exception as renew_err:
                             logging.warning(

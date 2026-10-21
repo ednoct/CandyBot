@@ -595,19 +595,25 @@ async def view_license(callback: types.CallbackQuery):
     from bot.services.xui_client import generate_qr_bytes
     qr_buf = await generate_qr_bytes(sub_id)
 
+    # === ۱. انتهای تابع view_license در bot/routers/user.py (رفع BUG-02 با حفظ sub_id) ===
     try:
-        if qr_buf is not None:
-            await callback.message.answer_photo(
-                photo=types.BufferedInputFile(qr_buf.read(), filename="license_qr.png"),
-                caption=caption,
-                parse_mode="HTML",
-                reply_markup=builder.as_markup()
-            )
-            await callback.answer()
-        else:
-            await callback.message.edit_text(caption, reply_markup=builder.as_markup(), parse_mode="HTML")
-    except Exception:
-        await callback.message.edit_text(caption, reply_markup=builder.as_markup(), parse_mode="HTML")
+        from bot.services.xui_client import generate_qr_bytes
+        qr_buf = await generate_qr_bytes(sub_id)
+        photo_file = BufferedInputFile(qr_buf.getvalue(), filename=f"license_{lic_id}.png")
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        await callback.message.answer_photo(
+            photo=photo_file,
+            caption=text,
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        logging.error(f"Error sending QR photo in view_license for {lic_id}: {e}")
+        await _safe_edit_or_send(callback, text, reply_markup=builder.as_markup())
+    await callback.answer()
 
 
 # === ROUTER: DELETE LICENSE FLOW ===
@@ -641,35 +647,52 @@ async def delete_license_prompt(callback: types.CallbackQuery):
     await callback.answer()
 
 
-@user_router.callback_query(F.data.startswith("delete_lic_confirm_"))
-async def delete_license_confirm(callback: types.CallbackQuery, state: FSMContext = None):
-    """Executes license deletion in X-UI panel and bot database."""
-    license_id = int(callback.data.split("_")[3])
+@user_router.callback_query(F.data.startswith("del_lic_confirm_"))
+async def delete_license_confirm(callback: types.CallbackQuery):
+    """Deletes the license from both the 3x-UI panel and the bot's SQLite database."""
+    lic_id = int(callback.data.split("_")[-1])
     user_id = callback.from_user.id
-    
-    lic = await db_manager.get_license_details(license_id, user_id)
-    if not lic:
-        return await callback.answer("❌ لایسنس یافت نشد یا قبلاً حذف شده است.", show_alert=True)
-        
-    # 1. Delete from XUI panel if connected
-    if lic.get('panel_url') and lic.get('bearer_token'):
-        try:
-            from bot.services.xui_client import XUIClient, build_client_email
-            email = build_client_email(lic.get('license_note') or "", lic['user_id'], lic['invoice_id'])
-            async with XUIClient(lic['panel_url'], lic['bearer_token']) as client:
-                await client.delete_client(email)
-                logger.info(f"User {user_id} deleted client {email} from panel {lic['panel_url']}")
-        except Exception as e:
-            logger.warning(f"Could not delete client from panel on user deletion: {e}")
-            
-    # 2. Delete from database
+
     async with aiosqlite.connect(db_manager.DB_PATH) as db:
         await db.execute("PRAGMA busy_timeout = 5000;")
-        await db.execute("DELETE FROM xui_licenses WHERE id = ? AND user_id = ?", (license_id, user_id))
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """
+            SELECT l.*, p.url AS panel_url, p.bearer_token
+            FROM xui_licenses l
+            LEFT JOIN xui_panels p ON l.panel_id = p.id
+            WHERE l.id = ? AND l.user_id = ?
+            """,
+            (lic_id, user_id)
+        ) as cur:
+            lic_row = await cur.fetchone()
+
+        if not lic_row:
+            await callback.answer("❌ لایسنس یافت نشد یا قبلاً حذف شده است.", show_alert=True)
+            return
+
+        lic = dict(lic_row)
+
+        # 1. Delete from 3x-UI panel first
+        if lic.get('panel_url') and lic.get('bearer_token'):
+            try:
+                from bot.services.xui_client import XUIClient, build_client_email
+                email = build_client_email(
+                    lic.get('license_note') or "",
+                    lic['user_id'],
+                    lic['invoice_id']
+                )
+                async with XUIClient(lic['panel_url'], lic['bearer_token']) as client:
+                    await client.delete_client(email, sub_id=lic.get('sub_id'))
+            except Exception as e:
+                logging.error(f"Error deleting license {lic_id} from XUI panel: {e}")
+
+        # 2. Delete from bot database
+        await db.execute("DELETE FROM xui_licenses WHERE id = ? AND user_id = ?", (lic_id, user_id))
         await db.commit()
-        
-    await callback.answer("✅ لایسنس شما با موفقیت از بات و سرور حذف شد.", show_alert=True)
-    await my_services(callback, state)
+
+    await callback.answer("✅ لایسنس شما با موفقیت از ربات و سرور حذف شد.", show_alert=True)
+    await my_services(callback)
 
 
 # === ROUTER: RENEWAL WORKFLOW ===

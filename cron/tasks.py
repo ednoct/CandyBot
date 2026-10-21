@@ -14,7 +14,6 @@ import asyncio
 import logging
 import aiosqlite
 from database.db_manager import DB_PATH
-from bot.routers import checkout
 from bot.services.sub_stats import fetch_sub_stats
 from utils.backup import create_database_backup
 from bot.services.notifications import NotificationService

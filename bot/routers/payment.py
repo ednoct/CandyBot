@@ -990,16 +990,8 @@ async def _forward_receipt_to_admins(
                     parse_mode="HTML",
                     reply_markup=reply_markup
                 )
-
-        except aiosqlite.OperationalError:
-            await db.execute(
-                """
-                UPDATE payment_reports
-                SET status = 'pending_receipt', message_id = ?
-                WHERE invoice_id = ?
-                """,
-                (message.message_id, invoice_id),
-            )
+        except Exception:
+            continue
 
 @payment_router.callback_query(F.data.startswith("no_hash_"))
 async def admin_no_hash_alert(callback: types.CallbackQuery):
@@ -1030,6 +1022,7 @@ async def process_pingi_receipt(message: types.Message, state: FSMContext):
     receipt_text = message.caption or "" if has_photo else ""
     
     async with aiosqlite.connect(db_manager.DB_PATH) as db:
+        await db.execute("PRAGMA busy_timeout = 5000;")
         await db.execute('''
             UPDATE invoices 
             SET status = 'pending_receipt', transfer_method = ? 
@@ -1041,19 +1034,29 @@ async def process_pingi_receipt(message: types.Message, state: FSMContext):
                 SET status = 'pending_receipt', crypto_hash = ?, transfer_method = ?, receipt_time = CURRENT_TIMESTAMP
                 WHERE invoice_id = ?
             ''', (stored_value, transfer_method, invoice_id))
-
         except aiosqlite.OperationalError:
-            await db.execute(
-                """
-                UPDATE payment_reports
-                SET status = 'pending_receipt', crypto_hash = ?
-                WHERE invoice_id = ?
-                """,
-                (tx_hash, invoice_id),
-            )
+            try:
+                await db.execute(
+                    """
+                    UPDATE payment_reports
+                    SET status = 'pending_receipt', crypto_hash = ?
+                    WHERE invoice_id = ?
+                    """,
+                    (stored_value, invoice_id),
+                )
+            except aiosqlite.OperationalError:
+                await db.execute(
+                    """
+                    UPDATE payment_reports
+                    SET payment_Status = 'pending_receipt', crypto_hash = ?
+                    WHERE id_invoice = ?
+                    """,
+                    (stored_value, invoice_id),
+                )
+        await db.commit()
         
     await state.clear()
-    await message.reply("✅ رسید شما جهت بررسی ثبت شد. پس از تایید مدیر، حساب شما شارژ خواهد شد.")
+    await message.reply("✅ رسید شما جهت بررسی ثبت شد. پس از تایید مدیر، فاکتور شما نهایی خواهد شد.")
     
     await _forward_receipt_to_admins(
         bot=message.bot,
