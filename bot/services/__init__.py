@@ -24,6 +24,7 @@ from .xui_client import (
     provision_license,
     renew_license,
     delete_client,
+    update_client,
 )
 
 __all__ = [
@@ -45,4 +46,5 @@ __all__ = [
     "provision_license",
     "renew_license",
     "delete_client",
+    "update_client",
 ]
