@@ -438,10 +438,9 @@ async def main():
     # === START WEB SERVER ===
     await run_web_server(bot, dp)
 
-    # === START POLLING OR KEEP RUNNING FOR WEBHOOK ===
+# === START POLLING OR KEEP RUNNING FOR WEBHOOK
     if USE_WEBHOOK and WEBHOOK_DOMAIN and WEBHOOK_DOMAIN != 'localhost':
         logging.info("Running in Webhook mode...")
-        await on_startup(bot)
         await asyncio.Event().wait()
     else:
         logging.info("Starting bot polling...")

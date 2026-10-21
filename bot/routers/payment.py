@@ -329,31 +329,90 @@ async def check_frenzyex_status(callback: types.CallbackQuery):
     else:
         await callback.answer(f"خطا در ارتباط با درگاه: {result.get('error')}", show_alert=True)
 
-@payment_router.callback_query(F.data.startswith("frenzyex_cancel_"))
+@payment_router.callback_query(F.data.startswith("cancel_frenzyex_"))
 async def cancel_frenzyex_status(callback: types.CallbackQuery):
-    """Cancels a frenzyex payment manually."""
-    parts = callback.data.split('_')
-    invoice_id = parts[2]
-    request_id = parts[3]
-    
+    """
+    Cancels an unpaid FrenzyEx payment request safely.
+    Fixes BUG-04 by checking cancel_res.get('success') instead of truthiness of the returned dict,
+    and reconciles the order if HTTP 409 Conflict indicates it was already paid.
+    """
+    parts = callback.data.split("_", 2)
+    if len(parts) < 3:
+        await callback.answer("❌ شناسه درخواست نامعتبر است.", show_alert=True)
+        return
+
+    target_id = parts[2].strip()
+
     async with aiosqlite.connect(db_manager.DB_PATH) as db:
+        await db.execute("PRAGMA busy_timeout = 5000;")
         db.row_factory = aiosqlite.Row
-        async with db.execute('SELECT key, value FROM settings WHERE key = "frenzyex_api_key" OR key = "frenzyex_base_url"') as cursor:
-            settings_rows = await cursor.fetchall()
-            settings = {row['key']: row['value'] for row in settings_rows}
-            
-    frenzyex_api_key = settings.get('frenzyex_api_key', '')
-    frenzyex_base_url = settings.get('frenzyex_base_url', 'https://frenzy.fastsnap.info')
-    
-    from payment.gateways import FrenzyExGateway
-    gateway = FrenzyExGateway(api_key=frenzyex_api_key, base_url=frenzyex_base_url)
-    
-    await callback.message.edit_text("در حال لغو فاکتور...")
-    success = await gateway.cancel_payment(request_id)
-    if success:
-        await callback.message.edit_text("فاکتور با موفقیت لغو شد.")
-    else:
-        await callback.message.edit_text("امکان لغو فاکتور وجود ندارد یا قبلا لغو شده است.")
+        async with db.execute(
+            "SELECT invoice_id, gateway_request_id, status FROM payment_reports "
+            "WHERE gateway_request_id = ? OR invoice_id = ? ORDER BY id DESC LIMIT 1",
+            (target_id, target_id),
+        ) as cur:
+            pr_row = await cur.fetchone()
+
+    invoice_id = pr_row["invoice_id"] if pr_row else target_id
+    request_id = (pr_row["gateway_request_id"] if pr_row and pr_row["gateway_request_id"] else target_id).strip()
+
+    inv = await db_manager.get_invoice_by_id(invoice_id)
+    if inv and inv["status"] in ("paid", "approved", "processing", "completed"):
+        await callback.answer("✅ این فاکتور قبلاً پرداخت و تایید شده است و قابل لغو نیست.", show_alert=True)
+        return
+
+    api_key = (await db_manager.get_setting("frenzyex_api_key", "")).strip()
+    base_url = (await db_manager.get_setting("frenzyex_base_url", "https://frenzy.fastsnap.info")).strip()
+
+    if api_key and request_id:
+        from payment.gateways import FrenzyExGateway
+        gateway = FrenzyExGateway(api_key=api_key, base_url=base_url)
+        cancel_res = await gateway.cancel_payment(request_id)
+
+        # Fix BUG-04: Check cancel_res.get("success") explicitly
+        if not cancel_res.get("success"):
+            remote_status = cancel_res.get("status")
+            if remote_status == "paid":
+                # The user actually completed the payment just before clicking cancel!
+                from payment.confirm import PaymentConfirmationManager
+                pcm = PaymentConfirmationManager(callback.bot)
+                await pcm.confirm_paid(invoice_id, method="FrenzyEx Cancel-Check")
+                await callback.answer("✅ پرداخت شما در درگاه انجام شده است! سرویس در حال فعال‌سازی است.", show_alert=True)
+                return
+
+            if cancel_res.get("conflict"):
+                await callback.answer(
+                    "⏳ این تراکنش در درگاه در حال بررسی است و در حال حاضر امکان لغو آن وجود ندارد.",
+                    show_alert=True,
+                )
+                return
+
+            if remote_status not in ("expired", "canceled"):
+                await callback.answer(
+                    "⚠️ خطا در لغو تراکنش در سمت درگاه. لطفاً چند لحظه دیگر مجدداً تلاش کنید.",
+                    show_alert=True,
+                )
+                return
+
+    async with aiosqlite.connect(db_manager.DB_PATH) as db:
+        await db.execute("PRAGMA busy_timeout = 5000;")
+        await db.execute(
+            "UPDATE invoices SET status = 'canceled' WHERE id = ? AND status = 'pending'",
+            (invoice_id,),
+        )
+        await db.execute(
+            "UPDATE payment_reports SET status = 'canceled' WHERE invoice_id = ? AND status IN ('pending', 'Unpaid')",
+            (invoice_id,),
+        )
+        await db.commit()
+
+    try:
+        await callback.message.edit_text(
+            f"❌ <b>فاکتور شماره <code>{invoice_id}</code> با موفقیت لغو شد.</b>",
+            parse_mode="HTML",
+        )
+    except Exception:
+        await callback.answer("❌ فاکتور با موفقیت لغو شد.", show_alert=True)
 
 @payment_router.callback_query(F.data.startswith("sendtxid_"))
 async def prompt_txid(callback: types.CallbackQuery, state: FSMContext):

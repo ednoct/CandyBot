@@ -359,5 +359,13 @@ CREATE TABLE IF NOT EXISTS agent_settlements (
     settled_at          TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS broadcast_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    message_text TEXT NOT NULL,
+    status TEXT DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_agent_settlements_agent ON agent_settlements(agent_id);
 CREATE INDEX IF NOT EXISTS idx_agent_settlements_status ON agent_settlements(status);

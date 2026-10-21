@@ -1,8 +1,13 @@
 """
-This module corresponds to the 'cron/tasks.py' branch in the candy_architecture.md map.
-Contains async background loops for DB cleanup, broadcasting, and payment checks
-(including FrenzyEx active polling recovery and expiring USDT/GRAM invoices).
-Lottery feature removed.
+cron/tasks.py
+-------------
+Contains async background loops for:
+- Pending FrenzyEx active polling recovery & offline USDT/GRAM expiration (cron_payment_check)
+- License traffic/time low alerts (cron_license_stats_check)
+- Automatic cleanup of expired 3x-UI licenses >2 days past expiry from panel & DB (cron_expired_licenses_cleanup)
+- Daily abandoned invoice expiration & nightly DB backup report (cron_database_cleanup)
+- Broadcast queue processing (cron_broadcast)
+- Housekeeping & bi-weekly DB optimization (cron_housekeeping, cron_biweekly_cleanup)
 """
 # === IMPORTS ===
 import asyncio
@@ -81,6 +86,21 @@ async def cron_license_stats_check(bot=None):
         except Exception as e:
             logging.error(f"Cron License Stats Check Error: {e}")
 
+        await asyncio.sleep(21600)  # 6 hours
+
+
+# === BACKGROUND TASK: EXPIRED XUI LICENSES CLEANUP (>2 DAYS PAST EXPIRY) ===
+async def cron_expired_licenses_cleanup():
+    """
+    Periodically checks for XUI licenses that have been expired for at least 2 days (48 hours),
+    removes them from the connected 3x-UI panel first, and then deletes them from the bot DB.
+    Runs every 6 hours (21600 seconds).
+    """
+    while True:
+        try:
+            await db_manager.cleanup_expired_xui_licenses(grace_days=2)
+        except Exception as e:
+            logging.error(f"Cron Expired Licenses Cleanup Error: {e}", exc_info=True)
         await asyncio.sleep(21600)  # 6 hours
 
 
@@ -173,7 +193,6 @@ async def cron_database_cleanup(bot=None):
     """
     Daily task to mark abandoned pending invoices (>24h) as expired, generate stats,
     backup DB, and send nightly report.
-    (Physical deletion of old expired records happens in cron_biweekly_cleanup after 14 days).
     Runs every 86400 seconds (24h).
     """
     import os
@@ -181,8 +200,6 @@ async def cron_database_cleanup(bot=None):
         try:
             async with aiosqlite.connect(DB_PATH) as db:
                 await db.execute("PRAGMA busy_timeout = 5000;")
-                # Safely transition abandoned pending invoices older than 24 hours to 'expired'
-                # instead of deleting them immediately, preserving order_ref reconciliation history.
                 await db.execute(
                     "UPDATE invoices SET status = 'expired' "
                     "WHERE status = 'pending' AND created_at < datetime('now', '-1 day')"
@@ -195,7 +212,6 @@ async def cron_database_cleanup(bot=None):
                 logging.info("Executed daily abandoned invoice expiration sweep")
 
             if bot:
-                # 1. Fetch Daily Stats
                 from datetime import datetime
                 now = datetime.now()
                 start = now.replace(hour=0, minute=0, second=0).strftime('%Y-%m-%d %H:%M:%S')
@@ -209,10 +225,8 @@ async def cron_database_cleanup(bot=None):
                     f"💸 فروش امروز: {stats['sales']:,} تومان\n"
                 )
 
-                # 2. Create DB Backup
                 zip_path = await create_database_backup()
 
-                # 3. Send Notification
                 notif_service = NotificationService(bot)
                 if zip_path and os.path.exists(zip_path):
                     await notif_service.send_report(
@@ -233,15 +247,17 @@ async def cron_database_cleanup(bot=None):
 
 
 # === BACKGROUND TASK: NOTIFICATIONS & BROADCAST ===
-async def cron_broadcast():
+async def cron_broadcast(bot=None):
     """
     Background loop to dispatch queued broadcast messages and notifications to users.
-    Replaces old PHP `sendmessage` and `notifications` cronbots.
     Runs every 30 seconds.
     """
+    from bot.services.broadcast import BroadcastService
     while True:
         try:
-            logging.debug("Running broadcast check")
+            if bot:
+                service = BroadcastService(bot)
+                await service.process_queue()
         except Exception as e:
             logging.error(f"Cron Broadcast Error: {e}")
         await asyncio.sleep(30)
@@ -251,19 +267,14 @@ async def cron_broadcast():
 async def cron_housekeeping():
     """
     Background loop to manage expiring discounts, gift codes, and agent statuses.
-    Replaces discount_expire.php, expireagent.php, gift.php.
     Runs every hour.
     """
     while True:
         try:
             async with aiosqlite.connect(DB_PATH) as db:
                 await db.execute("PRAGMA busy_timeout = 5000;")
-                # Expire past discount codes
                 await db.execute("DELETE FROM discount_codes WHERE expiration_date < datetime('now')")
-                # Expire past gift codes
                 await db.execute("DELETE FROM gift_codes WHERE expiration_date < datetime('now')")
-
-                # Agents whose status is no longer valid or have no affiliates can be downgraded
                 await db.execute("UPDATE users SET agent = 'f' WHERE affiliatescount = 0 AND agent = 't'")
                 await db.commit()
                 logging.debug("Cron Housekeeping completed.")
@@ -272,16 +283,10 @@ async def cron_housekeeping():
         await asyncio.sleep(3600)
 
 
-# === BACKGROUND TASK: BI-WEEKLY EXPIRED DATA CLEANUP (TICKETS, LICENSES, INVOICES) ===
+# === BACKGROUND TASK: BI-WEEKLY EXPIRED DATA CLEANUP ===
 async def cron_biweekly_cleanup(bot=None):
     """
-    Bi-weekly background loop to clean up:
-    - Support tickets (closed, or answered older than 14 days) and messages
-    - Expired licenses (checked via sub_link stats or invoice validity)
-    - Expired invoices and payment reports
-    - Reclaims memory & disk via SQLite VACUUM and PRAGMA optimize.
-    Runs every 2 weeks (14 days). Periodically checks every hour to survive bot restarts.
-    Operates strictly within the bot's database/memory; no messages in user PVs are deleted.
+    Bi-weekly background loop to clean up expired tickets, licenses (>2d expired), and old invoices.
     """
     import time
     import json
@@ -329,7 +334,7 @@ async def cron_biweekly_cleanup(bot=None):
                             f"💳 گزارش‌های پرداخت منقضی: <b>{result['deleted_payment_reports']}</b> عدد\n"
                             f"💾 حجم آزاد شده دیتابیس: <b>{result['freed_bytes'] / 1024:.1f} KB</b>\n"
                             f"🕒 تاریخ اجرا: <b>{result['jalali_date']}</b>\n\n"
-                            "<i>(پاکسازی صرفاً در حافظه دیتابیس ربات جهت بهینه‌سازی انجام شد و چت‌های پیوی کاربران دست‌نخورده باقی ماندند)</i>"
+                            "<i>(پاکسازی در پنل X-UI و حافظه دیتابیس ربات انجام شد و چت‌های پیوی کاربران دست‌نخورده باقی ماندند)</i>"
                         )
                         await notif_service.send_report(topic_key="nightly_report", text=report_text)
                     except Exception as ne:
@@ -338,26 +343,7 @@ async def cron_biweekly_cleanup(bot=None):
         except Exception as e:
             logging.error(f"Cron Bi-Weekly Cleanup Error: {e}")
 
-        # Check every 1 hour (3600 seconds)
         await asyncio.sleep(3600)
-
-
-# === BACKGROUND TASK: EXPIRED LICENSES CLEANUP (>2 DAYS) ===
-async def cron_expired_licenses_cleanup(bot=None):
-    """
-    Background loop to periodically purge licenses that have been expired for at least 2 days.
-    Deletes the client from the connected 3x-ui panel and removes the license row from the database.
-    Runs every 6 hours (21600 seconds).
-    """
-    while True:
-        try:
-            logging.info("Starting periodic check for expired licenses cleanup (>2 days)...")
-            res = await db_manager.cleanup_expired_xui_licenses(grace_period_days=2)
-            if res.get('deleted_licenses', 0) > 0:
-                logging.info(f"Auto-cleaned {res['deleted_licenses']} expired licenses from XUI and DB.")
-        except Exception as e:
-            logging.error(f"Cron Expired Licenses Cleanup Error: {e}")
-        await asyncio.sleep(21600)  # 6 hours
 
 
 # === CRON SETUP ===
@@ -367,8 +353,8 @@ def setup_cron_tasks(bot=None, loop=None):
         loop = asyncio.get_event_loop()
     loop.create_task(cron_payment_check(bot))
     loop.create_task(cron_license_stats_check(bot))
+    loop.create_task(cron_expired_licenses_cleanup())
     loop.create_task(cron_database_cleanup(bot))
-    loop.create_task(cron_broadcast())
+    loop.create_task(cron_broadcast(bot))
     loop.create_task(cron_housekeeping())
     loop.create_task(cron_biweekly_cleanup(bot))
-    loop.create_task(cron_expired_licenses_cleanup(bot))

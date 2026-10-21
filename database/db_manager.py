@@ -7,6 +7,8 @@ Module containing functionalities for db_manager.
 # === IMPORTS AND CONFIG ===
 import aiosqlite
 import os
+import asyncio
+import time
 import shutil
 import logging
 import random
@@ -140,6 +142,16 @@ async def init_db():
                 time TEXT,
                 ip TEXT,
                 actions TEXT
+            )
+        """)
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS broadcast_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                message_text TEXT NOT NULL,
+                status TEXT DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
 
@@ -1880,150 +1892,83 @@ async def add_support_message(ticket_id: int, sender_id: int, sender_role: str, 
 
 # === EXPIRED DATA CLEANUP (TICKETS, LICENSES, INVOICES) ===
 async def cleanup_expired_data(retention_days: int = 14) -> dict:
-    """Cleans up expired data from the bot's database for storage and performance optimization."""
+    """
+    Cleans up expired data from the bot's database for storage and performance optimization.
+    Fixes BUG-07 by ensuring XUI licenses are deleted via cleanup_expired_xui_licenses (from panel first)
+    and never orphaned by direct SQLite DELETEs.
+    """
     import time
     import asyncio
     from utils.date_formatter import get_current_jalali
 
     logger = logging.getLogger(__name__)
     db_size_before = os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0
-
     deleted_tickets = 0
     deleted_ticket_messages = 0
     deleted_licenses = 0
     deleted_invoices = 0
     deleted_payment_reports = 0
 
+    # 1. Clean expired XUI licenses properly (from 3x-UI panel first, with 2-day post-expiry rule)
+    try:
+        lic_cleanup_res = await cleanup_expired_xui_licenses(grace_days=2)
+        deleted_licenses = lic_cleanup_res.get("deleted_from_db", 0)
+    except Exception as e:
+        logger.error(f"Error in cleanup_expired_xui_licenses during cleanup_expired_data: {e}")
+
     async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("PRAGMA busy_timeout = 5000;")
         db.row_factory = aiosqlite.Row
 
+        # 2. Clean closed/old support tickets
         try:
             async with db.execute(f"""
-                SELECT id FROM support_tickets 
-                WHERE status = 'closed' 
-                   OR (status = 'answered' AND created_at < datetime('now', '-{retention_days} days'))
+                SELECT id FROM support_tickets
+                WHERE status = 'closed'
+                   OR (status = 'answered' AND created_at < datetime('now', '-{int(retention_days)} days'))
             """) as cur:
                 ticket_rows = await cur.fetchall()
-
             ticket_ids = [row['id'] for row in ticket_rows]
             if ticket_ids:
                 placeholders = ",".join("?" for _ in ticket_ids)
                 cur_msg = await db.execute(f"DELETE FROM support_messages WHERE ticket_id IN ({placeholders})", ticket_ids)
                 deleted_ticket_messages = max(0, cur_msg.rowcount)
-
                 cur_tkt = await db.execute(f"DELETE FROM support_tickets WHERE id IN ({placeholders})", ticket_ids)
                 deleted_tickets = max(0, cur_tkt.rowcount)
         except Exception as e:
             logger.error(f"Error cleaning support tickets: {e}")
 
-        expired_license_ids = set()
-        try:
-            async with db.execute("""
-                SELECT l.id, l.user_id, l.sub_id, l.invoice_id, l.created_at,
-                       p.sub_link, p.url as panel_url,
-                       i.days as invoice_days, i.status as invoice_status, i.created_at as invoice_created_at
-                FROM xui_licenses l
-                LEFT JOIN xui_panels p ON l.panel_id = p.id
-                LEFT JOIN invoices i ON l.invoice_id = i.id
-            """) as cur:
-                license_rows = await cur.fetchall()
-
-            from bot.services.sub_stats import fetch_sub_stats
-
-            async def check_single_license(lic_row):
-                lic_id = lic_row['id']
-                inv_status = lic_row['invoice_status']
-                sub_link = lic_row['sub_link']
-                sub_id = lic_row['sub_id']
-
-                if inv_status in ('expired', 'canceled', 'failed'):
-                    return lic_id
-
-                if sub_link and sub_id:
-                    try:
-                        stats = await asyncio.wait_for(fetch_sub_stats(sub_link, sub_id), timeout=8.0)
-                        if stats:
-                            if stats.get('is_expired'):
-                                return lic_id
-                            if not stats.get('is_unlimited_time') and stats.get('days_left', 1) <= 0:
-                                return lic_id
-                            if not stats.get('is_unlimited_traffic') and stats.get('remaining_gb', 1) <= 0:
-                                return lic_id
-                    except Exception:
-                        pass
-                return None
-
-            sem = asyncio.Semaphore(10)
-
-            async def bounded_check(row):
-                async with sem:
-                    return await check_single_license(row)
-
-            if license_rows:
-                tasks = [bounded_check(row) for row in license_rows]
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-                for res in results:
-                    if isinstance(res, int):
-                        expired_license_ids.add(res)
-
-            async with db.execute(f"""
-                SELECT l.id FROM xui_licenses l
-                JOIN invoices i ON l.invoice_id = i.id
-                WHERE i.days > 0 
-                  AND datetime(l.created_at, '+' || (i.days + {retention_days}) || ' days') < datetime('now')
-            """) as cur:
-                date_expired = await cur.fetchall()
-                for r in date_expired:
-                    expired_license_ids.add(r[0])
-
-            async with db.execute(f"""
-                SELECT l.id FROM xui_licenses l
-                LEFT JOIN invoices i ON l.invoice_id = i.id
-                WHERE i.id IS NULL AND l.created_at < datetime('now', '-{retention_days} days')
-            """) as cur:
-                orphan_lics = await cur.fetchall()
-                for r in orphan_lics:
-                    expired_license_ids.add(r[0])
-
-            if expired_license_ids:
-                lic_id_list = list(expired_license_ids)
-                placeholders = ",".join("?" for _ in lic_id_list)
-                cur_lic = await db.execute(f"DELETE FROM xui_licenses WHERE id IN ({placeholders})", lic_id_list)
-                deleted_licenses = max(0, cur_lic.rowcount)
-        except Exception as e:
-            logger.error(f"Error cleaning expired licenses: {e}")
-
+        # 3. Clean old expired/canceled/failed invoices ONLY if they no longer have an active xui_licenses row
         try:
             async with db.execute(f"""
-                SELECT id FROM invoices 
-                WHERE status = 'expired' 
-                   OR (status = 'pending' AND created_at < datetime('now', '-{retention_days} days'))
-                   OR (status IN ('canceled', 'failed') AND created_at < datetime('now', '-{retention_days} days'))
+                SELECT id FROM invoices
+                WHERE (
+                    status = 'expired'
+                    OR (status = 'pending' AND created_at < datetime('now', '-{int(retention_days)} days'))
+                    OR (status IN ('canceled', 'failed') AND created_at < datetime('now', '-{int(retention_days)} days'))
+                )
+                AND id NOT IN (SELECT invoice_id FROM xui_licenses WHERE invoice_id IS NOT NULL)
             """) as cur:
                 inv_rows = await cur.fetchall()
-
             expired_inv_ids = [row['id'] for row in inv_rows]
+
             if expired_inv_ids:
                 placeholders = ",".join("?" for _ in expired_inv_ids)
-                await db.execute(f"DELETE FROM xui_licenses WHERE invoice_id IN ({placeholders})", expired_inv_ids)
-
                 cur_pr = await db.execute(f"DELETE FROM payment_reports WHERE invoice_id IN ({placeholders})", expired_inv_ids)
                 deleted_payment_reports += max(0, cur_pr.rowcount)
-
                 cur_inv = await db.execute(f"DELETE FROM invoices WHERE id IN ({placeholders})", expired_inv_ids)
                 deleted_invoices = max(0, cur_inv.rowcount)
 
             cur_pr_extra = await db.execute(f"""
-                DELETE FROM payment_reports 
-                WHERE status = 'expire' 
-                   OR (status = 'Unpaid' AND created_at < datetime('now', '-{retention_days} days'))
+                DELETE FROM payment_reports
+                WHERE status = 'expire'
+                   OR (status = 'Unpaid' AND created_at < datetime('now', '-{int(retention_days)} days'))
             """)
             deleted_payment_reports += max(0, cur_pr_extra.rowcount)
         except Exception as e:
             logger.error(f"Error cleaning expired invoices: {e}")
 
         await db.commit()
-
         try:
             await db.execute("PRAGMA optimize;")
         except Exception as e:
@@ -2031,7 +1976,6 @@ async def cleanup_expired_data(retention_days: int = 14) -> dict:
 
     db_size_after = os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0
     freed_bytes = max(0, db_size_before - db_size_after)
-
     summary = {
         "deleted_tickets": deleted_tickets,
         "deleted_ticket_messages": deleted_ticket_messages,
@@ -2044,102 +1988,153 @@ async def cleanup_expired_data(retention_days: int = 14) -> dict:
         "timestamp": int(time.time()),
         "jalali_date": get_current_jalali()
     }
-
     logger.info(f"Database cleanup finished: {summary}")
     return summary
 
 
-async def cleanup_expired_xui_licenses(grace_period_days: int = 2) -> dict:
+# === EXPIRED XUI LICENSES CLEANUP (>2 DAYS PAST EXPIRY, DELETES FROM XUI & DB) ===
+async def cleanup_expired_xui_licenses(grace_days: int = 2) -> dict:
     """
-    Periodically cleans up licenses that have been expired for at least `grace_period_days` (default 2 days / 48 hours).
-    Deletes the client from the X-UI panel and removes the license from the bot database.
+    Finds licenses that have been expired for at least `grace_days` (default: 2 days = 48 hours),
+    deletes each client from its bound 3x-UI panel first, and then deletes the row from `xui_licenses`.
+    Fixes BUG-01 (explicit asyncio import) and BUG-07 (no ghost clients on 3x-UI).
     """
-    from bot.services.sub_stats import fetch_sub_stats
-    from bot.services.xui_client import XUIClient, build_client_email
+    import asyncio
     import time
     from datetime import datetime
+    from bot.services.sub_stats import fetch_sub_stats
+    from bot.services.xui_client import delete_client, build_client_email
 
-    now = int(time.time())
-    grace_seconds = grace_period_days * 86400
-    deleted_count = 0
-    errors = []
-
-    sql = """
-        SELECT l.id, l.user_id, l.panel_id, l.sub_id, l.license_note, l.invoice_id, l.created_at,
-               p.url AS panel_url, p.bearer_token, p.sub_link,
-               i.days AS invoice_days, i.gb AS invoice_gb, i.created_at AS invoice_created_at
-        FROM xui_licenses l
-        LEFT JOIN xui_panels p ON l.panel_id = p.id
-        LEFT JOIN invoices i ON l.invoice_id = i.id
-    """
+    logger = logging.getLogger(__name__)
+    now_ts = time.time()
+    grace_seconds = max(0, int(grace_days)) * 86400
 
     async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("PRAGMA busy_timeout = 5000;")
         db.row_factory = aiosqlite.Row
-        async with db.execute(sql) as cur:
-            licenses = [dict(r) for r in await cur.fetchall()]
+        async with db.execute(
+            """
+            SELECT l.id, l.user_id, l.sub_id, l.invoice_id, l.panel_id, l.license_note, l.created_at,
+                   p.url AS panel_url, p.bearer_token, p.sub_link, p.inbound_ids, p.ip_limit, p.name AS panel_name,
+                   i.days AS invoice_days, i.gb AS invoice_gb, i.status AS invoice_status, i.created_at AS invoice_created_at
+            FROM xui_licenses l
+            LEFT JOIN xui_panels p ON l.panel_id = p.id
+            LEFT JOIN invoices i ON l.invoice_id = i.id
+            """
+        ) as cur:
+            license_rows = [dict(r) for r in await cur.fetchall()]
 
-    for lic in licenses:
-        is_eligible = False
+    if not license_rows:
+        return {"checked": 0, "deleted_from_panel": 0, "deleted_from_db": 0}
 
-        # 1. Check via sub-link stats
-        sub_link = lic.get('sub_link')
-        sub_id = lic.get('sub_id')
+    sem = asyncio.Semaphore(8)
+    deleted_panel_count = 0
+    ids_to_delete_from_db: list[int] = []
+
+    async def _evaluate_and_clean(lic: dict) -> None:
+        nonlocal deleted_panel_count
+        lic_id = lic["id"]
+        sub_id = str(lic.get("sub_id") or "").strip()
+        sub_link = str(lic.get("sub_link") or "").strip()
+        inv_days = int(lic.get("invoice_days") or 0)
+
+        expired_at_ts: float | None = None
+        is_expired_over_grace = False
+
+        # 1. Check live sub-link stats with bounded timeout
+        stats = None
         if sub_link and sub_id:
-            try:
-                stats = await asyncio.wait_for(fetch_sub_stats(sub_link, sub_id), timeout=3.0)
-                if stats:
-                    # Check time expiration
-                    exp = stats.get('expire_timestamp') or 0
-                    if exp > 0 and (now - exp) >= grace_seconds:
-                        is_eligible = True
-                    # Check traffic exhaustion if expired and 2 days passed since creation
-                    elif stats.get('is_expired') and lic.get('created_at'):
-                        try:
-                            c_dt = datetime.fromisoformat(str(lic['created_at']).replace("Z", ""))
-                            if (datetime.now() - c_dt).total_seconds() >= grace_seconds:
-                                is_eligible = True
-                        except Exception:
-                            pass
-            except Exception:
-                pass
-
-        # 2. Check via DB if not verified via sub_link
-        if not is_eligible:
-            inv_days = lic.get('invoice_days') or 0
-            created_at = lic.get('created_at') or lic.get('invoice_created_at')
-            if inv_days > 0 and created_at:
+            async with sem:
                 try:
-                    c_dt = datetime.fromisoformat(str(created_at).replace("Z", ""))
-                    expiry_with_grace = c_dt.timestamp() + (inv_days + grace_period_days) * 86400
-                    if now >= expiry_with_grace:
-                        is_eligible = True
+                    stats = await asyncio.wait_for(fetch_sub_stats(sub_link, sub_id), timeout=4.0)
+                except Exception:
+                    stats = None
+
+        if stats:
+            # If sub_stats provides exact expire_ts / expire_ms
+            raw_exp = stats.get("expire_ts") or stats.get("expire_time") or stats.get("expiry_time")
+            if raw_exp:
+                exp_val = float(raw_exp)
+                if exp_val > 1e11:  # convert ms to seconds
+                    exp_val /= 1000.0
+                if exp_val > 0 and (now_ts - exp_val) >= grace_seconds:
+                    is_expired_over_grace = True
+                    expired_at_ts = exp_val
+            elif stats.get("is_expired"):
+                days_left = float(stats.get("days_left", 0.0))
+                if days_left <= -float(grace_days):
+                    is_expired_over_grace = True
+
+        # 2. Fallback/Verify via DB creation timestamp + invoice_days
+        if not is_expired_over_grace and inv_days > 0:
+            created_str = str(lic.get("created_at") or lic.get("invoice_created_at") or "").strip()
+            if created_str:
+                try:
+                    dt = datetime.strptime(created_str[:19], "%Y-%m-%d %H:%M:%S")
+                    calc_exp_ts = dt.timestamp() + (inv_days * 86400)
+                    if (now_ts - calc_exp_ts) >= grace_seconds:
+                        # Only mark expired if live stats didn't prove it was extended on panel
+                        if not stats or stats.get("is_expired") or float(stats.get("days_left", 0.0)) <= 0:
+                            is_expired_over_grace = True
+                            expired_at_ts = calc_exp_ts
                 except Exception:
                     pass
 
-        if is_eligible:
-            lic_id = lic['id']
-            # Delete from X-UI panel
-            if lic.get('panel_url') and lic.get('bearer_token'):
+        if not is_expired_over_grace:
+            return
+
+        # 3. Delete from 3x-UI panel BEFORE deleting from SQLite DB
+        panel_deleted_ok = False
+        if lic.get("panel_url") and lic.get("bearer_token"):
+            panel_dict = {
+                "id": lic.get("panel_id"),
+                "name": lic.get("panel_name"),
+                "url": lic["panel_url"],
+                "bearer_token": lic["bearer_token"],
+                "sub_link": sub_link,
+                "inbound_ids": lic.get("inbound_ids") or "1",
+                "ip_limit": lic.get("ip_limit") or 1,
+            }
+            email = build_client_email(
+                lic.get("license_note") or "",
+                lic.get("user_id") or 0,
+                lic.get("invoice_id") or "",
+            )
+            async with sem:
                 try:
-                    email = build_client_email(lic.get('license_note') or "", lic['user_id'], lic['invoice_id'])
-                    async with XUIClient(lic['panel_url'], lic['bearer_token']) as client:
-                        await client.delete_client(email)
-                        logger.info(f"Deleted expired client {email} from XUI panel {lic['panel_url']}")
-                except Exception as e:
-                    logger.warning(f"Could not delete expired client {lic.get('sub_id')} from XUI panel: {e}")
-                    errors.append(str(e))
+                    await delete_client(panel_dict, email, sub_id=sub_id)
+                    panel_deleted_ok = True
+                    deleted_panel_count += 1
+                except Exception as panel_err:
+                    logger.warning(
+                        f"Could not delete expired license {lic_id} (sub_id={sub_id}) from XUI panel: {panel_err}"
+                    )
+        else:
+            # Panel no longer exists in DB; safe to remove orphan license record
+            panel_deleted_ok = True
 
-            # Delete from DB
-            try:
-                async with aiosqlite.connect(DB_PATH) as db:
-                    await db.execute("PRAGMA busy_timeout = 5000;")
-                    await db.execute("DELETE FROM xui_licenses WHERE id = ?", (lic_id,))
-                    await db.commit()
-                deleted_count += 1
-            except Exception as e:
-                logger.error(f"Failed to delete expired license {lic_id} from DB: {e}")
+        if panel_deleted_ok:
+            ids_to_delete_from_db.append(lic_id)
 
-    return {"deleted_licenses": deleted_count, "errors": errors}
+    await asyncio.gather(*(_evaluate_and_clean(row) for row in license_rows), return_exceptions=True)
+
+    deleted_db_count = 0
+    if ids_to_delete_from_db:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("PRAGMA busy_timeout = 5000;")
+            placeholders = ",".join("?" for _ in ids_to_delete_from_db)
+            cur = await db.execute(f"DELETE FROM xui_licenses WHERE id IN ({placeholders})", ids_to_delete_from_db)
+            deleted_db_count = max(0, cur.rowcount)
+            await db.commit()
+
+    summary = {
+        "checked": len(license_rows),
+        "deleted_from_panel": deleted_panel_count,
+        "deleted_from_db": deleted_db_count,
+    }
+    if deleted_db_count > 0:
+        logger.info(f"Expired XUI licenses cleanup (>={grace_days}d expired): {summary}")
+    return summary
 
 
 
