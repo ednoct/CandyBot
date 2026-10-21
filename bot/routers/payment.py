@@ -573,7 +573,7 @@ async def gram_pingi_choice(callback: types.CallbackQuery, state: FSMContext):
     
     prompt_text = (
         "🧾 <b>انتقال از صرافی پینگی</b>\n\n"
-        "لطفاً <b>کد پیگیری تراکنش</b> (۶۴ یا ۴۴ کاراکتر) یا <b>تصویر رسید (اسکرین‌شات)</b> را ارسال کنید:"
+        "لطفاً <b>کد پیگیری تراکنش</b> یا <b>تصویر رسید (اسکرین‌شات)</b> را ارسال کنید:"
     )
     
     await callback.answer()
@@ -1020,20 +1020,8 @@ async def process_pingi_receipt(message: types.Message, state: FSMContext):
     gateway = data.get('txid_gateway', 'gram')
     transfer_method = data.get('transfer_method', 'pingi')
     
-    if has_text and not has_photo:
-        pingi_code = message.text.strip()
-        if len(pingi_code) not in (64, 44):
-            return await message.reply(
-                "❌ <b>کد پیگیری تراکنش نامعتبر است!</b>\n\n"
-                "طول کد پیگیری تراکنش پینگی (گرام) باید دقیقاً ۶۴ یا ۴۴ کاراکتر باشد.\n"
-                "لطفاً کد معتبر را ارسال نمایید یا تصویر رسید را بفرستید.",
-                parse_mode="HTML"
-            )
-        stored_value = pingi_code
-        receipt_text = ""
-    else:
-        stored_value = message.photo[-1].file_id
-        receipt_text = message.caption or ""
+    stored_value = message.photo[-1].file_id if has_photo else message.text.strip()
+    receipt_text = message.caption or "" if has_photo else ""
     
     async with aiosqlite.connect(db_manager.DB_PATH) as db:
         await db.execute("PRAGMA busy_timeout = 5000;")
