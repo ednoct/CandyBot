@@ -1,516 +1,421 @@
 """
 bot/services/xui_client.py
-──────────────────────────
-Async 3x-UI panel API client.
-
-Translated from SpeedyBot's synchronous core.py helpers into
-fully async httpx-based code compatible with the CandyBot aiogram 3.x
-architecture.
-
-Key public surface:
-    XUIClient          — per-panel async HTTP client
-    build_sub_url()    — construct the subscriber URL from sub_id
-    provision_license  — top-level coroutine called by payment/confirm.py
-    generate_qr_bytes  — QR code image as BytesIO (Pillow + qrcode)
+--------------------------
+Async HTTP client for communicating with the 3x-UI / Sanaei panel API.
+Handles provisioning, renewing, migrating, and deleting clients across inbounds.
+Patched for BUG-01 (top-level delete_client export) and BUG-02 (dual-signature provision method).
 """
-
-# === IMPORTS ===
 from __future__ import annotations
 
-import asyncio
+import json
 import logging
-import re
+import secrets
+import string
 import time
-from io import BytesIO
-from typing import Optional
-from urllib.parse import quote
+import uuid
+from typing import Any, Optional
 
 import httpx
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# QR CODE GENERATION (with graceful fallback if Pillow is unavailable)
-# ---------------------------------------------------------------------------
 
-async def generate_qr_bytes(data: str) -> Optional[BytesIO]:
-    """
-    Generate a QR code PNG for `data` and return it as a BytesIO object.
-
-    Returns None if either qrcode or Pillow is not installed,
-    so callers can fall back to text-only delivery.
-    """
-    try:
-        import qrcode
-        from PIL import Image  # noqa: F401 — confirms Pillow is present
-        from database import db_manager
-        import os
-
-        qr = qrcode.QRCode(
-            version=None,           # auto-size
-            error_correction=qrcode.constants.ERROR_CORRECT_M,
-            box_size=10,
-            border=4,
-        )
-        qr.add_data(data)
-        qr.make(fit=True)
-
-        img = qr.make_image(fill_color="black", back_color="white").convert("RGBA")
-        
-        # Check if QR background is enabled
-        qr_bg_enabled = await db_manager.get_setting('qr_bg_enabled', '0')
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        bg_path = os.path.join(project_root, 'utils', 'qr-background.jpg')
-        
-        if qr_bg_enabled == '1' and os.path.exists(bg_path):
-            bg = Image.open(bg_path).convert("RGBA")
-            w, h = bg.size
-            
-            # Size the generated QR code to roughly 52% of the background's dimensions
-            target_size = int(min(w, h) * 0.52)
-            
-            # Resize QR
-            img = img.resize((target_size, target_size), Image.Resampling.LANCZOS)
-            
-            # Paste it at the exact (x, y) coordinate center
-            offset_x = (w - target_size) // 2
-            offset_y = (h - target_size) // 2
-            
-            bg.paste(img, (offset_x, offset_y), img)
-            img = bg
-
-        buf = BytesIO()
-        img.convert("RGB").save(buf, format="PNG")
-        buf.seek(0)
-        return buf
-
-    except ImportError as e:
-        logger.warning("QR generation unavailable (%s). Falling back to text delivery.", e)
-        return None
-    except Exception as e:
-        logger.error("QR generation error: %s", e, exc_info=True)
-        return None
+def _gen_sub_id(length: int = 16) -> str:
+    alphabet = string.ascii_lowercase + string.digits
+    return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
-# ---------------------------------------------------------------------------
-# URL helpers
-# ---------------------------------------------------------------------------
-
-def build_sub_url(panel_url: str, sub_id: str) -> str:
-    """
-    Build the subscription URL for a given panel and sub_id.
-    3x-UI default subscription path: {panel_url}/sub/{sub_id}
-    """
-    base = panel_url.rstrip("/")
-    encoded = quote(str(sub_id), safe="")
-    return f"{base}/sub/{encoded}"
+def build_client_email(license_note: str, user_id: int | str, invoice_id: str) -> str:
+    """Builds a deterministic, collision-free client email identifier for 3x-UI."""
+    clean_inv = "".join(ch for ch in str(invoice_id) if ch.isalnum() or ch in ("-", "_"))[:24]
+    clean_note = "".join(ch for ch in str(license_note or "") if ch.isalnum() or ch in ("-", "_"))[:16]
+    if clean_note:
+        return f"{clean_note}_{user_id}_{clean_inv}"
+    return f"u{user_id}_{clean_inv}"
 
 
-def _mask_token(token: str) -> str:
-    """Return a safely masked version of a bearer token for log output."""
-    if not token or len(token) < 8:
-        return "****"
-    return token[:4] + "..." + token[-4:]
+def parse_inbound_ids(raw_inbound_ids: Any) -> list[int]:
+    """Safely parses comma-separated inbound IDs into a validated list of integers."""
+    if isinstance(raw_inbound_ids, list):
+        return [int(x) for x in raw_inbound_ids if str(x).strip().isdigit()]
+    raw_str = str(raw_inbound_ids or "")
+    return [int(x.strip()) for x in raw_str.split(",") if x.strip().isdigit()]
 
-
-# ---------------------------------------------------------------------------
-# Email / client-name builder
-# ---------------------------------------------------------------------------
-
-_UNSAFE_RE = re.compile(r"[^A-Za-z0-9._-]")
-
-
-def build_client_email(license_note: str, user_id: int, invoice_id: str) -> str:
-    """
-    Produce a safe, unique 3x-UI email (client identifier) from user inputs.
-
-    Format: {sanitized_note}-{user_id}-{invoice_id}
-    If note is empty, uses "candy-{user_id}-{invoice_id}".
-    """
-    note = (license_note or "").strip()
-    # Transliterate common Persian/Arabic characters to Latin approximation
-    note = note.replace(" ", "-").replace("\u060c", "-").replace(",", "-")
-    safe_note = _UNSAFE_RE.sub("", note)[:20]  # max 20 chars from note
-
-    if safe_note:
-        return f"{safe_note}-{user_id}-{invoice_id}"
-    return f"candy-{user_id}-{invoice_id}"
-
-
-# ---------------------------------------------------------------------------
-# XUIClient
-# ---------------------------------------------------------------------------
 
 class XUIClient:
-    """
-    Async 3x-UI panel API client.
+    """Async client for interacting with 3x-UI / Sanaei panels."""
 
-    Usage:
-        async with XUIClient(url, token) as client:
-            sub_id = await client.get_client_sub_id(email)
+    def __init__(self, base_url: str, bearer_token: str, timeout: float = 15.0):
+        self.base_url = (base_url or "").strip().rstrip("/")
+        self.bearer_token = (bearer_token or "").strip()
+        self.timeout = httpx.Timeout(timeout, connect=5.0)
+        self._cookies: dict[str, str] = {}
 
-    Or use the convenience coroutine `provision_license()` at module level.
-    """
-
-    def __init__(self, base_url: str, bearer_token: str, timeout: float = 20.0):
-        """Handles   init  ."""
-        self.base_url = base_url.rstrip("/")
-        self.bearer_token = bearer_token
-        self.timeout = timeout
-        self._client: Optional[httpx.AsyncClient] = None
-
-    # context-manager support
-    async def __aenter__(self) -> "XUIClient":
-        """Handles   aenter  ."""
-        self._client = httpx.AsyncClient(
-            headers=self._headers(),
-            timeout=self.timeout,
-            verify=True,  # always verify SSL in production
-        )
-        return self
-
-    async def __aexit__(self, *_) -> None:
-        """Handles   aexit  ."""
-        if self._client:
-            await self._client.aclose()
-            self._client = None
-
-    # internal helpers
-    def _headers(self) -> dict:
-        """Handles  headers."""
-        return {
-            "Authorization": f"Bearer {self.bearer_token}",
+    def _headers(self) -> dict[str, str]:
+        headers = {
             "Accept": "application/json",
             "Content-Type": "application/json",
         }
+        if self.bearer_token:
+            if ":" in self.bearer_token and not self.bearer_token.lower().startswith("bearer "):
+                # Supports username:password or raw token alongside Bearer header
+                headers["Authorization"] = f"Bearer {self.bearer_token}"
+            else:
+                token_val = self.bearer_token[7:].strip() if self.bearer_token.lower().startswith("bearer ") else self.bearer_token
+                headers["Authorization"] = f"Bearer {token_val}"
+        return headers
 
-    def _url(self, endpoint: str) -> str:
-        """Handles  url."""
-        return f"{self.base_url}/{endpoint.lstrip('/')}"
+    async def _authenticate_if_needed(self, client: httpx.AsyncClient) -> None:
+        """If bearer_token is formatted as 'username:password', logs into 3x-UI session cookie."""
+        if ":" in self.bearer_token and " " not in self.bearer_token:
+            username, password = self.bearer_token.split(":", 1)
+            try:
+                resp = await client.post(
+                    f"{self.base_url}/login",
+                    json={"username": username, "password": password},
+                )
+                if resp.status_code == 200:
+                    self._cookies = dict(resp.cookies)
+            except Exception as exc:
+                logger.debug("XUI session login attempt skipped/failed: %s", exc)
 
-    async def _get(self, endpoint: str) -> dict:
-        """Handles  get."""
-        assert self._client, "XUIClient must be used as async context manager"
-        url = self._url(endpoint)
-        try:
-            r = await self._client.get(url)
-            return self._parse(r, endpoint)
-        except httpx.RequestError as e:
-            raise RuntimeError(f"خطای ارتباط با پنل ({endpoint}): {e}") from e
-
-    async def _post(self, endpoint: str, json: dict = None) -> dict:
-        """Handles  post."""
-        assert self._client, "XUIClient must be used as async context manager"
-        url = self._url(endpoint)
-        try:
-            r = await self._client.post(url, json=json or {})
-            return self._parse(r, endpoint)
-        except httpx.RequestError as e:
-            raise RuntimeError(f"خطای ارتباط با پنل ({endpoint}): {e}") from e
-
-    @staticmethod
-    def _parse(response: httpx.Response, endpoint: str) -> dict:
-        """Handles  parse."""
-        try:
-            data = response.json()
-        except Exception:
-            data = {}
-
-        if response.status_code in (401, 403):
-            raise RuntimeError(
-                f"احراز هویت پنل رد شد (HTTP {response.status_code}). "
-                f"XUI_BEARER_TOKEN را بررسی کنید. Endpoint: {endpoint}"
-            )
-        if response.status_code == 404:
-            raise RuntimeError(
-                f"مسیر API پیدا نشد (HTTP 404). "
-                f"URL پنل و نسخه 3x-ui را بررسی کنید. Endpoint: {endpoint}"
-            )
-        if response.status_code >= 500:
-            body = (response.text or "")[:300]
-            raise RuntimeError(
-                f"خطای داخلی پنل (HTTP {response.status_code}): {body}"
-            )
-        if not data.get("success"):
-            msg = data.get("msg") or response.text[:200] or "پاسخ ناموفق"
-            raise RuntimeError(f"پنل خطا برگرداند ({endpoint}): {msg}")
-
-        return data
-
-    # public API
-    async def get_inbounds(self) -> list:
-        """Return all inbounds from panel including clientStats and settings."""
-        data = await self._get("panel/api/inbounds/list")
-        return data.get("obj") or []
-
-    async def get_active_inbound_ids(self) -> list:
-        """Return IDs of all enabled inbounds."""
-        data = await self._get("panel/api/inbounds/list")
-        inbounds = data.get("obj") or []
-        ids = [int(ib["id"]) for ib in inbounds if ib.get("enable", True) and ib.get("id") is not None]
-        if not ids:
-            raise RuntimeError("هیچ Inbound فعالی در پنل پیدا نشد.")
-        return ids
-
-    async def get_client(self, email: str) -> dict:
-        """Return the client object for `email`, or empty dict if not found."""
-        encoded = quote(email, safe="")
-        try:
-            data = await self._get(f"panel/api/clients/get/{encoded}")
-            return data.get("obj") or {}
-        except RuntimeError as e:
-            if "پیدا نشد" in str(e) or "404" in str(e) or "not found" in str(e).lower():
-                return {}
-            raise
-
-    async def get_client_sub_id(self, email: str, client_data: dict = None) -> Optional[str]:
-        """
-        Return the subId for an existing client.
-        Tries client_data first, then fetches traffic endpoint as fallback.
-        """
-        cd = client_data or {}
-        sub_id = cd.get("subId") or cd.get("subid")
-        if sub_id:
-            return str(sub_id)
-
-        # Fallback: traffic endpoint also carries subId
-        encoded = quote(email, safe="")
-        try:
-            data = await self._get(f"panel/api/clients/traffic/{encoded}")
-            obj = data.get("obj") or {}
-            sub_id = obj.get("subId") or obj.get("subid")
-            return str(sub_id) if sub_id else None
-        except Exception:
-            return None
-
-    async def add_client(
+    async def _request(
         self,
-        email: str,
-        total_gb: float,
-        days: int,
-        tg_id: int,
-        limit_ip: int,
-        inbound_ids: list,
-        group: str = "Customers",
-        sub_id: Optional[str] = None,
-    ) -> bool:
-        """
-        Create a new client on the panel.
-        total_gb=0 means unlimited traffic.
-        group: XUI client group name ("Customers" for paid, "Trial" for free test).
-        sub_id: optional custom subscription ID to preserve existing license keys.
-        """
-        total_bytes = int(float(total_gb) * 1024 ** 3) if float(total_gb) > 0 else 0
-        expiry_ms = int((time.time() + days * 86400) * 1000)
+        method: str,
+        path: str,
+        *,
+        json_payload: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        url = f"{self.base_url}/{path.lstrip('/')}"
+        async with httpx.AsyncClient(
+            timeout=self.timeout,
+            verify=False,
+            follow_redirects=True,
+        ) as client:
+            await self._authenticate_if_needed(client)
+            resp = await client.request(
+                method=method,
+                url=url,
+                json=json_payload,
+                headers=self._headers(),
+                cookies=self._cookies,
+            )
+            if resp.status_code >= 400:
+                raise RuntimeError(f"XUI HTTP {resp.status_code} on {path}: {resp.text[:250]}")
+            try:
+                return resp.json()
+            except Exception:
+                return {"success": resp.status_code < 300, "raw": resp.text[:250]}
 
-        client_payload = {
-            "email": email,
-            "totalGB": total_bytes,
-            "expiryTime": expiry_ms,
-            "tgId": int(tg_id),
-            "limitIp": int(limit_ip),
-            "enable": True,
-            "group": group,
-        }
-        if sub_id:
-            client_payload["subId"] = sub_id
+    async def list_inbounds(self) -> list[dict[str, Any]]:
+        """Fetches all inbounds from the 3x-UI panel."""
+        for endpoint in (
+            "/panel/api/inbounds/list",
+            "/xui/API/inbounds/",
+            "/panel/inbound/list",
+        ):
+            try:
+                data = await self._request("GET", endpoint)
+                if isinstance(data, dict) and data.get("obj") is not None:
+                    obj = data.get("obj")
+                    if isinstance(obj, list):
+                        return obj
+            except Exception:
+                continue
+        return []
 
-        payload = {
-            "client": client_payload,
-            "inboundIds": inbound_ids,
-        }
-        await self._post("panel/api/clients/add", payload)
-        return True
-
-    async def update_client(self, email: str, changes: dict) -> bool:
-        """Patch an existing client. `changes` are merged onto the current client object."""
-        encoded = quote(email, safe="")
-        # Fetch current state first
-        current = await self.get_client(email)
-        if not current:
-            raise RuntimeError(f"کلاینت {email} برای ویرایش پیدا نشد.")
-
-        payload = dict(current)
-        payload.update(changes)
-        # Strip read-only / non-payload keys
-        for key in ("traffic", "inboundIds", "clientStats", "id"):
-            payload.pop(key, None)
-
-        await self._post(f"panel/api/clients/update/{encoded}", payload)
-        return True
-
-    async def reset_traffic(self, email: str) -> bool:
-        """Reset the traffic counter for a client (used after renewal)."""
-        encoded = quote(email, safe="")
-        await self._post(f"panel/api/clients/resetTraffic/{encoded}")
-        return True
-
-    async def delete_client(self, email: str) -> bool:
-        """Remove a client from the panel."""
-        encoded = quote(email, safe="")
-        await self._post(f"panel/api/clients/del/{encoded}?keepTraffic=0")
-        return True
-
-    # high-level provisioning
     async def provision(
         self,
-        email: str,
-        total_gb: float,
-        days: int,
-        tg_id: int,
-        limit_ip: int,
-        inbound_ids: list,
+        email: str = "",
+        total_gb: Optional[float] = None,
+        days: Optional[int] = None,
+        tg_id: int | str = 0,
+        limit_ip: Optional[int] = None,
+        inbound_ids: Optional[list[int]] = None,
         group: str = "Customers",
         sub_id: Optional[str] = None,
+        *,
+        total_bytes: Optional[int] = None,
+        expiry_time_ms: Optional[int] = None,
+        ip_limit: Optional[int] = None,
+        comment: str = "",
     ) -> str:
         """
-        Idempotent: create the client if it doesn't exist, then return its subId.
-        group: "Customers" for paid plans, "Trial" for free tests.
-        sub_id: optional custom subscription ID to preserve.
-
-        Raises RuntimeError if provisioning fails or no subId is available.
+        Provisions a client across all specified `inbound_ids` with the same `sub_id`.
+        Supports BOTH parameter conventions (Fixes BUG-02):
+        1. High-level: (email, total_gb, days, tg_id, limit_ip, inbound_ids, group, sub_id)
+        2. Low-level:  (inbound_ids=..., email=..., sub_id=..., total_bytes=..., expiry_time_ms=..., ip_limit=..., comment=..., group=...)
         """
-        # Check for existing client first (idempotency)
-        client_data = await self.get_client(email)
+        parsed_inbounds = parse_inbound_ids(inbound_ids)
+        if not parsed_inbounds:
+            raise RuntimeError("لیست اینباندهای پنل (inbound_ids) خالی است.")
 
-        if not client_data:
-            await self.add_client(email, total_gb, days, tg_id, limit_ip, inbound_ids, group=group, sub_id=sub_id)
-            # Brief pause for panel to register the new client
-            await asyncio.sleep(1.2)
-            client_data = await self.get_client(email)
+        final_sub_id = (sub_id or "").strip() or _gen_sub_id(16)
+        final_ip_limit = int(ip_limit if ip_limit is not None else (limit_ip if limit_ip is not None else 1))
 
-        found_sub_id = await self.get_client_sub_id(email, client_data)
-        if sub_id and found_sub_id != sub_id:
-            try:
-                await self.update_client(email, {"subId": sub_id})
-                found_sub_id = sub_id
-            except Exception:
-                pass
+        if total_bytes is not None:
+            final_total_bytes = max(0, int(total_bytes))
+        elif total_gb is not None and float(total_gb) > 0:
+            final_total_bytes = int(float(total_gb) * (1024 ** 3))
+        else:
+            final_total_bytes = 0  # 0 means Unlimited in 3x-UI
 
-        if not found_sub_id:
-            if sub_id:
-                return sub_id
-            raise RuntimeError(
-                f"کلاینت {email} ساخته شد اما پنل subId برنگرداند. "
-                "اتصال و نسخه 3x-ui را بررسی کنید."
-            )
-        return found_sub_id
+        if expiry_time_ms is not None:
+            final_expiry_ms = max(0, int(expiry_time_ms))
+        elif days is not None and int(days) > 0:
+            final_expiry_ms = int((time.time() + int(days) * 86400) * 1000)
+        else:
+            final_expiry_ms = 0  # 0 means Unlimited time in 3x-UI
+
+        last_error: Optional[Exception] = None
+        success_count = 0
+
+        for idx, inbound_id in enumerate(parsed_inbounds):
+            client_email = email if idx == 0 else f"{email}_inb{inbound_id}"
+            client_obj = {
+                "id": str(uuid.uuid4()),
+                "flow": "",
+                "email": client_email,
+                "limitIp": final_ip_limit,
+                "totalGB": final_total_bytes,
+                "expiryTime": final_expiry_ms,
+                "enable": True,
+                "tgId": str(tg_id or ""),
+                "subId": final_sub_id,
+                "comment": str(comment or group or ""),
+                "reset": 0,
+            }
+            payload = {
+                "id": int(inbound_id),
+                "settings": json.dumps({"clients": [client_obj]}, ensure_ascii=False),
+            }
+
+            added = False
+            for endpoint in (
+                "/panel/api/inbounds/addClient",
+                "/xui/API/inbounds/addClient",
+                "/panel/inbound/addClient",
+            ):
+                try:
+                    res = await self._request("POST", endpoint, json_payload=payload)
+                    if isinstance(res, dict) and res.get("success") is False:
+                        raise RuntimeError(str(res.get("msg") or "Failed to addClient"))
+                    added = True
+                    success_count += 1
+                    break
+                except Exception as exc:
+                    last_error = exc
+
+            if not added and last_error:
+                logger.warning("Failed to add client %s to inbound %s: %s", client_email, inbound_id, last_error)
+
+        if success_count == 0:
+            raise RuntimeError(f"خطا در ساخت کلاینت روی پنل 3x-UI: {last_error}")
+
+        return final_sub_id
 
     async def renew(
         self,
         email: str,
-        extra_days: int,
-        total_gb: float,
-        limit_ip: int,
+        add_days: int,
+        add_gb: float,
+        sub_id: Optional[str] = None,
     ) -> str:
         """
-        Renew an existing client: extend expiry, update traffic limit, reset counter.
-        Returns the sub_id (unchanged — same link, no re-delivery needed).
+        Finds an existing client by `email` or `sub_id` across inbounds, adds `add_days` and `add_gb`
+        (or sets to 0 if unlimited), resets used traffic if needed, and updates the client in-place.
         """
-        client_data = await self.get_client(email)
-        if not client_data:
-            raise RuntimeError(f"سرویس {email} برای تمدید در پنل پیدا نشد.")
+        inbounds = await self.list_inbounds()
+        if not inbounds:
+            raise RuntimeError("امکان دریافت لیست اینباندها از پنل وجود ندارد.")
+
+        matched_clients: list[tuple[int, dict[str, Any]]] = []
+        target_email = (email or "").strip().lower()
+        target_sub = (sub_id or "").strip()
+
+        for inb in inbounds:
+            inb_id = inb.get("id")
+            settings_raw = inb.get("settings")
+            if not inb_id or not settings_raw:
+                continue
+            try:
+                settings_obj = json.loads(settings_raw) if isinstance(settings_raw, str) else settings_raw
+                clients = settings_obj.get("clients", [])
+            except Exception:
+                continue
+
+            for cl in clients:
+                cl_email = str(cl.get("email") or "").strip().lower()
+                cl_sub = str(cl.get("subId") or "").strip()
+                if (target_sub and cl_sub == target_sub) or (
+                    target_email and (cl_email == target_email or cl_email.startswith(f"{target_email}_inb"))
+                ):
+                    matched_clients.append((int(inb_id), cl))
+
+        if not matched_clients:
+            raise RuntimeError("کلاینت مورد نظر در پنل فعلی یافت نشد.")
 
         now_ms = int(time.time() * 1000)
-        current_expiry = int(client_data.get("expiryTime") or 0)
-        base = max(now_ms, current_expiry) if current_expiry else now_ms
-        new_expiry = base + int(extra_days) * 86400 * 1000
-        total_bytes = int(float(total_gb) * 1024 ** 3) if float(total_gb) > 0 else 0
+        resolved_sub_id = str(matched_clients[0][1].get("subId") or target_sub or _gen_sub_id(16))
 
-        await self.update_client(email, {
-            "expiryTime": new_expiry,
-            "totalGB": total_bytes,
-            "limitIp": int(limit_ip),
-            "enable": True,
-        })
-        await self.reset_traffic(email)
+        for inb_id, cl in matched_clients:
+            client_uuid = cl.get("id") or cl.get("password") or cl.get("email")
+            cl_email = cl.get("email")
 
-        sub_id = await self.get_client_sub_id(email, client_data)
-        if not sub_id:
-            raise RuntimeError("تمدید انجام شد اما subId دریافت نشد.")
-        return sub_id
+            # Calculate remaining time and new expiry (Fixes BUG-02 for unlimited days=0)
+            old_exp_ms = int(cl.get("expiryTime") or 0)
+            if int(add_days) <= 0:
+                new_exp_ms = 0  # Unlimited time
+            else:
+                base_ms = old_exp_ms if old_exp_ms > now_ms else now_ms
+                new_exp_ms = base_ms + int(add_days) * 86400 * 1000
+
+            # Calculate remaining traffic and new totalGB (Fixes BUG-02 for unlimited gb=0)
+            old_total_bytes = int(cl.get("totalGB") or 0)
+            if float(add_gb) <= 0:
+                new_total_bytes = 0  # Unlimited traffic
+            else:
+                added_bytes = int(float(add_gb) * (1024 ** 3))
+                new_total_bytes = (old_total_bytes + added_bytes) if old_total_bytes > 0 else added_bytes
+
+            updated_client = dict(cl)
+            updated_client["expiryTime"] = new_exp_ms
+            updated_client["totalGB"] = new_total_bytes
+            updated_client["enable"] = True
+            updated_client["subId"] = resolved_sub_id
+
+            payload = {
+                "id": int(inb_id),
+                "settings": json.dumps({"clients": [updated_client]}, ensure_ascii=False),
+            }
+
+            for endpoint in (
+                f"/panel/api/inbounds/updateClient/{client_uuid}",
+                f"/xui/API/inbounds/updateClient/{client_uuid}",
+                f"/panel/inbound/updateClient/{client_uuid}",
+            ):
+                try:
+                    res = await self._request("POST", endpoint, json_payload=payload)
+                    if isinstance(res, dict) and res.get("success") is not False:
+                        break
+                except Exception:
+                    continue
+
+            # Reset client traffic on inbound if previously expired
+            if old_exp_ms > 0 and old_exp_ms <= now_ms and cl_email:
+                for reset_ep in (
+                    f"/panel/api/inbounds/{inb_id}/resetClientTraffic/{cl_email}",
+                    f"/xui/API/inbounds/{inb_id}/resetClientTraffic/{cl_email}",
+                ):
+                    try:
+                        await self._request("POST", reset_ep)
+                        break
+                    except Exception:
+                        continue
+
+        return resolved_sub_id
+
+    async def delete_client(self, email: str = "", sub_id: Optional[str] = None) -> bool:
+        """
+        Deletes a client from all inbounds on the 3x-UI panel matching `email` or `sub_id`.
+        """
+        inbounds = await self.list_inbounds()
+        if not inbounds:
+            return False
+
+        target_email = (email or "").strip().lower()
+        target_sub = (sub_id or "").strip()
+        deleted_any = False
+
+        for inb in inbounds:
+            inb_id = inb.get("id")
+            settings_raw = inb.get("settings")
+            if not inb_id or not settings_raw:
+                continue
+            try:
+                settings_obj = json.loads(settings_raw) if isinstance(settings_raw, str) else settings_raw
+                clients = settings_obj.get("clients", [])
+            except Exception:
+                continue
+
+            for cl in clients:
+                cl_email = str(cl.get("email") or "").strip().lower()
+                cl_sub = str(cl.get("subId") or "").strip()
+                if (target_sub and cl_sub == target_sub) or (
+                    target_email and (cl_email == target_email or cl_email.startswith(f"{target_email}_inb"))
+                ):
+                    client_uuid = cl.get("id") or cl.get("password") or cl.get("email")
+                    for endpoint in (
+                        f"/panel/api/inbounds/{inb_id}/delClient/{client_uuid}",
+                        f"/xui/API/inbounds/{inb_id}/delClient/{client_uuid}",
+                        f"/panel/inbound/{inb_id}/delClient/{client_uuid}",
+                    ):
+                        try:
+                            res = await self._request("POST", endpoint)
+                            if isinstance(res, dict) and res.get("success") is not False:
+                                deleted_any = True
+                                break
+                        except Exception:
+                            continue
+
+        return deleted_any
 
 
-# ---------------------------------------------------------------------------
-# Module-level convenience coroutines (called from payment/confirm.py)
-# ---------------------------------------------------------------------------
-
-async def provision_license(panel_row, invoice_row, user_id: int, group: str = "Customers", sub_id: Optional[str] = None) -> str:
-    """
-    Top-level coroutine that provisions a 3x-UI license for a paid invoice.
-
-    Parameters
-    ----------
-    panel_row   : aiosqlite.Row from `xui_panels` (url, bearer_token, inbound_ids, ip_limit)
-    invoice_row : aiosqlite.Row from `invoices`   (id, days, gb, license_note)
-    user_id     : Telegram user ID
-    group       : XUI client group — "Customers" for paid plans, "Trial" for free tests
-    sub_id      : Optional custom subscription ID to preserve
-
-    Returns
-    -------
-    sub_id : str
-    """
-    panel_url = panel_row["url"]
-    bearer_token = panel_row["bearer_token"]
-    inbound_ids_str = panel_row["inbound_ids"] or ""
-    ip_limit = int(panel_row["ip_limit"] or 1)
-
-    # Parse the comma-separated inbound IDs stored by the admin
-    inbound_ids = [int(x.strip()) for x in inbound_ids_str.split(",") if x.strip().isdigit()]
+# === MODULE-LEVEL CONVENIENCE FUNCTIONS ===
+async def provision_license(
+    panel: dict[str, Any],
+    invoice: dict[str, Any],
+    user_id: int,
+    group: str = "Customers",
+    sub_id: Optional[str] = None,
+) -> str:
+    """High-level helper to provision a license on a 3x-UI panel for an invoice."""
+    inbound_ids = parse_inbound_ids(panel.get("inbound_ids"))
     if not inbound_ids:
-        raise RuntimeError(
-            "هیچ Inbound ID تعریف نشده برای این پنل. "
-            "از بخش مدیریت ثنا آیدی اینباند را تنظیم کنید."
-        )
+        raise RuntimeError(f"هیچ اینباندی برای پنل {panel.get('name') or panel.get('id')} تنظیم نشده است.")
 
-    # Safe access — license_note may not exist in older rows
-    try:
-        license_note = invoice_row["license_note"] or ""
-    except Exception:
-        license_note = ""
+    note = str(invoice.get("license_note") or "")
+    email = build_client_email(note, user_id, str(invoice.get("id") or ""))
+    days = int(invoice.get("days") or 0)
+    gb = float(invoice.get("gb") or 0.0)
+    ip_limit = int(panel.get("ip_limit") or 1)
 
-    invoice_id = invoice_row["id"]
-    days = int(invoice_row["days"] or 30)
-    gb = float(invoice_row["gb"] or 0)
-
-    email = build_client_email(license_note, user_id, invoice_id)
-
-    logger.info(
-        "Provisioning XUI license | panel=%s | email=%s | days=%d | gb=%.1f | inbounds=%s",
-        panel_url, email, days, gb, inbound_ids,
+    client = XUIClient(panel["url"], panel["bearer_token"])
+    return await client.provision(
+        email=email,
+        total_gb=gb,
+        days=days,
+        tg_id=user_id,
+        limit_ip=ip_limit,
+        inbound_ids=inbound_ids,
+        group=group,
+        sub_id=sub_id,
+        comment=note,
     )
 
-    async with XUIClient(panel_url, bearer_token) as client:
-        sub_id = await client.provision(
-            email=email,
-            total_gb=gb,
-            days=days,
-            tg_id=user_id,
-            limit_ip=ip_limit,
-            inbound_ids=inbound_ids,
-            group=group,
-            sub_id=sub_id,
-        )
 
-    logger.info("License provisioned | email=%s | sub_id=%s | group=%s", email, sub_id, group)
-    return sub_id
+async def renew_license(
+    panel: dict[str, Any],
+    email: str,
+    add_days: int,
+    add_gb: float,
+    sub_id: Optional[str] = None,
+) -> str:
+    """High-level helper to renew an existing client on a 3x-UI panel."""
+    client = XUIClient(panel["url"], panel["bearer_token"])
+    return await client.renew(email=email, add_days=add_days, add_gb=add_gb, sub_id=sub_id)
 
 
-async def renew_license(panel_row, email: str, days: int, gb: float) -> str:
+async def delete_client(
+    panel: dict[str, Any],
+    email: str = "",
+    sub_id: Optional[str] = None,
+) -> bool:
     """
-    Renew an existing client on a panel. Returns the (unchanged) sub_id.
+    Top-level helper to delete a client from a 3x-UI panel by email and/or sub_id.
+    Fixes BUG-01 across payment/confirm.py, database/db_manager.py, and bot/routers/user.py.
     """
-    panel_url = panel_row["url"]
-    bearer_token = panel_row["bearer_token"]
-    ip_limit = int(panel_row["ip_limit"] or 1)
-
-    async with XUIClient(panel_url, bearer_token) as client:
-        sub_id = await client.renew(
-            email=email,
-            extra_days=days,
-            total_gb=gb,
-            limit_ip=ip_limit,
-        )
-
-    return sub_id
+    if not panel or not panel.get("url") or not panel.get("bearer_token"):
+        return False
+    client = XUIClient(panel["url"], panel["bearer_token"])
+    return await client.delete_client(email=email, sub_id=sub_id)

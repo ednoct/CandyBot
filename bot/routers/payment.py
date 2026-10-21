@@ -329,34 +329,89 @@ async def check_frenzyex_status(callback: types.CallbackQuery):
     else:
         await callback.answer(f"خطا در ارتباط با درگاه: {result.get('error')}", show_alert=True)
 
-@payment_router.callback_query(F.data.startswith("cancel_frenzyex_"))
+@payment_router.callback_query(
+    F.data.startswith("frenzyex_cancel_") | F.data.startswith("cancel_frenzyex_")
+)
 async def cancel_frenzyex_status(callback: types.CallbackQuery):
     """
     Cancels an unpaid FrenzyEx payment request safely.
-    Fixes BUG-04 by checking cancel_res.get('success') instead of truthiness of the returned dict,
-    and reconciles the order if HTTP 409 Conflict indicates it was already paid.
+    Fixes BUG-04:
+    1. Matches both 'frenzyex_cancel_' and 'cancel_frenzyex_' callback prefixes.
+    2. Accurately resolves invoice_id and gateway_request_id even when f"{invoice_id}_{request_id}"
+       is passed and either ID contains underscores.
+    3. Checks cancel_res.get('success') and handles HTTP 409 Conflict properly.
     """
-    parts = callback.data.split("_", 2)
-    if len(parts) < 3:
+    raw_cb = callback.data or ""
+    if raw_cb.startswith("frenzyex_cancel_"):
+        rem = raw_cb[len("frenzyex_cancel_"):].strip()
+    elif raw_cb.startswith("cancel_frenzyex_"):
+        rem = raw_cb[len("cancel_frenzyex_"):].strip()
+    else:
         await callback.answer("❌ شناسه درخواست نامعتبر است.", show_alert=True)
         return
 
-    target_id = parts[2].strip()
+    if not rem:
+        await callback.answer("❌ شناسه درخواست نامعتبر است.", show_alert=True)
+        return
+
+    pr_row = None
+    inv_row = None
 
     async with aiosqlite.connect(db_manager.DB_PATH) as db:
         await db.execute("PRAGMA busy_timeout = 5000;")
         db.row_factory = aiosqlite.Row
+
+        # 1. Try direct exact match on invoice_id or gateway_request_id, or composite match
         async with db.execute(
-            "SELECT invoice_id, gateway_request_id, status FROM payment_reports "
-            "WHERE gateway_request_id = ? OR invoice_id = ? ORDER BY id DESC LIMIT 1",
-            (target_id, target_id),
+            """
+            SELECT invoice_id, gateway_request_id, status
+            FROM payment_reports
+            WHERE invoice_id = ?
+               OR gateway_request_id = ?
+               OR (invoice_id || '_' || COALESCE(gateway_request_id, '')) = ?
+            ORDER BY id DESC LIMIT 1
+            """,
+            (rem, rem, rem),
         ) as cur:
             pr_row = await cur.fetchone()
 
-    invoice_id = pr_row["invoice_id"] if pr_row else target_id
-    request_id = (pr_row["gateway_request_id"] if pr_row and pr_row["gateway_request_id"] else target_id).strip()
+        # 2. If not found and `rem` contains '_', try splitting at every underscore boundary
+        if not pr_row and "_" in rem:
+            parts = rem.split("_")
+            for idx in range(1, len(parts)):
+                cand_inv = "_".join(parts[:idx])
+                cand_req = "_".join(parts[idx:])
+                async with db.execute(
+                    """
+                    SELECT invoice_id, gateway_request_id, status
+                    FROM payment_reports
+                    WHERE invoice_id = ? OR gateway_request_id = ?
+                    ORDER BY id DESC LIMIT 1
+                    """,
+                    (cand_inv, cand_req),
+                ) as cur:
+                    pr_row = await cur.fetchone()
+                    if pr_row:
+                        break
+                async with db.execute("SELECT * FROM invoices WHERE id = ?", (cand_inv,)) as icur:
+                    inv_row = await icur.fetchone()
+                    if inv_row:
+                        break
 
-    inv = await db_manager.get_invoice_by_id(invoice_id)
+    if pr_row:
+        invoice_id = str(pr_row["invoice_id"]).strip()
+        request_id = str(pr_row["gateway_request_id"] or "").strip()
+    elif inv_row:
+        invoice_id = str(inv_row["id"]).strip()
+        request_id = rem[len(invoice_id) + 1:].strip() if rem.startswith(f"{invoice_id}_") else ""
+    else:
+        # Final fallback: split on first underscore if present
+        if "_" in rem:
+            invoice_id, request_id = rem.split("_", 1)
+        else:
+            invoice_id, request_id = rem, ""
+
+    inv = inv_row or await db_manager.get_invoice_by_id(invoice_id)
     if inv and inv["status"] in ("paid", "approved", "processing", "completed"):
         await callback.answer("✅ این فاکتور قبلاً پرداخت و تایید شده است و قابل لغو نیست.", show_alert=True)
         return
@@ -369,11 +424,9 @@ async def cancel_frenzyex_status(callback: types.CallbackQuery):
         gateway = FrenzyExGateway(api_key=api_key, base_url=base_url)
         cancel_res = await gateway.cancel_payment(request_id)
 
-        # Fix BUG-04: Check cancel_res.get("success") explicitly
         if not cancel_res.get("success"):
             remote_status = cancel_res.get("status")
             if remote_status == "paid":
-                # The user actually completed the payment just before clicking cancel!
                 from payment.confirm import PaymentConfirmationManager
                 pcm = PaymentConfirmationManager(callback.bot)
                 await pcm.confirm_paid(invoice_id, method="FrenzyEx Cancel-Check")
@@ -937,8 +990,16 @@ async def _forward_receipt_to_admins(
                     parse_mode="HTML",
                     reply_markup=reply_markup
                 )
-        except Exception:
-            pass
+
+        except aiosqlite.OperationalError:
+            await db.execute(
+                """
+                UPDATE payment_reports
+                SET status = 'pending_receipt', message_id = ?
+                WHERE invoice_id = ?
+                """,
+                (message.message_id, invoice_id),
+            )
 
 @payment_router.callback_query(F.data.startswith("no_hash_"))
 async def admin_no_hash_alert(callback: types.CallbackQuery):
@@ -980,13 +1041,16 @@ async def process_pingi_receipt(message: types.Message, state: FSMContext):
                 SET status = 'pending_receipt', crypto_hash = ?, transfer_method = ?, receipt_time = CURRENT_TIMESTAMP
                 WHERE invoice_id = ?
             ''', (stored_value, transfer_method, invoice_id))
+
         except aiosqlite.OperationalError:
-            await db.execute('''
-                UPDATE payment_reports 
-                SET payment_Status = 'pending_receipt', crypto_hash = ?
-                WHERE id_invoice = ?
-            ''', (stored_value, invoice_id))
-        await db.commit()
+            await db.execute(
+                """
+                UPDATE payment_reports
+                SET status = 'pending_receipt', crypto_hash = ?
+                WHERE invoice_id = ?
+                """,
+                (tx_hash, invoice_id),
+            )
         
     await state.clear()
     await message.reply("✅ رسید شما جهت بررسی ثبت شد. پس از تایید مدیر، حساب شما شارژ خواهد شد.")

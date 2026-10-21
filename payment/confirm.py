@@ -3,10 +3,10 @@ payment/confirm.py
 ------------------
 Handles side effects of payment states: Paid, Failed, Expired.
 Patched for:
-- BUG-02: Proper handling of unlimited traffic (gb=0) and unlimited time (days=0) during license renewal.
-- BUG-03: Strict validation of non-empty inbound_ids before provisioning/migrating on 3x-UI panels.
-- Overhaul 2: Full renewal support (unexpired vs expired, keep_plan with remaining quota vs change_plan preserving sub_id).
-- Overhaul 1: Task-reentrant per-invoice lock and safe wallet shortfall recovery.
+- BUG-01: Uses both XUIClient.delete_client and top-level delete_client safely without ImportError.
+- BUG-02: Calls XUIClient.provision with compatible parameters and properly handles unlimited (0) GB/days.
+- BUG-03 (Previous audit): Validates non-empty inbound_ids before provisioning.
+- Overhaul 1 & 2: Atomic wallet ledgering, hybrid payment shortfall recovery, and full renewal flows.
 """
 
 # === IMPORTS ===
@@ -73,6 +73,48 @@ class PaymentConfirmationManager:
 
     def __init__(self, bot):
         self.bot = bot
+
+    @staticmethod
+    async def _safe_delete_xui_client(panel: dict, email: str, sub_id: Optional[str] = None) -> bool:
+        """Safely deletes a client from a 3x-UI panel using XUIClient instance (Fixes BUG-01)."""
+        if not panel or not panel.get("url") or not panel.get("bearer_token"):
+            return False
+        from bot.services.xui_client import XUIClient
+        client = XUIClient(panel["url"], panel["bearer_token"])
+        try:
+            return await client.delete_client(email, sub_id=sub_id)
+        except TypeError:
+            # Fallback if delete_client on XUIClient only accepts (self, email)
+            return await client.delete_client(email)
+
+    @staticmethod
+    async def _safe_provision_xui_client(
+        panel: dict,
+        inbound_ids: list[int],
+        email: str,
+        sub_id: str,
+        total_gb: float,
+        days: int,
+        user_id: int,
+        comment: str = "",
+        group: str = "Customers",
+    ) -> str:
+        """
+        Safely provisions a client on 3x-UI matching XUIClient.provision's signature (Fixes BUG-02).
+        """
+        from bot.services.xui_client import XUIClient
+        client = XUIClient(panel["url"], panel["bearer_token"])
+        limit_ip = int(panel.get("ip_limit") or 1)
+        return await client.provision(
+            email=email,
+            total_gb=float(total_gb),
+            days=int(days),
+            tg_id=user_id,
+            limit_ip=limit_ip,
+            inbound_ids=inbound_ids,
+            group=group,
+            sub_id=sub_id,
+        )
 
     # ------------------------------------------------------------------
     # PUBLIC: confirm_paid
@@ -366,7 +408,7 @@ class PaymentConfirmationManager:
                 return False
 
     # ------------------------------------------------------------------
-    # PRIVATE: _parse_panel_inbound_ids (Fixes BUG-03)
+    # PRIVATE: _parse_panel_inbound_ids
     # ------------------------------------------------------------------
     @staticmethod
     def _parse_panel_inbound_ids(panel: dict) -> list[int]:
@@ -380,7 +422,7 @@ class PaymentConfirmationManager:
         return inbound_ids
 
     # ------------------------------------------------------------------
-    # PRIVATE: _provision_and_deliver (Fixes BUG-02 & BUG-03 + Overhaul 2 Renewal)
+    # PRIVATE: _provision_and_deliver (Fixes BUG-01 & BUG-02)
     # ------------------------------------------------------------------
     async def _provision_and_deliver(self, invoice_id: str, user_id: int, invoice, is_free_test: bool = False) -> None:
         if not isinstance(invoice, dict):
@@ -424,12 +466,11 @@ class PaymentConfirmationManager:
         await db_manager.update_invoice_panel_id(invoice_id, panel['id'])
 
         try:
+            import math
             from bot.services.xui_client import (
                 provision_license,
                 renew_license,
                 build_client_email,
-                XUIClient,
-                delete_client,
             )
             from bot.services.sub_stats import fetch_sub_stats
 
@@ -459,36 +500,31 @@ class PaymentConfirmationManager:
                 inv_gb = float(full_invoice.get('gb') or 0.0)
                 transfer_method = str(full_invoice.get('transfer_method') or '').strip().lower()
 
-                # Determine whether this renewal is "change_plan" (do not carry over remaining quota)
-                # or "keep_plan" (carry over remaining quota from current active/expired license)
                 is_change_plan = transfer_method in ('change_plan', 'new_plan', 'switch_plan')
 
                 if is_change_plan:
                     # Mode 2 (Change Plan on expired license):
                     # Preserve ONLY the sub_id identity; provision on the new plan's panel with exact invoice days & gb.
-                    inbound_ids = self._parse_panel_inbound_ids(panel)  # Fixes BUG-03
+                    inbound_ids = self._parse_panel_inbound_ids(panel)
                     new_email = build_client_email(old_note, user_id, invoice_id)
-                    total_bytes = int(inv_gb * (1024 ** 3)) if inv_gb > 0 else 0
-                    expiry_ms = int((time.time() + inv_days * 86400) * 1000) if inv_days > 0 else 0
 
-                    # If old panel exists and had the old client, attempt best-effort cleanup on old panel first
                     if old_panel_id:
                         old_panel = await db_manager.get_xui_panel(old_panel_id)
                         if old_panel:
                             try:
                                 old_email = build_client_email(old_note, old_lic_dict['user_id'], old_invoice_id)
-                                await delete_client(old_panel, old_email, sub_id=preserved_sub_id)
+                                await self._safe_delete_xui_client(old_panel, old_email, sub_id=preserved_sub_id)
                             except Exception as del_err:
                                 logging.debug(f"Best-effort cleanup on old panel before change_plan renewal: {del_err}")
 
-                    c = XUIClient(panel['url'], panel['bearer_token'])
-                    await c.provision(
+                    await self._safe_provision_xui_client(
+                        panel=panel,
                         inbound_ids=inbound_ids,
                         email=new_email,
                         sub_id=preserved_sub_id,
-                        total_bytes=total_bytes,
-                        expiry_time_ms=expiry_ms,
-                        ip_limit=int(panel.get('ip_limit') or 1),
+                        total_gb=inv_gb if inv_gb > 0 else 0.0,
+                        days=inv_days if inv_days > 0 else 0,
+                        user_id=user_id,
                         comment=old_note,
                         group="Customers",
                     )
@@ -496,14 +532,11 @@ class PaymentConfirmationManager:
 
                 else:
                     # Mode 1 (Unexpired renewal OR Expired "keep_plan" renewal):
-                    # First try to renew in-place on the target panel.
                     email = build_client_email(old_note, old_lic_dict['user_id'], old_invoice_id)
                     renewed_in_place = False
 
                     if old_panel_id == panel['id']:
                         try:
-                            # Fix BUG-02: If inv_gb == 0 (unlimited) or inv_days == 0 (unlimited),
-                            # ensure the client on the panel is updated properly.
                             sub_id = await renew_license(panel, email, inv_days, inv_gb)
                             renewed_in_place = True
                         except Exception as renew_err:
@@ -514,13 +547,10 @@ class PaymentConfirmationManager:
                             renewed_in_place = False
 
                     if not renewed_in_place:
-                        # Either the plan's bound panel changed OR the client was not found on the panel.
-                        # Extract remaining quota from old panel sub_link or DB fallback, add invoice quota,
-                        # and create client on the bound panel with the EXACT same preserved_sub_id.
-                        inbound_ids = self._parse_panel_inbound_ids(panel)  # Fixes BUG-03
+                        inbound_ids = self._parse_panel_inbound_ids(panel)
 
-                        rem_bytes = 0
-                        rem_seconds = 0
+                        rem_gb = 0.0
+                        rem_days = 0
                         prev_unlim_traffic = False
                         prev_unlim_time = False
                         was_expired = True
@@ -538,15 +568,15 @@ class PaymentConfirmationManager:
                                     was_expired = bool(stats.get('is_expired', False))
                                     prev_unlim_traffic = bool(stats.get('is_unlimited_traffic', False))
                                     prev_unlim_time = bool(stats.get('is_unlimited_time', False))
-                                    if not prev_unlim_traffic and stats.get('remaining_gb', 0) > 0:
-                                        rem_bytes = int(float(stats['remaining_gb']) * (1024 ** 3))
-                                    if not prev_unlim_time and stats.get('days_left', 0) > 0:
-                                        rem_seconds = int(float(stats['days_left']) * 86400)
+                                    if not prev_unlim_traffic and float(stats.get('remaining_gb') or 0) > 0:
+                                        rem_gb = float(stats['remaining_gb'])
+                                    if not prev_unlim_time and float(stats.get('days_left') or 0) > 0:
+                                        rem_days = math.ceil(float(stats['days_left']))
                             except Exception as st_err:
                                 logging.debug(f"Could not fetch sub_stats during panel migration for {invoice_id}: {st_err}")
 
                         # Fallback to DB invoice history if sub_link stats weren't reachable
-                        if rem_bytes == 0 and rem_seconds == 0 and not prev_unlim_traffic and not prev_unlim_time:
+                        if rem_gb == 0.0 and rem_days == 0 and not prev_unlim_traffic and not prev_unlim_time:
                             old_inv = await db_manager.get_invoice_by_id(old_invoice_id) if old_invoice_id else None
                             if old_inv:
                                 old_inv_dict = dict(old_inv)
@@ -562,49 +592,43 @@ class PaymentConfirmationManager:
                                     if created_str and old_days > 0:
                                         dt = datetime.strptime(created_str[:19], '%Y-%m-%d %H:%M:%S')
                                         exp_ts = dt.timestamp() + (old_days * 86400)
-                                        left_sec = int(exp_ts - time.time())
+                                        left_sec = exp_ts - time.time()
                                         if left_sec > 0:
-                                            rem_seconds = left_sec
+                                            rem_days = math.ceil(left_sec / 86400.0)
                                             was_expired = False
                                 except Exception:
                                     pass
 
-                        # Fix BUG-02: Unlimited traffic/time handling (0 means Unlimited in 3x-UI)
                         if inv_gb <= 0 or (not was_expired and prev_unlim_traffic):
-                            new_tot_bytes = 0
+                            new_tot_gb = 0.0
                         else:
-                            added_bytes = int(inv_gb * (1024 ** 3))
-                            new_tot_bytes = max(0, rem_bytes) + added_bytes
+                            new_tot_gb = round(max(0.0, rem_gb) + inv_gb, 4)
 
-                        now_ms = int(time.time() * 1000)
                         if inv_days <= 0 or (not was_expired and prev_unlim_time):
-                            new_expiry_ms = 0
+                            new_tot_days = 0
                         else:
-                            base_ms = now_ms + (max(0, rem_seconds) * 1000)
-                            new_expiry_ms = base_ms + int(inv_days * 86400 * 1000)
+                            new_tot_days = max(0, rem_days) + inv_days
 
-                        # Remove old client from old panel if migrating across panels
                         if old_panel and old_panel['id'] != panel['id']:
                             try:
-                                await delete_client(old_panel, email, sub_id=preserved_sub_id)
+                                await self._safe_delete_xui_client(old_panel, email, sub_id=preserved_sub_id)
                             except Exception:
                                 pass
 
                         new_email = build_client_email(old_note, user_id, invoice_id)
-                        c = XUIClient(panel['url'], panel['bearer_token'])
-                        await c.provision(
+                        await self._safe_provision_xui_client(
+                            panel=panel,
                             inbound_ids=inbound_ids,
                             email=new_email,
                             sub_id=preserved_sub_id,
-                            total_bytes=new_tot_bytes,
-                            expiry_time_ms=new_expiry_ms,
-                            ip_limit=int(panel.get('ip_limit') or 1),
+                            total_gb=new_tot_gb,
+                            days=new_tot_days,
+                            user_id=user_id,
                             comment=old_note,
                             group="Customers",
                         )
                         sub_id = preserved_sub_id
 
-                # Update xui_licenses record to point to the latest invoice and panel while keeping sub_id
                 async with aiosqlite.connect(db_manager.DB_PATH) as db:
                     await db.execute("PRAGMA busy_timeout = 5000;")
                     await db.execute(
@@ -614,8 +638,7 @@ class PaymentConfirmationManager:
                     await db.commit()
                 license_note = old_note
             else:
-                # Standard new license provisioning
-                self._parse_panel_inbound_ids(panel)  # Fixes BUG-03 early validation
+                self._parse_panel_inbound_ids(panel)
                 xui_group = "Trial" if is_free_test else "Customers"
                 sub_id = await provision_license(panel, full_invoice, user_id, group=xui_group)
                 license_note = full_invoice.get('license_note') or ""

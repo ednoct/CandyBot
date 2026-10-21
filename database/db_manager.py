@@ -1996,14 +1996,14 @@ async def cleanup_expired_data(retention_days: int = 14) -> dict:
 async def cleanup_expired_xui_licenses(grace_days: int = 2) -> dict:
     """
     Finds licenses that have been expired for at least `grace_days` (default: 2 days = 48 hours),
-    deletes each client from its bound 3x-UI panel first, and then deletes the row from `xui_licenses`.
-    Fixes BUG-01 (explicit asyncio import) and BUG-07 (no ghost clients on 3x-UI).
+    deletes each client from its bound 3x-UI panel first using XUIClient, and then deletes the row from `xui_licenses`.
+    Fixes BUG-01 (no ImportError on delete_client).
     """
     import asyncio
     import time
     from datetime import datetime
     from bot.services.sub_stats import fetch_sub_stats
-    from bot.services.xui_client import delete_client, build_client_email
+    from bot.services.xui_client import XUIClient, build_client_email
 
     logger = logging.getLogger(__name__)
     now_ts = time.time()
@@ -2038,7 +2038,6 @@ async def cleanup_expired_xui_licenses(grace_days: int = 2) -> dict:
         sub_link = str(lic.get("sub_link") or "").strip()
         inv_days = int(lic.get("invoice_days") or 0)
 
-        expired_at_ts: float | None = None
         is_expired_over_grace = False
 
         # 1. Check live sub-link stats with bounded timeout
@@ -2051,15 +2050,13 @@ async def cleanup_expired_xui_licenses(grace_days: int = 2) -> dict:
                     stats = None
 
         if stats:
-            # If sub_stats provides exact expire_ts / expire_ms
             raw_exp = stats.get("expire_ts") or stats.get("expire_time") or stats.get("expiry_time")
             if raw_exp:
                 exp_val = float(raw_exp)
-                if exp_val > 1e11:  # convert ms to seconds
+                if exp_val > 1e11:
                     exp_val /= 1000.0
                 if exp_val > 0 and (now_ts - exp_val) >= grace_seconds:
                     is_expired_over_grace = True
-                    expired_at_ts = exp_val
             elif stats.get("is_expired"):
                 days_left = float(stats.get("days_left", 0.0))
                 if days_left <= -float(grace_days):
@@ -2073,28 +2070,17 @@ async def cleanup_expired_xui_licenses(grace_days: int = 2) -> dict:
                     dt = datetime.strptime(created_str[:19], "%Y-%m-%d %H:%M:%S")
                     calc_exp_ts = dt.timestamp() + (inv_days * 86400)
                     if (now_ts - calc_exp_ts) >= grace_seconds:
-                        # Only mark expired if live stats didn't prove it was extended on panel
                         if not stats or stats.get("is_expired") or float(stats.get("days_left", 0.0)) <= 0:
                             is_expired_over_grace = True
-                            expired_at_ts = calc_exp_ts
                 except Exception:
                     pass
 
         if not is_expired_over_grace:
             return
 
-        # 3. Delete from 3x-UI panel BEFORE deleting from SQLite DB
+        # 3. Delete from 3x-UI panel using XUIClient BEFORE deleting from SQLite DB
         panel_deleted_ok = False
         if lic.get("panel_url") and lic.get("bearer_token"):
-            panel_dict = {
-                "id": lic.get("panel_id"),
-                "name": lic.get("panel_name"),
-                "url": lic["panel_url"],
-                "bearer_token": lic["bearer_token"],
-                "sub_link": sub_link,
-                "inbound_ids": lic.get("inbound_ids") or "1",
-                "ip_limit": lic.get("ip_limit") or 1,
-            }
             email = build_client_email(
                 lic.get("license_note") or "",
                 lic.get("user_id") or 0,
@@ -2102,7 +2088,11 @@ async def cleanup_expired_xui_licenses(grace_days: int = 2) -> dict:
             )
             async with sem:
                 try:
-                    await delete_client(panel_dict, email, sub_id=sub_id)
+                    xui = XUIClient(lic["panel_url"], lic["bearer_token"])
+                    try:
+                        await xui.delete_client(email, sub_id=sub_id)
+                    except TypeError:
+                        await xui.delete_client(email)
                     panel_deleted_ok = True
                     deleted_panel_count += 1
                 except Exception as panel_err:
@@ -2110,7 +2100,6 @@ async def cleanup_expired_xui_licenses(grace_days: int = 2) -> dict:
                         f"Could not delete expired license {lic_id} (sub_id={sub_id}) from XUI panel: {panel_err}"
                     )
         else:
-            # Panel no longer exists in DB; safe to remove orphan license record
             panel_deleted_ok = True
 
         if panel_deleted_ok:
