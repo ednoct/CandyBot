@@ -1,6 +1,7 @@
 """
 This module corresponds to the 'cron/tasks.py' branch in the candy_architecture.md map.
-Contains async background loops for DB cleanup, broadcasting, and payment checks (including expiring USDT/GRAM invoices).
+Contains async background loops for DB cleanup, broadcasting, and payment checks
+(including FrenzyEx active polling recovery and expiring USDT/GRAM invoices).
 Lottery feature removed.
 """
 # === IMPORTS ===
@@ -14,6 +15,8 @@ from utils.backup import create_database_backup
 from bot.services.notifications import NotificationService
 from aiogram.types import FSInputFile
 from database import db_manager
+from payment.confirm import PaymentConfirmationManager
+from payment.verifiers import PaymentVerifier
 
 
 # === BACKGROUND TASK: LICENSE STATS ALERTS ===
@@ -25,11 +28,12 @@ async def cron_license_stats_check(bot=None):
     """
     if not bot:
         return
-        
+
     while True:
         try:
             licenses = []
             async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute("PRAGMA busy_timeout = 5000;")
                 db.row_factory = aiosqlite.Row
                 async with db.execute(
                     "SELECT l.id, l.user_id, l.sub_id, p.sub_link, l.alert_sent "
@@ -45,17 +49,17 @@ async def cron_license_stats_check(bot=None):
                 stats = await fetch_sub_stats(lic['sub_link'], lic['sub_id'])
                 if not stats:
                     continue
-                    
+
                 needs_alert = False
                 reason = ""
-                
+
                 if not stats['is_unlimited_traffic'] and stats['fraction'] < 0.10:
                     needs_alert = True
                     reason = f"حجم باقی‌مانده شما به کمتر از ۱۰ درصد ({stats['remaining_gb']:.2f} GB) رسیده است."
                 elif not stats['is_unlimited_time'] and stats['days_left'] < 3.0:
                     needs_alert = True
                     reason = f"اعتبار زمانی شما کمتر از ۳ روز ({int(stats['days_left'])} روز) است."
-                    
+
                 if needs_alert:
                     try:
                         await bot.send_message(
@@ -69,47 +73,62 @@ async def cron_license_stats_check(bot=None):
 
             if alerted_lic_ids:
                 async with aiosqlite.connect(DB_PATH) as db:
+                    await db.execute("PRAGMA busy_timeout = 5000;")
                     placeholders = ",".join("?" for _ in alerted_lic_ids)
                     await db.execute(f"UPDATE xui_licenses SET alert_sent = 1 WHERE id IN ({placeholders})", alerted_lic_ids)
                     await db.commit()
-                            
+
         except Exception as e:
             logging.error(f"Cron License Stats Check Error: {e}")
-            
-        await asyncio.sleep(21600) # 6 hours
+
+        await asyncio.sleep(21600)  # 6 hours
+
 
 # === BACKGROUND TASK: PAYMENT CHECK ===
 async def cron_payment_check(bot=None):
     """
-    Background loop to check pending payments (plisio, crypto).
-    Replaces old PHP /cronbot logic for payments.
+    Background loop to check pending payments:
+    1. Polls pending FrenzyEx payment requests to recover missed IPNs or mark expired/canceled orders.
+    2. Expires stale offline payments (USDT / GRAM) after 24 hours.
     Runs every 60 seconds.
     """
-    import time
     while True:
         try:
+            # 1. Poll pending FrenzyEx gateway requests (recovery & 60m expiration lifecycle)
+            if bot:
+                try:
+                    pcm = PaymentConfirmationManager(bot)
+                    await PaymentVerifier.process_pending_invoices(pcm)
+                except Exception as fe_err:
+                    logging.error(f"Cron FrenzyEx Polling Error: {fe_err}", exc_info=True)
+
+            # 2. Expire stale offline payments (USDT / GRAM) older than 24 hours
             async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute("PRAGMA busy_timeout = 5000;")
                 db.row_factory = aiosqlite.Row
-                current_time = int(time.time())
-                
-                # Check for expired offline payments (USDT / GRAM) after 24 hours
+
                 expired_invoice_ids = set()
                 async with db.execute(
-                    "SELECT * FROM payment_reports WHERE status IN ('Unpaid', 'pending') AND payment_method IN ('usdt offline', 'gram offline') AND created_at < datetime('now', '-24 hours')"
+                    "SELECT * FROM payment_reports "
+                    "WHERE status IN ('Unpaid', 'pending') "
+                    "AND payment_method IN ('usdt offline', 'gram offline') "
+                    "AND created_at < datetime('now', '-24 hours')"
                 ) as cursor:
                     expired_reports = await cursor.fetchall()
-                    
+
                 for report in expired_reports:
                     inv_id = report['invoice_id']
                     expired_invoice_ids.add(inv_id)
                     logging.info(f"Expiring offline payment report {inv_id}")
-                    # Update status to expire
-                    await db.execute("UPDATE payment_reports SET status = 'expire' WHERE invoice_id = ?", (inv_id,))
-                    
-                    # Also expire the main invoice
-                    await db.execute("UPDATE invoices SET status = 'expired' WHERE id = ?", (inv_id,))
-                    # Send the exact expiration notification
-                    if bot:
+                    await db.execute(
+                        "UPDATE payment_reports SET status = 'expire' WHERE invoice_id = ? AND status IN ('Unpaid', 'pending')",
+                        (inv_id,)
+                    )
+                    cur_inv = await db.execute(
+                        "UPDATE invoices SET status = 'expired' WHERE id = ? AND status = 'pending'",
+                        (inv_id,)
+                    )
+                    if bot and cur_inv.rowcount > 0:
                         try:
                             await bot.send_message(report['user_id'], 'فاکتور خرید شما منقضی شد. برای صدور مجدد اقدام کنید.')
                         except Exception:
@@ -117,7 +136,10 @@ async def cron_payment_check(bot=None):
 
                 # Also expire any direct/orphan pending offline invoices older than 24 hours
                 async with db.execute(
-                    "SELECT * FROM invoices WHERE status = 'pending' AND payment_method IN ('usdt', 'gram') AND created_at < datetime('now', '-24 hours')"
+                    "SELECT * FROM invoices "
+                    "WHERE status = 'pending' "
+                    "AND payment_method IN ('usdt', 'gram') "
+                    "AND created_at < datetime('now', '-24 hours')"
                 ) as cursor:
                     expired_invoices = await cursor.fetchall()
 
@@ -126,43 +148,59 @@ async def cron_payment_check(bot=None):
                     if inv_id in expired_invoice_ids:
                         continue
                     logging.info(f"Expiring offline invoice {inv_id}")
-                    await db.execute("UPDATE invoices SET status = 'expired' WHERE id = ?", (inv_id,))
-                    await db.execute("UPDATE payment_reports SET status = 'expire' WHERE invoice_id = ?", (inv_id,))
-                    if bot:
+                    cur_inv = await db.execute(
+                        "UPDATE invoices SET status = 'expired' WHERE id = ? AND status = 'pending'",
+                        (inv_id,)
+                    )
+                    await db.execute(
+                        "UPDATE payment_reports SET status = 'expire' WHERE invoice_id = ? AND status IN ('Unpaid', 'pending')",
+                        (inv_id,)
+                    )
+                    if bot and cur_inv.rowcount > 0:
                         try:
                             await bot.send_message(inv['user_id'], 'فاکتور خرید شما منقضی شد. برای صدور مجدد اقدام کنید.')
                         except Exception:
                             pass
-                            
+
                 await db.commit()
         except Exception as e:
             logging.error(f"Cron Payment Check Error: {e}")
         await asyncio.sleep(60)
 
+
 # === BACKGROUND TASK: DB CLEANUP & NIGHTLY REPORT ===
 async def cron_database_cleanup(bot=None):
     """
-    Daily task to clean up old abandoned invoices, generate stats, backup DB,
-    and send nightly report.
-    Replaces generic legacy cron sweeps.
+    Daily task to mark abandoned pending invoices (>24h) as expired, generate stats,
+    backup DB, and send nightly report.
+    (Physical deletion of old expired records happens in cron_biweekly_cleanup after 14 days).
     Runs every 86400 seconds (24h).
     """
     import os
     while True:
         try:
             async with aiosqlite.connect(DB_PATH) as db:
-                # Cleanup old pending invoices older than 24 hours
-                await db.execute("DELETE FROM invoices WHERE status = 'pending' AND created_at < datetime('now', '-1 day')")
+                await db.execute("PRAGMA busy_timeout = 5000;")
+                # Safely transition abandoned pending invoices older than 24 hours to 'expired'
+                # instead of deleting them immediately, preserving order_ref reconciliation history.
+                await db.execute(
+                    "UPDATE invoices SET status = 'expired' "
+                    "WHERE status = 'pending' AND created_at < datetime('now', '-1 day')"
+                )
+                await db.execute(
+                    "UPDATE payment_reports SET status = 'expire' "
+                    "WHERE status IN ('pending', 'Unpaid') AND created_at < datetime('now', '-1 day')"
+                )
                 await db.commit()
-                logging.info("Executed daily database cleanup")
-                
+                logging.info("Executed daily abandoned invoice expiration sweep")
+
             if bot:
                 # 1. Fetch Daily Stats
                 from datetime import datetime
                 now = datetime.now()
                 start = now.replace(hour=0, minute=0, second=0).strftime('%Y-%m-%d %H:%M:%S')
                 stats = await db_manager.get_bot_stats("WHERE created_at >= ?", (start,))
-                
+
                 stats_text = (
                     "🌙 **گزارش روزانه و بکاپ شبانه**\n━━━━━━━━━━━━━━━━━━\n"
                     f"👥 ثبت نام امروز: {stats['users']} نفر\n"
@@ -170,10 +208,10 @@ async def cron_database_cleanup(bot=None):
                     f"🔑 اکانت‌های تست: {stats['tests']} عدد\n"
                     f"💸 فروش امروز: {stats['sales']:,} تومان\n"
                 )
-                
+
                 # 2. Create DB Backup
                 zip_path = await create_database_backup()
-                
+
                 # 3. Send Notification
                 notif_service = NotificationService(bot)
                 if zip_path and os.path.exists(zip_path):
@@ -188,10 +226,11 @@ async def cron_database_cleanup(bot=None):
                         topic_key="nightly_report",
                         text=stats_text + "\n\n⚠️ خطا در تهیه فایل بکاپ دیتابیس."
                     )
-                    
+
         except Exception as e:
             logging.error(f"Cron DB Cleanup & Nightly Report Error: {e}")
         await asyncio.sleep(86400)
+
 
 # === BACKGROUND TASK: NOTIFICATIONS & BROADCAST ===
 async def cron_broadcast():
@@ -202,12 +241,11 @@ async def cron_broadcast():
     """
     while True:
         try:
-            # Broadcast queue dispatch simulation
-            # The actual send_message logic will tie into aiogram bot instance
             logging.debug("Running broadcast check")
         except Exception as e:
             logging.error(f"Cron Broadcast Error: {e}")
         await asyncio.sleep(30)
+
 
 # === BACKGROUND TASK: HOUSEKEEPING ===
 async def cron_housekeeping():
@@ -219,11 +257,12 @@ async def cron_housekeeping():
     while True:
         try:
             async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute("PRAGMA busy_timeout = 5000;")
                 # Expire past discount codes
                 await db.execute("DELETE FROM discount_codes WHERE expiration_date < datetime('now')")
                 # Expire past gift codes
                 await db.execute("DELETE FROM gift_codes WHERE expiration_date < datetime('now')")
-                
+
                 # Agents whose status is no longer valid or have no affiliates can be downgraded
                 await db.execute("UPDATE users SET agent = 'f' WHERE affiliatescount = 0 AND agent = 't'")
                 await db.commit()
@@ -231,6 +270,7 @@ async def cron_housekeeping():
         except Exception as e:
             logging.error(f"Cron Housekeeping Error: {e}")
         await asyncio.sleep(3600)
+
 
 # === BACKGROUND TASK: BI-WEEKLY EXPIRED DATA CLEANUP (TICKETS, LICENSES, INVOICES) ===
 async def cron_biweekly_cleanup(bot=None):
@@ -301,6 +341,25 @@ async def cron_biweekly_cleanup(bot=None):
         # Check every 1 hour (3600 seconds)
         await asyncio.sleep(3600)
 
+
+# === BACKGROUND TASK: EXPIRED LICENSES CLEANUP (>2 DAYS) ===
+async def cron_expired_licenses_cleanup(bot=None):
+    """
+    Background loop to periodically purge licenses that have been expired for at least 2 days.
+    Deletes the client from the connected 3x-ui panel and removes the license row from the database.
+    Runs every 6 hours (21600 seconds).
+    """
+    while True:
+        try:
+            logging.info("Starting periodic check for expired licenses cleanup (>2 days)...")
+            res = await db_manager.cleanup_expired_xui_licenses(grace_period_days=2)
+            if res.get('deleted_licenses', 0) > 0:
+                logging.info(f"Auto-cleaned {res['deleted_licenses']} expired licenses from XUI and DB.")
+        except Exception as e:
+            logging.error(f"Cron Expired Licenses Cleanup Error: {e}")
+        await asyncio.sleep(21600)  # 6 hours
+
+
 # === CRON SETUP ===
 def setup_cron_tasks(bot=None, loop=None):
     """Handles setup cron tasks."""
@@ -312,3 +371,4 @@ def setup_cron_tasks(bot=None, loop=None):
     loop.create_task(cron_broadcast())
     loop.create_task(cron_housekeeping())
     loop.create_task(cron_biweekly_cleanup(bot))
+    loop.create_task(cron_expired_licenses_cleanup(bot))

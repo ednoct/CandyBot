@@ -334,10 +334,11 @@ async def show_terms(callback: types.CallbackQuery, state: FSMContext):
 
 # === ROUTER: MY SERVICES ===
 @user_router.callback_query(F.data == "my_services")
-async def my_services(callback: types.CallbackQuery, state: FSMContext):
-    """Handles my services."""
+async def my_services(callback: types.CallbackQuery, state: FSMContext = None):
+    """Handles my services with active/expired visual status indicators."""
     await callback.answer()
-    await state.clear()
+    if state:
+        await state.clear()
     user_id = callback.from_user.id
     licenses = await db_manager.get_licenses_for_user(user_id)
 
@@ -354,18 +355,27 @@ async def my_services(callback: types.CallbackQuery, state: FSMContext):
             parse_mode="HTML"
         )
 
+    from bot.services.sub_stats import check_if_license_is_expired
+    import asyncio
+
+    # Concurrently determine expiration statuses
+    tasks = [check_if_license_is_expired(dict(lic)) for lic in licenses]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
     builder = InlineKeyboardBuilder()
-    for lic in licenses:
-        note = lic['license_note'] or 'بدون نام'
-        builder.button(text=f"📦 {note}", callback_data=f"view_license_{lic['id']}")
+    for lic, is_exp in zip(licenses, results):
+        status_text = "🔴 منقضی شده" if is_exp is True else "🟢 فعال"
+        note = lic['license_note'] or 'سرویس کاربر'
+        btn_label = f"نام لایسنس: {note} | {status_text}"
+        builder.button(text=btn_label, callback_data=f"view_license_{lic['id']}")
         
-    builder.adjust(2)
+    builder.adjust(1)
     builder.row(types.InlineKeyboardButton(text="🔙 برگشت", callback_data="main_menu", style="danger"))
 
     await send_bottom_message(
         callback,
         f"📦 <b>لایسنس های من</b>\n\n"
-        f"شما <b>{len(licenses)}</b> لایسنس دارید. برای مشاهده جزئیات روی نام سرویس کلیک کنید:",
+        f"شما <b>{len(licenses)}</b> لایسنس دارید. برای مشاهده جزئیات روی هر لایسنس کلیک کنید:",
         reply_markup=builder.as_markup(),
         parse_mode="HTML"
     )
@@ -525,7 +535,7 @@ async def view_license(callback: types.CallbackQuery):
 
     sub_id = lic['sub_id']
     note = lic['license_note'] or 'بدون یادداشت'
-    note_line = f"\n📝 یادداشت لایسنس: <b>{note}</b>" if lic['license_note'] else ""
+    note_line = f"\nنام لایسنس: <b>{note}</b>"
 
     from bot.services.sub_stats import fetch_sub_stats
     live_status = "در حال دریافت وضعیت..."
@@ -579,6 +589,7 @@ async def view_license(callback: types.CallbackQuery):
         )
     )
     builder.row(types.InlineKeyboardButton(text="♻️ تمدید", callback_data=f"renew_lic_{license_id}"))
+    builder.row(types.InlineKeyboardButton(text="🗑 حذف لایسنس", callback_data=f"delete_lic_prompt_{license_id}", style="danger"))
     builder.row(types.InlineKeyboardButton(text="🔙 بازگشت به سرویس‌ها", callback_data="my_services", style="danger"))
 
     from bot.services.xui_client import generate_qr_bytes
@@ -599,11 +610,188 @@ async def view_license(callback: types.CallbackQuery):
         await callback.message.edit_text(caption, reply_markup=builder.as_markup(), parse_mode="HTML")
 
 
+# === ROUTER: DELETE LICENSE FLOW ===
+@user_router.callback_query(F.data.startswith("delete_lic_prompt_"))
+async def delete_license_prompt(callback: types.CallbackQuery):
+    """Confirm license deletion with warning about irreversibility."""
+    license_id = int(callback.data.split("_")[3])
+    user_id = callback.from_user.id
+    
+    lic = await db_manager.get_license_details(license_id, user_id)
+    if not lic:
+        return await callback.answer("❌ لایسنس یافت نشد.", show_alert=True)
+        
+    warn_text = (
+        "⚠️ <b>آیا از حذف لایسنس خود اطمینان دارید؟</b>\n\n"
+        "این عملیات <b>غیرقابل بازگشت و بازیابی</b> است و تمام مسئولیت آن بر عهده خود شما می‌باشد.\n\n"
+        "در صورت تایید، این لایسنس هم در ربات و هم در پنل سرور (xui) برای همیشه پاک خواهد شد."
+    )
+    builder = InlineKeyboardBuilder()
+    builder.row(types.InlineKeyboardButton(text="⚠️ بله، با مسئولیت خودم حذف شود", callback_data=f"delete_lic_confirm_{license_id}"))
+    builder.row(types.InlineKeyboardButton(text="🔙 انصراف و بازگشت", callback_data=f"view_license_{license_id}", style="danger"))
+    
+    if callback.message.photo:
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        await callback.message.answer(warn_text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    else:
+        await callback.message.edit_text(warn_text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    await callback.answer()
+
+
+@user_router.callback_query(F.data.startswith("delete_lic_confirm_"))
+async def delete_license_confirm(callback: types.CallbackQuery, state: FSMContext = None):
+    """Executes license deletion in X-UI panel and bot database."""
+    license_id = int(callback.data.split("_")[3])
+    user_id = callback.from_user.id
+    
+    lic = await db_manager.get_license_details(license_id, user_id)
+    if not lic:
+        return await callback.answer("❌ لایسنس یافت نشد یا قبلاً حذف شده است.", show_alert=True)
+        
+    # 1. Delete from XUI panel if connected
+    if lic.get('panel_url') and lic.get('bearer_token'):
+        try:
+            from bot.services.xui_client import XUIClient, build_client_email
+            email = build_client_email(lic.get('license_note') or "", lic['user_id'], lic['invoice_id'])
+            async with XUIClient(lic['panel_url'], lic['bearer_token']) as client:
+                await client.delete_client(email)
+                logger.info(f"User {user_id} deleted client {email} from panel {lic['panel_url']}")
+        except Exception as e:
+            logger.warning(f"Could not delete client from panel on user deletion: {e}")
+            
+    # 2. Delete from database
+    async with aiosqlite.connect(db_manager.DB_PATH) as db:
+        await db.execute("PRAGMA busy_timeout = 5000;")
+        await db.execute("DELETE FROM xui_licenses WHERE id = ? AND user_id = ?", (license_id, user_id))
+        await db.commit()
+        
+    await callback.answer("✅ لایسنس شما با موفقیت از بات و سرور حذف شد.", show_alert=True)
+    await my_services(callback, state)
+
+
+# === ROUTER: RENEWAL WORKFLOW ===
 @user_router.callback_query(F.data.startswith("renew_lic_"))
 async def renew_license_start(callback: types.CallbackQuery, state: FSMContext):
-    """Start renewal flow for an existing license."""
+    """Start renewal flow for an existing license based on expiration status."""
     license_id = int(callback.data.split("_")[2])
-    await state.update_data(renew_license_id=license_id)
+    user_id = callback.from_user.id
+    
+    lic = await db_manager.get_license_details(license_id, user_id)
+    if not lic:
+        return await callback.answer("❌ لایسنس یافت نشد.", show_alert=True)
+        
+    from bot.services.sub_stats import check_if_license_is_expired
+    is_expired = await check_if_license_is_expired(lic)
+    
+    if not is_expired:
+        # Case A: License NOT expired -> directly open calculator for this license's plan
+        plan_id = lic.get('plan_id')
+        plan = await db_manager.get_plan(plan_id) if plan_id else None
+        if not plan:
+            await state.update_data(renew_license_id=license_id, renew_mode='keep_plan', license_note=lic['license_note'] or '')
+            return await show_plans(callback, state)
+            
+        await state.update_data(
+            renew_license_id=license_id,
+            renew_mode='keep_plan',
+            plan_id=plan_id,
+            plan_price_day=plan['price_per_day'],
+            plan_price_gb=plan['price_per_gb'],
+            admin_description=plan['admin_description'],
+            plan_name=plan['name'],
+            license_note=lic['license_note'] or ''
+        )
+        from bot.routers.checkout import render_calculator
+        if callback.message.photo:
+            try:
+                await callback.message.delete()
+            except Exception:
+                pass
+            msg = await callback.message.answer("در حال بارگذاری ماشین حساب...")
+            await render_calculator(msg, state, plan_id)
+        else:
+            await render_calculator(callback.message, state, plan_id)
+        await callback.answer()
+    else:
+        # Case B: License IS expired -> present 2 options
+        text = (
+            "🔄 <b>تمدید لایسنس منقضی‌شده</b>\n\n"
+            "لطفاً نوع تمدید مورد نظر خود را انتخاب نمایید:\n\n"
+            "⚠️ <b>توضیح مهم:</b> دلیل عدم اعمال حجم یا زمان باقیمانده در تغییر پلن، اختلاف قیمت و مشخصات پلن‌ها با یکدیگر است.\n"
+        )
+        builder = InlineKeyboardBuilder()
+        builder.row(types.InlineKeyboardButton(
+            text="1️⃣ تمدید پنل فعلی (حفظ حجم یا زمان باقیمانده)",
+            callback_data=f"renew_exp_keep_{license_id}"
+        ))
+        builder.row(types.InlineKeyboardButton(
+            text="2️⃣ تغییر پلن (حجم یا زمان باقیمانده حفظ نمیشود)",
+            callback_data=f"renew_exp_change_{license_id}"
+        ))
+        builder.row(types.InlineKeyboardButton(
+            text="🔙 بازگشت",
+            callback_data=f"view_license_{license_id}",
+            style="danger"
+        ))
+        
+        if callback.message.photo:
+            try:
+                await callback.message.delete()
+            except Exception:
+                pass
+            await callback.message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        else:
+            await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        await callback.answer()
+
+
+@user_router.callback_query(F.data.startswith("renew_exp_keep_"))
+async def renew_expired_keep(callback: types.CallbackQuery, state: FSMContext):
+    """Expired license option 1: Renew current panel/plan."""
+    license_id = int(callback.data.split("_")[3])
+    user_id = callback.from_user.id
+    lic = await db_manager.get_license_details(license_id, user_id)
+    if not lic:
+        return await callback.answer("❌ لایسنس یافت نشد.", show_alert=True)
+        
+    plan_id = lic.get('plan_id')
+    plan = await db_manager.get_plan(plan_id) if plan_id else None
+    if not plan:
+        await state.update_data(renew_license_id=license_id, renew_mode='keep_plan', license_note=lic['license_note'] or '')
+        return await show_plans(callback, state)
+        
+    await state.update_data(
+        renew_license_id=license_id,
+        renew_mode='keep_plan',
+        plan_id=plan_id,
+        plan_price_day=plan['price_per_day'],
+        plan_price_gb=plan['price_per_gb'],
+        admin_description=plan['admin_description'],
+        plan_name=plan['name'],
+        license_note=lic['license_note'] or ''
+    )
+    from bot.routers.checkout import render_calculator
+    await render_calculator(callback.message, state, plan_id)
+    await callback.answer()
+
+
+@user_router.callback_query(F.data.startswith("renew_exp_change_"))
+async def renew_expired_change(callback: types.CallbackQuery, state: FSMContext):
+    """Expired license option 2: Change plan (no remaining time/volume carried over)."""
+    license_id = int(callback.data.split("_")[3])
+    user_id = callback.from_user.id
+    lic = await db_manager.get_license_details(license_id, user_id)
+    if not lic:
+        return await callback.answer("❌ لایسنس یافت نشد.", show_alert=True)
+        
+    await state.update_data(
+        renew_license_id=license_id,
+        renew_mode='change_plan',
+        license_note=lic['license_note'] or ''
+    )
     await show_plans(callback, state)
 
 

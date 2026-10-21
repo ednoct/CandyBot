@@ -2,15 +2,16 @@
 payment/gateways.py
 -------------------
 Production-ready, async FrenzyEx Merchant API v1.0 client with connection pooling,
-strict input/URL validation, structured error handling, and bounded retries.
+strict SSRF/URL validation, Decimal precision, Retry-After support, and safe error handling.
 """
-
 from __future__ import annotations
 
 import asyncio
+from decimal import Decimal, InvalidOperation
 import ipaddress
 import logging
 import random
+import socket
 from typing import Any, Optional
 from urllib.parse import urlparse
 
@@ -25,7 +26,7 @@ class PaymentGateway:
     async def create_payment(
         self,
         order_id: str,
-        amount: int | float,
+        amount: int | float | Decimal,
         callback_url: str,
         **kwargs: Any,
     ) -> dict[str, Any]:
@@ -34,7 +35,7 @@ class PaymentGateway:
     async def verify_payment(
         self,
         request_id: str,
-        expected_amount: Optional[int | float] = None,
+        expected_amount: Optional[int | float | Decimal] = None,
         expected_order_ref: Optional[str] = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
@@ -52,6 +53,7 @@ class FrenzyExGateway(PaymentGateway):
     ALLOWED_CURRENCIES = {"TMN", "TRX"}
     ALLOWED_METHODS = {"auto", "standard", "nowpay"}
     TERMINAL_STATUSES = {"paid", "expired", "canceled"}
+    FORBIDDEN_HOSTS = {"localhost", "localhost.localdomain", "127.0.0.1", "0.0.0.0", "::1"}
 
     _shared_client: Optional[httpx.AsyncClient] = None
     _client_lock = asyncio.Lock()
@@ -60,42 +62,45 @@ class FrenzyExGateway(PaymentGateway):
         if not api_key or not api_key.strip():
             raise ValueError("FrenzyEx API key is required.")
         self.api_key = api_key.strip()
-        self.base_url = self._validate_base_url(base_url)
+        self.base_url = self._validate_https_endpoint(base_url, field_name="base_url")
 
-    @staticmethod
-    def _validate_base_url(url: str) -> str:
-        cleaned = (url or "https://frenzy.fastsnap.info").strip().rstrip("/")
-        parsed = urlparse(cleaned)
-        if parsed.scheme != "https" or not parsed.netloc:
-            raise ValueError(f"Invalid FrenzyEx base_url (must be HTTPS): {url}")
-        return cleaned
-
-    @staticmethod
-    def validate_callback_url(callback_url: str) -> str:
+    @classmethod
+    def _validate_https_endpoint(cls, url: str, field_name: str = "callback_url") -> str:
         """
-        Validates callback_url according to Section 04 & 10:
+        Validates URLs according to FrenzyEx Section 04 & 10:
         - Must be HTTPS
-        - Must not resolve/point to loopback or private IP space
+        - Must not point to loopback, link-local, unspecified, or private IP space
         """
-        cleaned = (callback_url or "").strip()
+        cleaned = (url or "").strip().rstrip("/") if field_name == "base_url" else (url or "").strip()
         parsed = urlparse(cleaned)
         if parsed.scheme != "https" or not parsed.hostname:
-            raise ValueError("callback_url must use https scheme and have a valid hostname.")
+            raise ValueError(f"{field_name} must use https scheme and have a valid hostname.")
 
-        host = parsed.hostname.lower()
-        if host in {"localhost", "127.0.0.1", "::1"}:
-            raise ValueError("callback_url must not point to localhost/loopback.")
+        host = parsed.hostname.lower().strip(".")
+        if host in cls.FORBIDDEN_HOSTS or host.endswith((".local", ".internal", ".localhost")):
+            raise ValueError(f"{field_name} must not point to a local or internal hostname.")
 
         try:
             ip = ipaddress.ip_address(host)
-            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
-                raise ValueError("callback_url must not point to a private or reserved IP address.")
-        except ValueError as e:
-            if "callback_url" in str(e):
+            if (
+                ip.is_private
+                or ip.is_loopback
+                or ip.is_link_local
+                or ip.is_reserved
+                or ip.is_multicast
+                or ip.is_unspecified
+            ):
+                raise ValueError(f"{field_name} must not point to a private or reserved IP address.")
+        except ValueError as exc:
+            if field_name in str(exc):
                 raise
-            # Hostname is a domain name, not an IP literal
+            # Host is a domain name, not an IP literal
 
         return cleaned
+
+    @classmethod
+    def validate_callback_url(cls, callback_url: str) -> str:
+        return cls._validate_https_endpoint(callback_url, field_name="callback_url")
 
     @classmethod
     async def get_http_client(cls) -> httpx.AsyncClient:
@@ -114,9 +119,10 @@ class FrenzyExGateway(PaymentGateway):
     @classmethod
     async def close_http_client(cls) -> None:
         """Closes the shared HTTP client cleanly on bot shutdown."""
-        if cls._shared_client and not cls._shared_client.is_closed:
-            await cls._shared_client.aclose()
-            cls._shared_client = None
+        async with cls._client_lock:
+            if cls._shared_client and not cls._shared_client.is_closed:
+                await cls._shared_client.aclose()
+                cls._shared_client = None
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -132,11 +138,12 @@ class FrenzyExGateway(PaymentGateway):
         *,
         json_payload: Optional[dict[str, Any]] = None,
         max_retries: int = 3,
+        retry_on_read_timeout: bool = True,
     ) -> httpx.Response:
         """
         Executes an HTTP request following Section 10 Retry Matrix:
-        - Retries network errors, HTTP 429, and HTTP 5xx with exponential backoff + jitter.
-        - Does NOT retry 400, 401, 403, 404, 409.
+        - Respects Retry-After header on HTTP 429.
+        - Avoids blind duplicate POSTs on ReadTimeout when retry_on_read_timeout=False.
         """
         client = await self.get_http_client()
         last_exc: Optional[Exception] = None
@@ -151,21 +158,35 @@ class FrenzyExGateway(PaymentGateway):
                 )
                 if response.status_code == 429 or response.status_code >= 500:
                     if attempt < max_retries:
-                        backoff = (2 ** (attempt - 1)) + random.uniform(0.1, 0.6)
+                        retry_after_hdr = response.headers.get("Retry-After")
+                        if retry_after_hdr and retry_after_hdr.isdigit():
+                            backoff = min(float(retry_after_hdr), 15.0) + random.uniform(0.1, 0.5)
+                        else:
+                            backoff = (2 ** (attempt - 1)) + random.uniform(0.2, 0.8)
                         logger.warning(
                             "FrenzyEx HTTP %s on %s %s (attempt %d/%d). Retrying in %.2fs...",
-                            response.status_code, method, url, attempt, max_retries, backoff
+                            response.status_code, method, url, attempt, max_retries, backoff,
                         )
                         await asyncio.sleep(backoff)
                         continue
                 return response
+            except httpx.ReadTimeout as exc:
+                last_exc = exc
+                if not retry_on_read_timeout or attempt >= max_retries:
+                    raise
+                backoff = (2 ** (attempt - 1)) + random.uniform(0.2, 0.8)
+                logger.warning(
+                    "FrenzyEx read timeout on %s %s (attempt %d/%d). Retrying in %.2fs...",
+                    method, url, attempt, max_retries, backoff,
+                )
+                await asyncio.sleep(backoff)
             except httpx.RequestError as exc:
                 last_exc = exc
                 if attempt < max_retries:
-                    backoff = (2 ** (attempt - 1)) + random.uniform(0.1, 0.6)
+                    backoff = (2 ** (attempt - 1)) + random.uniform(0.2, 0.8)
                     logger.warning(
                         "FrenzyEx network error on %s %s (attempt %d/%d): %s. Retrying in %.2fs...",
-                        method, url, attempt, max_retries, exc, backoff
+                        method, url, attempt, max_retries, exc.__class__.__name__, backoff,
                     )
                     await asyncio.sleep(backoff)
                 else:
@@ -175,22 +196,32 @@ class FrenzyExGateway(PaymentGateway):
             raise last_exc
         raise RuntimeError("Unreachable retry state")
 
+    @staticmethod
+    def _parse_decimal(value: Any) -> Optional[Decimal]:
+        if value is None:
+            return None
+        try:
+            return Decimal(str(value).strip())
+        except (InvalidOperation, ValueError, TypeError):
+            return None
+
     async def create_payment(
         self,
         order_id: str,
-        amount: int | float,
+        amount: int | float | Decimal,
         callback_url: str,
         amount_ccy: str = "TMN",
         description: str = "",
         payment_method: str = "auto",
-        usd_rate_toman: Optional[int | float] = None,
+        usd_rate_toman: Optional[int | float | Decimal] = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
         """Creates a new Payment Request via POST /api/v1/payment-requests."""
         if not order_id or not str(order_id).strip():
             return {"success": False, "error_code": "INVALID_ORDER_REF", "error": "order_ref is required."}
 
-        if amount is None or float(amount) <= 0:
+        dec_amount = self._parse_decimal(amount)
+        if dec_amount is None or dec_amount <= Decimal("0"):
             return {"success": False, "error_code": "INVALID_AMOUNT", "error": "amount must be greater than zero."}
 
         ccy = (amount_ccy or "TMN").upper().strip()
@@ -208,21 +239,28 @@ class FrenzyExGateway(PaymentGateway):
             return {"success": False, "error_code": "INVALID_CALLBACK_URL", "error": str(ve)}
 
         payload: dict[str, Any] = {
-            "amount": int(amount) if ccy == "TMN" else float(amount),
+            "amount": int(dec_amount) if ccy == "TMN" else float(dec_amount),
             "amount_ccy": ccy,
             "order_ref": str(order_id).strip(),
             "description": (description or "").strip(),
             "payment_method": method,
             "callback_url": valid_callback,
         }
-        if usd_rate_toman is not None and float(usd_rate_toman) > 0:
-            payload["usd_rate_toman"] = float(usd_rate_toman)
+        if usd_rate_toman is not None:
+            dec_rate = self._parse_decimal(usd_rate_toman)
+            if dec_rate and dec_rate > Decimal("0"):
+                payload["usd_rate_toman"] = float(dec_rate)
 
         url = f"{self.base_url}/api/v1/payment-requests"
         try:
-            response = await self._request_with_retry("POST", url, json_payload=payload)
+            # Do not retry POST on ReadTimeout because v1 create has no Idempotency-Key header
+            response = await self._request_with_retry(
+                "POST", url, json_payload=payload, max_retries=2, retry_on_read_timeout=False
+            )
             if 200 <= response.status_code < 300:
                 data = response.json()
+                if not isinstance(data, dict) or not data.get("request_id"):
+                    return {"success": False, "error": "Invalid response schema from gateway."}
                 return {
                     "success": True,
                     "request_id": data.get("request_id"),
@@ -241,8 +279,8 @@ class FrenzyExGateway(PaymentGateway):
                 }
 
             logger.error(
-                "FrenzyEx create_payment failed | status=%d | order_ref=%s | body=%s",
-                response.status_code, order_id, response.text[:300]
+                "FrenzyEx create_payment failed | status=%d | order_ref=%s",
+                response.status_code, order_id,
             )
             return {
                 "success": False,
@@ -250,11 +288,11 @@ class FrenzyExGateway(PaymentGateway):
                 "error": f"HTTP {response.status_code}",
             }
         except Exception as exc:
-            logger.error("FrenzyEx create_payment exception for order %s: %s", order_id, exc)
+            logger.error("FrenzyEx create_payment exception for order %s: %s", order_id, exc.__class__.__name__)
             return {"success": False, "error": "خطا در برقراری ارتباط با درگاه پرداخت."}
 
     async def get_payment_status(self, request_id: str) -> dict[str, Any]:
-        """Retrieves full payment status and reconciliation metadata via GET /api/v1/payment-requests/{request_id}."""
+        """Retrieves payment status and reconciliation metadata via GET /api/v1/payment-requests/{request_id}."""
         if not request_id or not str(request_id).strip():
             return {"success": False, "error": "request_id is empty"}
 
@@ -263,10 +301,12 @@ class FrenzyExGateway(PaymentGateway):
             response = await self._request_with_retry("GET", url, max_retries=2)
             if 200 <= response.status_code < 300:
                 data = response.json()
+                if not isinstance(data, dict):
+                    return {"success": False, "error": "Malformed JSON response"}
                 return {
                     "success": True,
                     "request_id": data.get("request_id"),
-                    "status": data.get("status"),  # pending, paid, expired, canceled
+                    "status": data.get("status"),
                     "amount": data.get("amount"),
                     "amount_ccy": data.get("amount_ccy"),
                     "order_ref": data.get("order_ref"),
@@ -283,39 +323,47 @@ class FrenzyExGateway(PaymentGateway):
                 "error": f"HTTP {response.status_code}",
             }
         except Exception as exc:
-            logger.error("FrenzyEx get_payment_status error for %s: %s", request_id, exc)
+            logger.error("FrenzyEx get_payment_status error for %s: %s", request_id, exc.__class__.__name__)
             return {"success": False, "error": str(exc)}
 
     async def verify_payment(
         self,
         request_id: str,
-        expected_amount: Optional[int | float] = None,
+        expected_amount: Optional[int | float | Decimal] = None,
         expected_order_ref: Optional[str] = None,
         expected_ccy: str = "TMN",
         **kwargs: Any,
     ) -> dict[str, Any]:
-        """Verifies a payment request against expected internal invoice parameters."""
+        """Verifies a payment request against expected internal invoice parameters using exact Decimal comparison."""
         res = await self.get_payment_status(request_id)
         if not res.get("success"):
             return res
 
-        if expected_order_ref and str(res.get("order_ref")) != str(expected_order_ref):
+        if expected_order_ref and str(res.get("order_ref") or "").strip() != str(expected_order_ref).strip():
             logger.critical(
                 "FrenzyEx order_ref mismatch! expected=%s, got=%s (request_id=%s)",
-                expected_order_ref, res.get("order_ref"), request_id
+                expected_order_ref, res.get("order_ref"), request_id,
             )
             return {"success": False, "error": "Order reference mismatch"}
 
-        if expected_amount is not None and res.get("amount") is not None:
-            if int(float(res["amount"])) != int(float(expected_amount)):
+        if expected_ccy:
+            remote_ccy = str(res.get("amount_ccy") or "").upper().strip()
+            if remote_ccy != expected_ccy.upper().strip():
+                logger.critical(
+                    "FrenzyEx currency mismatch! expected=%s, got=%s (request_id=%s)",
+                    expected_ccy, remote_ccy, request_id,
+                )
+                return {"success": False, "error": "Payment currency mismatch"}
+
+        if expected_amount is not None:
+            got_dec = self._parse_decimal(res.get("amount"))
+            exp_dec = self._parse_decimal(expected_amount)
+            if got_dec is None or exp_dec is None or got_dec != exp_dec:
                 logger.critical(
                     "FrenzyEx amount mismatch! expected=%s, got=%s (request_id=%s)",
-                    expected_amount, res.get("amount"), request_id
+                    expected_amount, res.get("amount"), request_id,
                 )
                 return {"success": False, "error": "Payment amount mismatch"}
-
-        if expected_ccy and res.get("amount_ccy") and res["amount_ccy"].upper() != expected_ccy.upper():
-            return {"success": False, "error": "Payment currency mismatch"}
 
         return res
 
@@ -338,7 +386,7 @@ class FrenzyExGateway(PaymentGateway):
 
         url = f"{self.base_url}/api/v1/payment-requests/{request_id.strip()}/cancel"
         try:
-            response = await self._request_with_retry("POST", url, max_retries=2)
+            response = await self._request_with_retry("POST", url, max_retries=1, retry_on_read_timeout=False)
             if response.status_code == 200:
                 data = response.json()
                 return {"success": True, "status": data.get("status", "canceled")}
@@ -352,6 +400,6 @@ class FrenzyExGateway(PaymentGateway):
                     "error": "Payment is already paid or under review.",
                 }
             return {"success": False, "status_code": response.status_code, "error": f"HTTP {response.status_code}"}
-        except httpx.HTTPError as exc:
-            logger.error("FrenzyEx cancel_payment HTTP error for %s: %s", request_id, exc)
+        except Exception as exc:
+            logger.error("FrenzyEx cancel_payment error for %s: %s", request_id, exc.__class__.__name__)
             return {"success": False, "error": str(exc)}

@@ -12,6 +12,8 @@ import logging
 import random
 import string
 
+logger = logging.getLogger(__name__)
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, "database", "candy.db")
 LEGACY_DB_PATH = os.path.join(BASE_DIR, "candy.db")
@@ -97,6 +99,7 @@ async def init_db():
             "ALTER TABLE invoices ADD COLUMN license_note TEXT",
             "ALTER TABLE invoices ADD COLUMN panel_id INTEGER",
             "ALTER TABLE invoices ADD COLUMN renew_license_id INTEGER",
+            "ALTER TABLE invoices ADD COLUMN renew_mode TEXT",
             "ALTER TABLE invoices ADD COLUMN last_error TEXT",
             "ALTER TABLE invoices ADD COLUMN payment_method TEXT",
             "ALTER TABLE invoices ADD COLUMN crypto_amount REAL",
@@ -1099,8 +1102,8 @@ async def get_licenses_for_user(user_id: int):
     """Return all licenses for a user, newest first, joined with panel URL and invoice metadata."""
     sql = '''
         SELECT
-            l.id, l.invoice_id, l.sub_id, l.license_note, l.created_at,
-            p.url AS panel_url, p.label AS panel_label,
+            l.id, l.invoice_id, l.sub_id, l.license_note, l.created_at, l.panel_id,
+            p.url AS panel_url, p.label AS panel_label, p.sub_link,
             i.days, i.gb, i.plan_id
         FROM xui_licenses l
         LEFT JOIN xui_panels p ON p.id = l.panel_id
@@ -1112,6 +1115,30 @@ async def get_licenses_for_user(user_id: int):
         db.row_factory = aiosqlite.Row
         async with db.execute(sql, (user_id,)) as cursor:
             return await cursor.fetchall()
+
+
+async def get_license_details(license_id: int, user_id: int = None) -> dict | None:
+    """Return single license joined with panel and invoice metadata."""
+    sql = '''
+        SELECT
+            l.id, l.invoice_id, l.user_id, l.sub_id, l.license_note, l.created_at, l.panel_id,
+            p.url AS panel_url, p.label AS panel_label, p.sub_link, p.bearer_token,
+            i.days, i.gb, i.plan_id
+        FROM xui_licenses l
+        LEFT JOIN xui_panels p ON p.id = l.panel_id
+        LEFT JOIN invoices i ON i.id = l.invoice_id
+        WHERE l.id = ?
+    '''
+    params = [license_id]
+    if user_id:
+        sql += " AND l.user_id = ?"
+        params.append(user_id)
+        
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(sql, tuple(params)) as cursor:
+            row = await cursor.fetchone()
+            return dict(row) if row else None
 
 
 async def get_license_by_invoice(invoice_id: str):
@@ -2022,6 +2049,100 @@ async def cleanup_expired_data(retention_days: int = 14) -> dict:
     return summary
 
 
+async def cleanup_expired_xui_licenses(grace_period_days: int = 2) -> dict:
+    """
+    Periodically cleans up licenses that have been expired for at least `grace_period_days` (default 2 days / 48 hours).
+    Deletes the client from the X-UI panel and removes the license from the bot database.
+    """
+    from bot.services.sub_stats import fetch_sub_stats
+    from bot.services.xui_client import XUIClient, build_client_email
+    import time
+    from datetime import datetime
+
+    now = int(time.time())
+    grace_seconds = grace_period_days * 86400
+    deleted_count = 0
+    errors = []
+
+    sql = """
+        SELECT l.id, l.user_id, l.panel_id, l.sub_id, l.license_note, l.invoice_id, l.created_at,
+               p.url AS panel_url, p.bearer_token, p.sub_link,
+               i.days AS invoice_days, i.gb AS invoice_gb, i.created_at AS invoice_created_at
+        FROM xui_licenses l
+        LEFT JOIN xui_panels p ON l.panel_id = p.id
+        LEFT JOIN invoices i ON l.invoice_id = i.id
+    """
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(sql) as cur:
+            licenses = [dict(r) for r in await cur.fetchall()]
+
+    for lic in licenses:
+        is_eligible = False
+
+        # 1. Check via sub-link stats
+        sub_link = lic.get('sub_link')
+        sub_id = lic.get('sub_id')
+        if sub_link and sub_id:
+            try:
+                stats = await asyncio.wait_for(fetch_sub_stats(sub_link, sub_id), timeout=3.0)
+                if stats:
+                    # Check time expiration
+                    exp = stats.get('expire_timestamp') or 0
+                    if exp > 0 and (now - exp) >= grace_seconds:
+                        is_eligible = True
+                    # Check traffic exhaustion if expired and 2 days passed since creation
+                    elif stats.get('is_expired') and lic.get('created_at'):
+                        try:
+                            c_dt = datetime.fromisoformat(str(lic['created_at']).replace("Z", ""))
+                            if (datetime.now() - c_dt).total_seconds() >= grace_seconds:
+                                is_eligible = True
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+        # 2. Check via DB if not verified via sub_link
+        if not is_eligible:
+            inv_days = lic.get('invoice_days') or 0
+            created_at = lic.get('created_at') or lic.get('invoice_created_at')
+            if inv_days > 0 and created_at:
+                try:
+                    c_dt = datetime.fromisoformat(str(created_at).replace("Z", ""))
+                    expiry_with_grace = c_dt.timestamp() + (inv_days + grace_period_days) * 86400
+                    if now >= expiry_with_grace:
+                        is_eligible = True
+                except Exception:
+                    pass
+
+        if is_eligible:
+            lic_id = lic['id']
+            # Delete from X-UI panel
+            if lic.get('panel_url') and lic.get('bearer_token'):
+                try:
+                    email = build_client_email(lic.get('license_note') or "", lic['user_id'], lic['invoice_id'])
+                    async with XUIClient(lic['panel_url'], lic['bearer_token']) as client:
+                        await client.delete_client(email)
+                        logger.info(f"Deleted expired client {email} from XUI panel {lic['panel_url']}")
+                except Exception as e:
+                    logger.warning(f"Could not delete expired client {lic.get('sub_id')} from XUI panel: {e}")
+                    errors.append(str(e))
+
+            # Delete from DB
+            try:
+                async with aiosqlite.connect(DB_PATH) as db:
+                    await db.execute("PRAGMA busy_timeout = 5000;")
+                    await db.execute("DELETE FROM xui_licenses WHERE id = ?", (lic_id,))
+                    await db.commit()
+                deleted_count += 1
+            except Exception as e:
+                logger.error(f"Failed to delete expired license {lic_id} from DB: {e}")
+
+    return {"deleted_licenses": deleted_count, "errors": errors}
+
+
+
 # ============================================================
 # COMMISSION AGENT / AGENCY
 # ============================================================
@@ -2444,6 +2565,7 @@ async def create_free_invoice(
     gift_amount: int,
     license_note: str,
     renew_license_id,
+    renew_mode: str = None,
 ) -> bool:
     """Atomically validates wallet balance and inserts a zero-cost invoice."""
     async with aiosqlite.connect(DB_PATH) as db:
@@ -2457,15 +2579,15 @@ async def create_free_invoice(
             INSERT INTO invoices
               (id, user_id, plan_id, days, gb, base_price, wallet_deduction,
                discount_code, discount_deduction, gift_code, gift_deduction,
-               final_amount, license_note, status, renew_license_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'pending', ?)
+               final_amount, license_note, status, renew_license_id, renew_mode)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'pending', ?, ?)
             """,
             (
                 invoice_id, user_id, plan_id, days, gb,
                 base_price, wallet_deduction,
                 discount_code, discount_amount,
                 gift_code, gift_amount,
-                license_note, renew_license_id,
+                license_note, renew_license_id, renew_mode,
             ),
         )
         await db.commit()

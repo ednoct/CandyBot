@@ -118,12 +118,12 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
         license_note = data.get('license_note', '')
         await db.execute('''
             INSERT INTO invoices (id, user_id, plan_id, days, gb, base_price, wallet_deduction, 
-            discount_code, discount_deduction, gift_code, gift_deduction, final_amount, license_note, status, renew_license_id, payment_method, crypto_amount, crypto_rate)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)
+            discount_code, discount_deduction, gift_code, gift_deduction, final_amount, license_note, status, renew_license_id, renew_mode, payment_method, crypto_amount, crypto_rate)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)
         ''', (invoice_id, callback.from_user.id, data.get('plan_id'), data.get('days'), data.get('gb'),
               data.get('base_price'), data.get('wallet_deduction'), data.get('discount_code'), 
               data.get('discount_amount', 0), data.get('gift_code'), data.get('gift_amount', 0), 
-              amount, license_note, data.get('renew_license_id'), gateway_code,
+              amount, license_note, data.get('renew_license_id'), data.get('renew_mode'), gateway_code,
               crypto_amount, crypto_rate))
               
         # Also create a legacy payment_report if offline
@@ -814,7 +814,15 @@ async def build_receipt_notification_content(
     )
     admin_builder.row(btn_reject, btn_confirm)
 
-    # Row 3: Back button (if requested)
+    # Row 3: Delete invoice (button 5)
+    btn_del_invoice = types.InlineKeyboardButton(
+        text="🗑 حذف فاکتور", 
+        callback_data=f"fin_del_inv_{invoice_id}",
+        style="danger"
+    )
+    admin_builder.row(btn_del_invoice)
+
+    # Row 4: Back button (if requested)
     if with_back_button:
         back_cb = with_back_button if isinstance(with_back_button, str) else "fin_pending_receipts"
         btn_back = types.InlineKeyboardButton(
@@ -1331,3 +1339,61 @@ async def admin_retry_provision(callback: types.CallbackQuery):
     from payment.confirm import PaymentConfirmationManager
     pcm = PaymentConfirmationManager(callback.bot)
     await pcm._provision_and_deliver(invoice_id, inv['user_id'], inv)
+
+
+# === ROUTER: ADMIN DELETE INVOICE FROM RECEIPT VIEW ===
+
+@payment_router.callback_query(F.data.startswith("fin_del_inv_"))
+async def admin_prompt_delete_invoice(callback: types.CallbackQuery):
+    """Prompts admin confirmation before deleting invoice from receipt view."""
+    from bot.config import ADMIN_IDS
+    if callback.from_user.id not in ADMIN_IDS:
+        return await callback.answer("❌ دسترسی غیرمجاز.", show_alert=True)
+    
+    invoice_id = callback.data.replace("fin_del_inv_", "").strip()
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        types.InlineKeyboardButton(text="🗑 بله، فاکتور حذف شود", callback_data=f"fin_confirm_del_inv_{invoice_id}"),
+        types.InlineKeyboardButton(text="🔙 انصراف", callback_data=f"fin_cancel_del_inv_{invoice_id}")
+    )
+    await callback.message.reply(
+        f"⚠️ <b>آیا از حذف کامل فاکتور <code>{invoice_id}</code> اطمینان دارید؟</b>\n\n"
+        f"با تایید، این فاکتور و اطلاعات رسید مربوط به آن از دیتابیس حذف خواهند شد.",
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@payment_router.callback_query(F.data.startswith("fin_confirm_del_inv_"))
+async def admin_confirm_delete_invoice(callback: types.CallbackQuery):
+    """Executes deletion of invoice and associated payment reports/licenses."""
+    from bot.config import ADMIN_IDS
+    if callback.from_user.id not in ADMIN_IDS:
+        return await callback.answer("❌ دسترسی غیرمجاز.", show_alert=True)
+        
+    invoice_id = callback.data.replace("fin_confirm_del_inv_", "").strip()
+    
+    async with aiosqlite.connect(db_manager.DB_PATH) as db:
+        await db.execute("PRAGMA busy_timeout = 5000;")
+        await db.execute("DELETE FROM xui_licenses WHERE invoice_id = ?", (invoice_id,))
+        await db.execute("DELETE FROM payment_reports WHERE invoice_id = ?", (invoice_id,))
+        await db.execute("DELETE FROM invoices WHERE id = ?", (invoice_id,))
+        await db.commit()
+        
+    await callback.answer("✅ فاکتور با موفقیت حذف شد.", show_alert=True)
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+
+@payment_router.callback_query(F.data.startswith("fin_cancel_del_inv_"))
+async def admin_cancel_delete_invoice(callback: types.CallbackQuery):
+    """Cancels invoice deletion prompt."""
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    await callback.answer("عملیات حذف فاکتور لغو شد.")
+

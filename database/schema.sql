@@ -142,6 +142,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     license_note TEXT,
     status TEXT DEFAULT 'pending',
     renew_license_id INTEGER,
+    renew_mode TEXT,
     last_error TEXT,
     payment_method TEXT,
     crypto_amount REAL,

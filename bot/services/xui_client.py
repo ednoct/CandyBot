@@ -292,25 +292,31 @@ class XUIClient:
         limit_ip: int,
         inbound_ids: list,
         group: str = "Customers",
+        sub_id: Optional[str] = None,
     ) -> bool:
         """
         Create a new client on the panel.
         total_gb=0 means unlimited traffic.
         group: XUI client group name ("Customers" for paid, "Trial" for free test).
+        sub_id: optional custom subscription ID to preserve existing license keys.
         """
         total_bytes = int(float(total_gb) * 1024 ** 3) if float(total_gb) > 0 else 0
         expiry_ms = int((time.time() + days * 86400) * 1000)
 
+        client_payload = {
+            "email": email,
+            "totalGB": total_bytes,
+            "expiryTime": expiry_ms,
+            "tgId": int(tg_id),
+            "limitIp": int(limit_ip),
+            "enable": True,
+            "group": group,
+        }
+        if sub_id:
+            client_payload["subId"] = sub_id
+
         payload = {
-            "client": {
-                "email": email,
-                "totalGB": total_bytes,
-                "expiryTime": expiry_ms,
-                "tgId": int(tg_id),
-                "limitIp": int(limit_ip),
-                "enable": True,
-                "group": group,
-            },
+            "client": client_payload,
             "inboundIds": inbound_ids,
         }
         await self._post("panel/api/clients/add", payload)
@@ -355,10 +361,12 @@ class XUIClient:
         limit_ip: int,
         inbound_ids: list,
         group: str = "Customers",
+        sub_id: Optional[str] = None,
     ) -> str:
         """
         Idempotent: create the client if it doesn't exist, then return its subId.
         group: "Customers" for paid plans, "Trial" for free tests.
+        sub_id: optional custom subscription ID to preserve.
 
         Raises RuntimeError if provisioning fails or no subId is available.
         """
@@ -366,18 +374,27 @@ class XUIClient:
         client_data = await self.get_client(email)
 
         if not client_data:
-            await self.add_client(email, total_gb, days, tg_id, limit_ip, inbound_ids, group=group)
+            await self.add_client(email, total_gb, days, tg_id, limit_ip, inbound_ids, group=group, sub_id=sub_id)
             # Brief pause for panel to register the new client
             await asyncio.sleep(1.2)
             client_data = await self.get_client(email)
 
-        sub_id = await self.get_client_sub_id(email, client_data)
-        if not sub_id:
+        found_sub_id = await self.get_client_sub_id(email, client_data)
+        if sub_id and found_sub_id != sub_id:
+            try:
+                await self.update_client(email, {"subId": sub_id})
+                found_sub_id = sub_id
+            except Exception:
+                pass
+
+        if not found_sub_id:
+            if sub_id:
+                return sub_id
             raise RuntimeError(
                 f"کلاینت {email} ساخته شد اما پنل subId برنگرداند. "
                 "اتصال و نسخه 3x-ui را بررسی کنید."
             )
-        return sub_id
+        return found_sub_id
 
     async def renew(
         self,
@@ -418,7 +435,7 @@ class XUIClient:
 # Module-level convenience coroutines (called from payment/confirm.py)
 # ---------------------------------------------------------------------------
 
-async def provision_license(panel_row, invoice_row, user_id: int, group: str = "Customers") -> str:
+async def provision_license(panel_row, invoice_row, user_id: int, group: str = "Customers", sub_id: Optional[str] = None) -> str:
     """
     Top-level coroutine that provisions a 3x-UI license for a paid invoice.
 
@@ -428,6 +445,7 @@ async def provision_license(panel_row, invoice_row, user_id: int, group: str = "
     invoice_row : aiosqlite.Row from `invoices`   (id, days, gb, license_note)
     user_id     : Telegram user ID
     group       : XUI client group — "Customers" for paid plans, "Trial" for free tests
+    sub_id      : Optional custom subscription ID to preserve
 
     Returns
     -------
@@ -472,6 +490,7 @@ async def provision_license(panel_row, invoice_row, user_id: int, group: str = "
             limit_ip=ip_limit,
             inbound_ids=inbound_ids,
             group=group,
+            sub_id=sub_id,
         )
 
     logger.info("License provisioned | email=%s | sub_id=%s | group=%s", email, sub_id, group)

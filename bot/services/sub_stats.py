@@ -62,8 +62,40 @@ async def fetch_sub_stats(sub_link: str, sub_id: str) -> dict | None:
                     "days_left": max(0, days_left),
                     "is_expired": (expire > 0 and now > expire) or (total > 0 and (up + down) >= total),
                     "is_unlimited_traffic": total == 0,
-                    "is_unlimited_time": expire == 0
+                    "is_unlimited_time": expire == 0,
+                    "expire_timestamp": expire
                 }
     except Exception as e:
         logger.error(f"Failed to fetch sub stats for {sub_id}: {e}")
         return None
+
+
+async def check_if_license_is_expired(lic: dict) -> bool:
+    """
+    Check if a license is expired via sub_link stats or database date calculation.
+    """
+    import asyncio
+    from datetime import datetime
+
+    sub_link = lic.get('sub_link')
+    sub_id = lic.get('sub_id')
+    if sub_link and sub_id:
+        try:
+            stats = await asyncio.wait_for(fetch_sub_stats(sub_link, sub_id), timeout=2.0)
+            if stats:
+                return bool(stats.get('is_expired'))
+        except Exception:
+            pass
+
+    days = lic.get('days') or lic.get('invoice_days') or 0
+    created_at = lic.get('created_at') or lic.get('invoice_created_at')
+    if days > 0 and created_at:
+        try:
+            c_dt = datetime.fromisoformat(str(created_at).replace("Z", ""))
+            if (datetime.now() - c_dt).total_seconds() > days * 86400:
+                return True
+        except Exception:
+            pass
+
+    return False
+

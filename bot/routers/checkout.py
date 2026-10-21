@@ -141,6 +141,9 @@ async def prompt_license_note(callback: types.CallbackQuery, state: FSMContext):
     if not plan:
         return await callback.answer("پلن یافت نشد.", show_alert=True)
 
+    data = await state.get_data()
+    renew_lic_id = data.get('renew_license_id')
+
     # Stash plan data for later use
     await state.update_data(
         plan_id=plan_id,
@@ -148,8 +151,13 @@ async def prompt_license_note(callback: types.CallbackQuery, state: FSMContext):
         plan_price_gb=plan['price_per_gb'],
         admin_description=plan['admin_description'],
         plan_name=plan['name'],
-        license_note=''  # default empty
     )
+
+    if renew_lic_id:
+        # It's a renewal: retain existing license note and proceed directly to calculator
+        return await render_calculator(callback.message, state, plan_id)
+
+    await state.update_data(license_note='')  # default empty
     await state.set_state(CheckoutStates.waiting_for_license_note)
 
     builder = InlineKeyboardBuilder()
@@ -546,6 +554,7 @@ async def pay_free(callback: types.CallbackQuery, state: FSMContext):
         gift_amount=data.get('gift_amount', 0),
         license_note=data.get('license_note', ''),
         renew_license_id=data.get('renew_license_id'),
+        renew_mode=data.get('renew_mode'),
     )
     if not ok:
         return await callback.answer(
