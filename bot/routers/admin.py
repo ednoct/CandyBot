@@ -57,7 +57,7 @@ async def _build_admin_dashboard_text(counts: dict) -> str:
     # Action Required section — only show non-zero items
     action_lines = []
     if pending_receipts > 0:
-        action_lines.append(f"  💳 فیش‌های کارت‌به‌کارت: <b>{pending_receipts}</b> مورد منتظر تایید")
+        action_lines.append(f"  💳 رسید‌های تایید نشده: <b>{pending_receipts}</b> مورد منتظر تایید")
     if pending_settlements > 0:
         action_lines.append(f"  💸 تسویه‌های نماینده: <b>{pending_settlements}</b> مورد منتظر پرداخت")
     if pending_activations > 0:
