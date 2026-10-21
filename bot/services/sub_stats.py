@@ -6,6 +6,8 @@ Patched to expose `expire_ts` and `raw_days_left` so 2-day post-expiry cleanup w
 """
 import time
 import logging
+import asyncio
+from datetime import datetime
 import httpx
 from typing import Optional, Dict, Any
 
@@ -90,6 +92,7 @@ async def fetch_sub_stats(sub_link_base: str, sub_id: str) -> Optional[Dict[str,
                 "days_left": days_left,
                 "raw_days_left": raw_days_left,
                 "expire_ts": expire,
+                "expire_timestamp": expire,
                 "is_unlimited_traffic": is_unlimited_traffic,
                 "is_unlimited_time": is_unlimited_time,
                 "is_expired": is_expired,
@@ -97,3 +100,31 @@ async def fetch_sub_stats(sub_link_base: str, sub_id: str) -> Optional[Dict[str,
     except Exception as e:
         logging.debug(f"Failed to fetch sub stats from {url}: {e}")
         return None
+
+
+async def check_if_license_is_expired(lic: dict) -> bool:
+    """
+    Check if a license is expired via sub_link stats or database date calculation.
+    """
+    sub_link = lic.get("sub_link")
+    sub_id = lic.get("sub_id")
+    if sub_link and sub_id:
+        try:
+            stats = await asyncio.wait_for(fetch_sub_stats(sub_link, sub_id), timeout=2.5)
+            if stats:
+                return bool(stats.get("is_expired"))
+        except Exception:
+            pass
+
+    days = lic.get("days") or lic.get("invoice_days") or 0
+    created_at = lic.get("created_at") or lic.get("invoice_created_at")
+    if days > 0 and created_at:
+        try:
+            raw_str = str(created_at).replace("Z", "").strip()
+            c_dt = datetime.fromisoformat(raw_str)
+            if (datetime.now() - c_dt).total_seconds() > float(days) * 86400:
+                return True
+        except Exception:
+            pass
+
+    return False
