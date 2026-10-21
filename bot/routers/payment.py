@@ -201,7 +201,7 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
         
         row2 = [types.InlineKeyboardButton(text="کپی کامنت", copy_text=types.CopyTextButton(text=str(memo_gram)))]
         if exchanger_gram and exchanger_gram != "0" and exchanger_gram.startswith("http"):
-            row2.append(types.InlineKeyboardButton(text="صرافی بدون کارمزد", web_app=types.WebAppInfo(url=exchanger_gram)), style="danger")
+            row2.append(types.InlineKeyboardButton(text="صرافی بدون کارمزد", web_app=types.WebAppInfo(url=exchanger_gram), style="danger"))
         builder.row(*row2)
         builder.row(
             types.InlineKeyboardButton(text="📢 آموزش پیدا کردن هش رسید", url="https://t.me/CandyConnectHelp/4", style="primary"),
