@@ -3,6 +3,7 @@ confirm.py
 ----------
 Module containing functionalities for confirm.
 """
+
 # === IMPORTS ===
 import logging
 import aiosqlite
@@ -11,21 +12,15 @@ from typing import Optional
 from database import db_manager
 from bot.services.notifications import NotificationService
 
+
 # === PAYMENT CONFIRMATION LOGIC ===
 class PaymentConfirmationManager:
     """
     Handles side effects of payment states: Paid, Failed, Expired.
     Replaces legacy PaymentConfirm.php.
-
-    On a successful product purchase (plan_id != 0):
-      1. Marks invoice as paid
-      2. Applies cashback / wallet credit
-      3. Looks up the XUI panel bound to the plan
-      4. Provisions a license on that panel (idempotent)
-      5. Delivers sub_id + QR code to the user
     """
+
     def __init__(self, bot):
-        """Handles   init  ."""
         self.bot = bot
 
     # ------------------------------------------------------------------
@@ -33,30 +28,31 @@ class PaymentConfirmationManager:
     # ------------------------------------------------------------------
     async def confirm_paid(self, invoice_id: str, cashback_percent: int = 0, method: str = 'gateway') -> bool:
         """
-        Marks an invoice as paid, applies cashback, provisions a license if
-        this is a product invoice, and notifies the user and admin.
+        Marks an invoice as processing/paid, applies cashback, provisions a license if
+        this is a product invoice, marks it approved, and notifies the user and admin.
         """
         try:
             async with aiosqlite.connect(db_manager.DB_PATH) as db:
                 db.row_factory = aiosqlite.Row
 
-                # Fetch invoice first
                 async with db.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)) as cursor:
                     invoice = await cursor.fetchone()
 
                 if not invoice:
                     return False
 
-                # Atomic check & update: only transition to 'paid' if not already paid/approved
+                # For product invoices (plan_id != 0), transition directly to 'processing'
+                # For wallet top-ups (plan_id == 0), transition to 'approved'
+                initial_target_status = 'processing' if invoice['plan_id'] != 0 else 'approved'
+
                 cursor = await db.execute(
-                    "UPDATE invoices SET status = 'paid', payment_method = COALESCE(payment_method, ?) WHERE id = ? AND status NOT IN ('paid', 'approved', 'completed')",
-                    (method, invoice_id)
+                    "UPDATE invoices SET status = ?, payment_method = COALESCE(payment_method, ?) "
+                    "WHERE id = ? AND status NOT IN ('processing', 'paid', 'approved', 'completed')",
+                    (initial_target_status, method, invoice_id)
                 )
                 if cursor.rowcount == 0:
-                    # Invoice was already paid or approved concurrently (prevent race condition / double provision)
                     return False
 
-                # Also update corresponding payment_reports status if exists
                 try:
                     await db.execute("UPDATE payment_reports SET status = 'paid' WHERE invoice_id = ?", (invoice_id,))
                 except Exception:
@@ -65,37 +61,33 @@ class PaymentConfirmationManager:
                 user_id = invoice['user_id']
                 wallet_deduction = invoice['wallet_deduction'] if 'wallet_deduction' in invoice.keys() else 0
 
-                # Wallet-top-up invoice (plan_id == 0)
                 if invoice['plan_id'] == 0:
                     added_balance = invoice['final_amount']
                     if added_balance > 0:
                         await db.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (added_balance, user_id))
 
-                # Atomic wallet deduction if invoice used wallet balance
                 if wallet_deduction and wallet_deduction > 0:
                     deduct_cur = await db.execute(
                         "UPDATE users SET balance = balance - ? WHERE id = ? AND balance >= ?",
                         (wallet_deduction, user_id, wallet_deduction)
                     )
                     if deduct_cur.rowcount == 0:
-                        # Insufficient balance at confirmation time — roll back invoice status to pending
                         await db.rollback()
                         await db.execute("UPDATE invoices SET status = 'pending' WHERE id = ?", (invoice_id,))
                         await db.commit()
                         return False
 
                 await db.commit()
-                
-            # Now trigger async helpers (Cashback and Referral)
+
             paid_amount = invoice['final_amount']
-            
-            # Cashback (applied by new helper)
+
+            # Cashback
             cashback_res = await db_manager.credit_cashback(invoice_id, user_id, paid_amount)
             if cashback_res:
                 try:
                     await self.bot.send_message(
                         chat_id=user_id,
-                        text=f"🎁 کاربر عزیز مبلغ {cashback_res['amount']:,} تومان به عنوان کش‌بک به حساب شما واریز گردید.",
+                        text=f"🎁 مبلغ <b>{cashback_res['amount']:,} تومان</b> هدیه کش‌بک به کیف پول شما اضافه شد.",
                         parse_mode="HTML"
                     )
                 except Exception as e:
@@ -108,13 +100,13 @@ class PaymentConfirmationManager:
                 try:
                     await self.bot.send_message(
                         chat_id=referrer_id,
-                        text=f"🎉 تبریک! شما {ref_res['amount']:,} تومان بابت خرید زیرمجموعه خود پاداش دریافت کردید و به کیف پول شما اضافه شد.",
+                        text=f"🎉 مبلغ <b>{ref_res['amount']:,} تومان</b> پورسانت معرفی به کیف پول شما واریز شد.",
                         parse_mode="HTML"
                     )
                 except Exception as e:
                     logging.error(f"Failed to send referral commission message: {e}")
 
-            # Agent commission (نمایندگی کمیسیونی)
+            # Agent commission
             agent_res = await db_manager.credit_agent_commission(invoice_id)
             if agent_res:
                 agent_id = agent_res['agent_id']
@@ -122,23 +114,21 @@ class PaymentConfirmationManager:
                     await self.bot.send_message(
                         chat_id=agent_id,
                         text=(
-                            "💼 <b>کمیسیون نمایندگی جدید دریافت شد!</b>\n\n"
-                            f"کاربر زیرمجموعه شما خریدی به مبلغ <b>{agent_res['order_amount']:,} تومان</b> انجام داد.\n"
-                            f"💰 <b>مبلغ پورسانت شما:</b> <b>{agent_res['commission_amount']:,} تومان</b> ({agent_res['commission_percent']}٪)\n"
-                            f"💳 <b>موجودی فعلی کمیسیون شما:</b> <b>{agent_res['new_balance']:,} تومان</b>\n\n"
-                            "جهت مشاهده جزئیات یا درخواست تسویه به بخش «نمایندگی» در منوی اصلی مراجعه فرمایید."
+                            "💰 <b>پورسانت جدید دریافت شد!</b>\n\n"
+                            f"یک خرید به مبلغ <b>{agent_res['order_amount']:,} تومان</b> توسط زیرمجموعه شما انجام شد.\n"
+                            f"💵 <b>پورسانت شما:</b> <b>{agent_res['commission_amount']:,} تومان</b> ({agent_res['commission_percent']}%)\n"
+                            f"🏦 <b>موجودی پورسانت:</b> <b>{agent_res['new_balance']:,} تومان</b>"
                         ),
                         parse_mode="HTML"
                     )
                 except Exception as e:
                     logging.error(f"Failed to send agent commission notification: {e}")
 
-
             if invoice['plan_id'] == 0:
                 try:
                     await self.bot.send_message(
                         chat_id=user_id,
-                        text=f"✅ کیف پول شما با موفقیت به مبلغ {paid_amount:,} تومان شارژ شد.",
+                        text=f"✅ کیف پول شما به مبلغ <b>{paid_amount:,} تومان</b> با موفقیت شارژ شد.",
                         parse_mode="HTML"
                     )
                 except Exception:
@@ -149,35 +139,33 @@ class PaymentConfirmationManager:
                 db.row_factory = aiosqlite.Row
                 async with db.execute("SELECT value FROM settings WHERE key = 'Channel_Report'") as cursor:
                     channel_row = await cursor.fetchone()
-                
+
                 if channel_row and channel_row['value']:
-                    # Re-fetch user for username
                     async with db.execute("SELECT username FROM users WHERE id = ?", (user_id,)) as cur:
                         u = await cur.fetchone()
                     username = u['username'] if u and u['username'] else "Unknown"
                     admin_text = (
-                        f"💵 پرداخت جدید\n"
-                        f"- 👤 نام کاربری: @{username}\n"
-                        f"- 🆔 آیدی: {user_id}\n"
-                        f"- 💸 مبلغ: {paid_amount:,} تومان\n"
-                        f"- 💳 روش: {method}"
+                        f"✅ <b>گزارش پرداخت موفق</b>\n"
+                        f"- نام کاربری: @{username}\n"
+                        f"- آیدی عددی: <code>{user_id}</code>\n"
+                        f"- مبلغ: {paid_amount:,} تومان\n"
+                        f"- روش پرداخت: {method}"
                     )
                     try:
                         await self.bot.send_message(chat_id=channel_row['value'], text=admin_text, parse_mode="HTML")
                     except Exception as e:
                         logging.error(f"Failed to send admin report: {e}")
-                        
-            # Also route to centralized NotificationService (finance_report / buy_report)
+
             try:
                 notif_service = NotificationService(self.bot)
                 topic_key = "buy_report" if invoice['plan_id'] != 0 else "finance_report"
                 await notif_service.send_report(
                     topic_key=topic_key,
                     text=(
-                        f"💵 <b>پرداخت موفق</b>\n\n"
-                        f"🛒 فاکتور: <code>{invoice_id}</code>\n"
-                        f"💸 مبلغ: <b>{paid_amount:,} تومان</b>\n"
-                        f"💳 روش: <b>{method}</b>"
+                        f"✅ <b>تایید پرداخت جدید</b>\n\n"
+                        f"شماره فاکتور: <code>{invoice_id}</code>\n"
+                        f"مبلغ: <b>{paid_amount:,} تومان</b>\n"
+                        f"روش پرداخت: <b>{method}</b>"
                     ),
                     user_id=user_id
                 )
@@ -185,54 +173,49 @@ class PaymentConfirmationManager:
                 logging.error(f"Failed to send finance/buy report via NotificationService: {e}")
 
             # ----------------------------------------------------------------
-            # XUI PROVISIONING — only for product invoices (plan_id != 0)
+            # XUI PROVISIONING - only for product invoices (plan_id != 0)
             # ----------------------------------------------------------------
             if invoice['plan_id'] != 0:
-                # Mark as processing
                 await db_manager.mark_invoice_processing(invoice_id)
                 await self._provision_and_deliver(invoice_id, user_id, invoice)
-                
-                # Feedback & Acquisition
+
                 feedback_enabled = await db_manager.get_setting('feedback_enabled', '1')
                 if feedback_enabled == '1':
                     try:
                         from aiogram.utils.keyboard import InlineKeyboardBuilder
-                        from aiogram import types as tg_types
                         fb_builder = InlineKeyboardBuilder()
                         for i in range(1, 6):
                             fb_builder.button(text=("⭐" * i), callback_data=f"fb_rate_{invoice_id}_{i}")
                         fb_builder.adjust(1)
                         await self.bot.send_message(
                             chat_id=user_id,
-                            text="چقدر از تجربه خرید خود رضایت دارید؟ (۱ تا ۵ ستاره)",
+                            text="🌟 لطفاً میزان رضایت خود از فرآیند خرید را ثبت کنید:",
                             reply_markup=fb_builder.as_markup()
                         )
-                    except Exception as e:
+                    except Exception:
                         pass
-                        
+
                 survey_enabled = await db_manager.get_setting('acquisition_survey_enabled', '0')
                 if survey_enabled == '1':
                     should_ask = await db_manager.maybe_mark_acquisition_asked(user_id)
                     if should_ask:
                         try:
                             from aiogram.utils.keyboard import InlineKeyboardBuilder
-                            from aiogram import types as tg_types
                             acq_builder = InlineKeyboardBuilder()
-                            acq_builder.button(text="معرفی دوستان", callback_data="acq_friends")
-                            acq_builder.button(text="تلگرام", callback_data="acq_telegram")
-                            acq_builder.button(text="اینستاگرام", callback_data="acq_instagram")
-                            acq_builder.button(text="سایر", callback_data="acq_other")
+                            acq_builder.button(text="👥 معرفی دوستان", callback_data="acq_friends")
+                            acq_builder.button(text="📢 تلگرام", callback_data="acq_telegram")
+                            acq_builder.button(text="📸 اینستاگرام", callback_data="acq_instagram")
+                            acq_builder.button(text="🌐 سایر", callback_data="acq_other")
                             acq_builder.adjust(2, 2)
                             await self.bot.send_message(
                                 chat_id=user_id,
-                                text="شما از چه طریقی با ما آشنا شدید؟ لطفاً برای بهبود خدمات یکی از گزینه‌های زیر را انتخاب کنید:",
+                                text="🔍 چگونه با خدمات ما آشنا شدید؟",
                                 reply_markup=acq_builder.as_markup()
                             )
-                        except Exception as e:
+                        except Exception:
                             pass
 
             return True
-
         except Exception as e:
             logging.error(f"Error in confirm_paid for invoice {invoice_id}: {e}", exc_info=True)
             return False
@@ -241,32 +224,25 @@ class PaymentConfirmationManager:
     # PRIVATE: _provision_and_deliver
     # ------------------------------------------------------------------
     async def _provision_and_deliver(self, invoice_id: str, user_id: int, invoice, is_free_test: bool = False) -> None:
-        """
-        1. Find the panel bound to the invoice's plan.
-        2. Provision a license on that panel.
-        3. Store the license row.
-        4. Deliver sub_id + QR code to user.
-        """
-        # Convert sqlite3.Row to dict to avoid .get() issues
         if not isinstance(invoice, dict):
             invoice = dict(invoice)
-            
+
         plan_id = invoice.get('plan_id', 0)
 
-        # Fetch the panel binding for this plan
         if is_free_test:
             panel_id = invoice.get('panel_id')
             binding = {'panel_id': panel_id} if panel_id else None
         else:
             binding = await db_manager.get_plan_panel(plan_id)
+
         if not binding:
-            error_msg = f"درخواست پنل برای پلن {plan_id} تعریف نشده (plan_panel خالی است)"
+            error_msg = f"هیچ پنلی به پلن {plan_id} متصل نشده است (جدول plan_panel)."
             logging.error(f"No panel bound to plan {plan_id} for invoice {invoice_id}. Cannot provision.")
+            await db_manager.mark_invoice_issue(invoice_id, error_msg)
             await self._notify_provisioning_failure(
                 user_id,
                 invoice_id,
-                "❌ پرداخت شما تایید شد اما ادامه فرآیند با مشکل مواجه شد. "
-                "لطفاً با پشتیبانی تماس بگیرید تا لایسنس شما صادر شود.",
+                "⚠️ پرداخت شما ثبت شد اما در اتصال به سرور مشکلی پیش آمد. پشتیبانی به زودی بررسی می‌کند.",
                 notify_admins=True,
                 admin_error=error_msg
             )
@@ -274,53 +250,47 @@ class PaymentConfirmationManager:
 
         panel = await db_manager.get_xui_panel(binding['panel_id'])
         if not panel:
-            error_msg = f"پنل {binding['panel_id']} که به پلن {plan_id} متصل بود در دیتابیس یافت نشد"
+            error_msg = f"پنل شماره {binding['panel_id']} متصل به پلن {plan_id} در دیتابیس یافت نشد."
             logging.error(f"Panel {binding['panel_id']} referenced by plan {plan_id} not found.")
-            await db_manager.mark_invoice_issue(invoice_id, "پنل تعریف شده برای این پلن وجود ندارد.")
+            await db_manager.mark_invoice_issue(invoice_id, error_msg)
             await self._notify_provisioning_failure(
-                user_id, invoice_id,
-                "❌ پرداخت شما تایید شد اما ادامه فرآیند با مشکل مواجه شد. "
-                "لطفاً با پشتیبانی تماس بگیرید تا لایسنس شما صادر شود.",
+                user_id,
+                invoice_id,
+                "⚠️ پرداخت شما ثبت شد اما سرور مورد نظر در دسترس نیست. پشتیبانی به زودی بررسی می‌کند.",
                 notify_admins=True,
                 admin_error=error_msg
             )
             return
 
-        # Store panel_id on invoice record
         await db_manager.update_invoice_panel_id(invoice_id, panel['id'])
 
-        # Provision the license via XUI API
         try:
             from bot.services.xui_client import provision_license, renew_license, build_client_email
-            # Re-fetch the full invoice with new license_note column
             full_invoice_row = await db_manager.get_invoice_by_id(invoice_id)
-            if full_invoice_row:
-                full_invoice = dict(full_invoice_row)
-            else:
-                full_invoice = dict(invoice)
-            
+            full_invoice = dict(full_invoice_row) if full_invoice_row else dict(invoice)
+
             renew_lic_id = full_invoice.get('renew_license_id')
             is_renewal = bool(renew_lic_id)
-            
+
             if is_renewal:
-                import aiosqlite
                 async with aiosqlite.connect(db_manager.DB_PATH) as db:
                     db.row_factory = aiosqlite.Row
                     async with db.execute("SELECT * FROM xui_licenses WHERE id = ?", (renew_lic_id,)) as cur:
                         old_lic = await cur.fetchone()
-                        
+
                 if not old_lic:
-                    raise RuntimeError("لایسنس قبلی جهت تمدید در دیتابیس یافت نشد.")
-                    
+                    raise RuntimeError("اشتراک قبلی جهت تمدید در دیتابیس یافت نشد.")
+
                 email = build_client_email(old_lic['license_note'] or "", old_lic['user_id'], old_lic['invoice_id'])
                 sub_id = await renew_license(panel, email, int(full_invoice['days'] or 0), float(full_invoice['gb'] or 0))
-                
-                # Update DB to point to new invoice
+
                 async with aiosqlite.connect(db_manager.DB_PATH) as db:
-                    await db.execute("UPDATE xui_licenses SET invoice_id = ?, panel_id = ? WHERE id = ?", (invoice_id, panel['id'], renew_lic_id))
+                    await db.execute(
+                        "UPDATE xui_licenses SET invoice_id = ?, panel_id = ?, alert_sent = 0 WHERE id = ?",
+                        (invoice_id, panel['id'], renew_lic_id)
+                    )
                     await db.commit()
             else:
-                # Paid plan = "Customers" group, Free trial = "Trial" group
                 xui_group = "Trial" if is_free_test else "Customers"
                 sub_id = await provision_license(panel, full_invoice, user_id, group=xui_group)
         except Exception as e:
@@ -328,23 +298,20 @@ class PaymentConfirmationManager:
             logging.error(f"XUI provisioning failed for invoice {invoice_id}: {error_text}", exc_info=True)
             await db_manager.mark_invoice_issue(invoice_id, error_text)
             await self._notify_provisioning_failure(
-                user_id, invoice_id,
-                f"❌ پرداخت شما تایید شد اما صدور/تمدید لایسنس با خطا مواجه شد:\n"
-                f"<code>{error_text}</code>\n\n"
-                "با پشتیبانی تماس بگیرید و کد فاکتور را ارسال نمایید.",
+                user_id,
+                invoice_id,
+                f"⚠️ خطا در ساخت اشتراک:\n<code>{error_text}</code>\n\nگزارش خطا برای مدیریت ارسال شد.",
                 notify_admins=True,
                 admin_error=error_text
             )
             return
 
-        # Get license_note from invoice
         license_note = ""
         try:
-            license_note = full_invoice['license_note'] or ""
+            license_note = full_invoice.get('license_note') or ""
         except Exception:
             pass
 
-        # Store license record (Idempotent: unique on invoice_id)
         try:
             await db_manager.create_xui_license(
                 invoice_id=invoice_id,
@@ -353,47 +320,31 @@ class PaymentConfirmationManager:
                 sub_id=sub_id,
                 license_note=license_note
             )
-        except Exception as e:
-            # Already exists
+        except Exception:
             pass
 
-        # Mark as approved
         await db_manager.mark_invoice_approved(invoice_id)
-
-        # Deliver to user
         await self._deliver_license(user_id, sub_id, license_note, invoice_id)
 
     # ------------------------------------------------------------------
     # PRIVATE: _deliver_license
     # ------------------------------------------------------------------
-    async def _deliver_license(
-        self,
-        user_id: int,
-        sub_id: str,
-        license_note: str,
-        invoice_id: str
-    ) -> None:
-        """
-        Deliver the license to the user:
-          - QR code image of sub_id (with Pillow fallback to text)
-          - Caption: "لایسنس اختصاصی شما"
-          - Inline button: "کپی لایسنس" (copy_text)
-        """
+    async def _deliver_license(self, user_id: int, sub_id: str, license_note: str, invoice_id: str) -> None:
         from aiogram.utils.keyboard import InlineKeyboardBuilder
         from aiogram import types as tg_types
 
-        note_line = f"\n📝 یادداشت لایسنس: <b>{license_note}</b>" if license_note else ""
+        note_line = f"\n📝 نام سرویس: <b>{license_note}</b>" if license_note else ""
         caption = (
-            f"🎉 <b>سرویس شما فعال شد</b>\n\n"
-            f"🛒 کد فاکتور: <code>{invoice_id}</code>"
+            f"✅ <b>اشتراک شما با موفقیت فعال شد!</b>\n\n"
+            f"🧾 شماره فاکتور: <code>{invoice_id}</code>"
             f"{note_line}\n\n"
-            "برای مشاهده مشخصات سرویس به بخش لایسنس های من مراجعه کنید."
+            "از طریق دکمه زیر می‌توانید سرویس خود را مشاهده و مدیریت کنید:"
         )
 
         builder = InlineKeyboardBuilder()
         builder.row(
             tg_types.InlineKeyboardButton(
-                text="📦 لایسنس های من",
+                text="📱 اشتراک‌های من",
                 callback_data="my_services"
             )
         )
@@ -419,7 +370,6 @@ class PaymentConfirmationManager:
         notify_admins: bool = False,
         admin_error: str = ""
     ) -> None:
-        """Send a failure message to the user and optionally alert admins."""
         try:
             await self.bot.send_message(chat_id=user_id, text=user_message, parse_mode="HTML")
         except Exception as e:
@@ -431,15 +381,14 @@ class PaymentConfirmationManager:
                 from bot.config import ADMIN_IDS
                 from aiogram.utils.keyboard import InlineKeyboardBuilder
                 from aiogram import types as tg_types
-                
+
                 safe_admin_error = html.escape(str(admin_error)[:800])
                 error_text = (
-                    f"🚨 <b>خطای صدور لایسنس</b>\n\n"
+                    f"🚨 <b>خطا در صدور اشتراک</b>\n\n"
                     f"👤 کاربر: <code>{user_id}</code>\n"
-                    f"🛒 فاکتور: <code>{invoice_id}</code>\n\n"
-                    f"📋 جزئیات خطا:\n<code>{safe_admin_error}</code>"
+                    f"🧾 فاکتور: <code>{invoice_id}</code>\n\n"
+                    f"❌ متن خطا:\n<code>{safe_admin_error}</code>"
                 )
-
                 admin_builder = InlineKeyboardBuilder()
                 admin_builder.row(
                     tg_types.InlineKeyboardButton(text="🔄 تلاش مجدد", callback_data=f"retry_provision_{invoice_id}")
@@ -452,7 +401,6 @@ class PaymentConfirmationManager:
                         )
                     )
 
-                # Send error report to Reports Group (error_report topic) instead of Admin PV
                 sent_to_group = False
                 try:
                     notif_service = NotificationService(self.bot)
@@ -465,7 +413,6 @@ class PaymentConfirmationManager:
                 except Exception as e:
                     logging.error(f"Failed to send error report via NotificationService: {e}")
 
-                # Fallback to admin PV only if report group is not configured or sending failed
                 if not sent_to_group:
                     for admin_id in ADMIN_IDS:
                         try:
@@ -477,24 +424,20 @@ class PaymentConfirmationManager:
                             )
                         except Exception:
                             pass
-                    
             except Exception as e:
                 logging.error(f"Failed to notify admins of provisioning failure: {e}")
 
     # ------------------------------------------------------------------
     # PUBLIC: notify_failed
     # ------------------------------------------------------------------
-    async def notify_failed(self, invoice_id: str, reason: str = 'تراکنش از سمت درگاه لغو شد') -> bool:
-        """
-        Marks an invoice as failed/rejected and notifies the user.
-        """
+    async def notify_failed(self, invoice_id: str, reason: str = 'عدم تایید پرداخت') -> bool:
         try:
             async with aiosqlite.connect(db_manager.DB_PATH) as db:
                 db.row_factory = aiosqlite.Row
                 async with db.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)) as cursor:
                     invoice = await cursor.fetchone()
 
-                if not invoice or invoice['status'] == 'paid':
+                if not invoice or invoice['status'] in ('paid', 'approved'):
                     return False
 
                 await db.execute("UPDATE invoices SET status = 'failed' WHERE id = ?", (invoice_id,))
@@ -502,11 +445,11 @@ class PaymentConfirmationManager:
 
                 price_fmt = f"{invoice['final_amount']:,}"
                 text = (
-                    f"❌ <b>پرداخت تأیید نشد</b>\n\n"
-                    f"🛒 کد فاکتور: <code>{invoice_id}</code>\n"
-                    f"💸 مبلغ: <b>{price_fmt}</b> تومان\n"
-                    f"📝 دلیل: {reason}\n\n"
-                    f"اگر مطمئنید پرداخت انجام شده، با پشتیبانی تماس بگیرید."
+                    f"❌ <b>پرداخت تایید نشد</b>\n\n"
+                    f"🧾 شماره فاکتور: <code>{invoice_id}</code>\n"
+                    f"💰 مبلغ: <b>{price_fmt}</b> تومان\n"
+                    f"📝 علت: {reason}\n\n"
+                    f"در صورت نیاز با پشتیبانی در ارتباط باشید."
                 )
                 try:
                     await self.bot.send_message(chat_id=invoice['user_id'], text=text, parse_mode="HTML")
@@ -521,16 +464,13 @@ class PaymentConfirmationManager:
     # PUBLIC: mark_expired
     # ------------------------------------------------------------------
     async def mark_expired(self, invoice_id: str) -> bool:
-        """
-        Marks an invoice as expired after timeout and notifies the user.
-        """
         try:
             async with aiosqlite.connect(db_manager.DB_PATH) as db:
                 db.row_factory = aiosqlite.Row
                 async with db.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)) as cursor:
                     invoice = await cursor.fetchone()
 
-                if not invoice or invoice['status'] == 'paid':
+                if not invoice or invoice['status'] in ('paid', 'approved'):
                     return False
 
                 await db.execute("UPDATE invoices SET status = 'expired' WHERE id = ?", (invoice_id,))
@@ -538,12 +478,10 @@ class PaymentConfirmationManager:
 
                 price_fmt = f"{invoice['final_amount']:,}"
                 text = (
-                    f"⏰ <b>پرداخت بعد از ۳۰ دقیقه تأیید نشد</b>\n\n"
-                    f"🛒 کد فاکتور: <code>{invoice_id}</code>\n"
-                    f"💸 مبلغ: <b>{price_fmt}</b> تومان\n\n"
-                    f"💡 اگر پرداخت کرده‌اید، ممکنه شبکه‌ی کریپتو هنوز confirm نکرده باشه. "
-                    f"چند دقیقه دیگر صبر کنید.\n"
-                    f"اگر هنوز تأیید نشد، با پشتیبانی تماس بگیرید."
+                    f"⏳ <b>انقضای فاکتور</b>\n\n"
+                    f"🧾 شماره فاکتور: <code>{invoice_id}</code>\n"
+                    f"💰 مبلغ: <b>{price_fmt}</b> تومان\n\n"
+                    f"مهلت پرداخت این فاکتور به پایان رسیده است."
                 )
                 try:
                     await self.bot.send_message(chat_id=invoice['user_id'], text=text, parse_mode="HTML")

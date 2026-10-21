@@ -16,6 +16,15 @@ CREATE TABLE IF NOT EXISTS users (
     expire INTEGER,
     maxbuyagent INTEGER DEFAULT 0,
     pricediscount INTEGER DEFAULT 0,
+    referred_by INTEGER,
+    is_active INTEGER DEFAULT 1,
+    status TEXT DEFAULT 'active',
+    description TEXT,
+    verify INTEGER DEFAULT 0,
+    token TEXT,
+    agent_referrer_id INTEGER,
+    agent_commission_balance INTEGER DEFAULT 0,
+    agent_settlement_active INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -120,6 +129,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     id TEXT PRIMARY KEY,
     user_id INTEGER,
     plan_id INTEGER,
+    panel_id INTEGER,
     days INTEGER,
     gb INTEGER,
     base_price INTEGER,
@@ -151,6 +161,7 @@ CREATE TABLE IF NOT EXISTS payment_reports (
     crypto_hash TEXT,
     crypto_address TEXT,
     gateway_request_id TEXT,
+    crypto_amount REAL,
     transfer_method TEXT,
     receipt_time TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -163,6 +174,15 @@ CREATE TABLE IF NOT EXISTS channels (
     link TEXT
 );
 
+CREATE TABLE IF NOT EXISTS logs_api (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    header TEXT,
+    data TEXT,
+    time TEXT,
+    ip TEXT,
+    actions TEXT
+);
+
 -- Indices mapped from legacy migrate_indexes.php
 CREATE INDEX IF NOT EXISTS idx_users_affiliates ON users(affiliates);
 CREATE INDEX IF NOT EXISTS idx_invoices_user_id ON invoices(user_id);
@@ -173,21 +193,18 @@ CREATE INDEX IF NOT EXISTS idx_payment_reports_user_id ON payment_reports(user_i
 -- XUI PANEL INTEGRATION TABLES
 -- ============================================================
 
--- Stores each admin-defined 3x-UI panel (credentials & config)
 CREATE TABLE IF NOT EXISTS xui_panels (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT,                               -- panel name
-    label TEXT,                              -- optional human label
-    url TEXT NOT NULL,                       -- full panel URL e.g. https://panel.example.com:2053
-    sub_link TEXT,                           -- sub link endpoint
-    bearer_token TEXT NOT NULL,              -- XUI API bearer token
-    inbound_ids TEXT NOT NULL,               -- comma-separated inbound IDs e.g. "1,3,5"
-    ip_limit INTEGER NOT NULL DEFAULT 1,     -- concurrent IP limit for clients created on this panel
-
+    name TEXT,
+    label TEXT,
+    url TEXT NOT NULL,
+    sub_link TEXT,
+    bearer_token TEXT NOT NULL,
+    inbound_ids TEXT NOT NULL,
+    ip_limit INTEGER NOT NULL DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Maps each plan to one XUI panel (the panel licenses are provisioned on)
 CREATE TABLE IF NOT EXISTS plan_panel (
     plan_id INTEGER PRIMARY KEY,
     panel_id INTEGER NOT NULL,
@@ -195,14 +212,14 @@ CREATE TABLE IF NOT EXISTS plan_panel (
     FOREIGN KEY(panel_id) REFERENCES xui_panels(id) ON DELETE CASCADE
 );
 
--- Records each issued license (sub_id) after a successful payment
 CREATE TABLE IF NOT EXISTS xui_licenses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     invoice_id TEXT NOT NULL UNIQUE,
     user_id INTEGER NOT NULL,
     panel_id INTEGER NOT NULL,
-    sub_id TEXT NOT NULL,                    -- 3x-UI subId — the delivery artifact
-    license_note TEXT,                        -- user-supplied config remark / search label
+    sub_id TEXT NOT NULL,
+    license_note TEXT,
+    alert_sent INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(invoice_id) REFERENCES invoices(id),
     FOREIGN KEY(panel_id) REFERENCES xui_panels(id)
@@ -214,22 +231,21 @@ CREATE INDEX IF NOT EXISTS idx_xui_licenses_user_id ON xui_licenses(user_id);
 -- REFERRAL / AFFILIATE SYSTEM
 -- ============================================================
 
--- One unique referral code per user (created on first access)
 CREATE TABLE IF NOT EXISTS referral_codes (
     user_id INTEGER PRIMARY KEY,
     code    TEXT NOT NULL UNIQUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- One commission record per purchase invoice (UNIQUE prevents double-pay)
 CREATE TABLE IF NOT EXISTS referral_commissions (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    referrer_id         INTEGER NOT NULL,   -- who gets the money
-    referred_id         INTEGER NOT NULL,   -- the buyer
-    purchase_invoice_id TEXT NOT NULL UNIQUE, -- idempotency key
+    referrer_id         INTEGER NOT NULL,
+    referred_id         INTEGER NOT NULL,
+    purchase_invoice_id TEXT NOT NULL UNIQUE,
     commission_amount   INTEGER NOT NULL,
     created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
 CREATE INDEX IF NOT EXISTS idx_ref_commissions_referrer ON referral_commissions(referrer_id);
 
 -- ============================================================
@@ -239,14 +255,15 @@ CREATE INDEX IF NOT EXISTS idx_ref_commissions_referrer ON referral_commissions(
 CREATE TABLE IF NOT EXISTS wallet_transactions (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id         INTEGER NOT NULL,
-    amount          INTEGER NOT NULL,        -- positive = credit, negative = debit
+    amount          INTEGER NOT NULL,
     balance_after   INTEGER NOT NULL,
-    type            TEXT NOT NULL,           -- PURCHASE, REFUND, COMMISSION, CASHBACK, ADMIN_ADJUSTMENT, GIFT
+    type            TEXT NOT NULL,
     description     TEXT,
     related_invoice_id TEXT,
-    unique_key      TEXT UNIQUE,             -- idempotency guard
-    created_at      INTEGER NOT NULL         -- unix timestamp
+    unique_key      TEXT UNIQUE,
+    created_at      INTEGER NOT NULL
 );
+
 CREATE INDEX IF NOT EXISTS idx_wallet_tx_user ON wallet_transactions(user_id);
 
 -- ============================================================
@@ -255,7 +272,7 @@ CREATE INDEX IF NOT EXISTS idx_wallet_tx_user ON wallet_transactions(user_id);
 
 CREATE TABLE IF NOT EXISTS cashback_rewards (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    invoice_id  TEXT NOT NULL UNIQUE,        -- one cashback per invoice
+    invoice_id  TEXT NOT NULL UNIQUE,
     user_id     INTEGER NOT NULL,
     amount      INTEGER NOT NULL,
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -273,6 +290,7 @@ CREATE TABLE IF NOT EXISTS customer_feedback (
     comment     TEXT,
     created_at  INTEGER NOT NULL
 );
+
 CREATE INDEX IF NOT EXISTS idx_feedback_user ON customer_feedback(user_id);
 
 -- ============================================================
@@ -281,8 +299,8 @@ CREATE INDEX IF NOT EXISTS idx_feedback_user ON customer_feedback(user_id);
 
 CREATE TABLE IF NOT EXISTS user_acquisition (
     user_id     INTEGER PRIMARY KEY,
-    source      TEXT,      -- e.g. 'friends', 'instagram', 'telegram', 'other'
-    detail      TEXT,      -- free-text detail if source='other'
+    source      TEXT,
+    detail      TEXT,
     asked_at    INTEGER,
     answered_at INTEGER
 );
@@ -297,19 +315,20 @@ CREATE TABLE IF NOT EXISTS free_trial_usage (
 );
 
 -- ============================================================
--- COMMISSION AGENT / AGENCY SYSTEM (نمایندگی کمیسیونی)
+-- COMMISSION AGENT / AGENCY SYSTEM
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS agent_commissions (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    agent_id            INTEGER NOT NULL,          -- Who gets the commission
-    buyer_id            INTEGER NOT NULL,          -- The sub-user who bought
-    invoice_id          TEXT NOT NULL UNIQUE,      -- Idempotency key
-    order_amount        INTEGER NOT NULL,          -- Purchase amount in IRT
-    commission_percent  REAL NOT NULL,             -- Percent applied
-    commission_amount   INTEGER NOT NULL,          -- Credited IRT
+    agent_id            INTEGER NOT NULL,
+    buyer_id            INTEGER NOT NULL,
+    invoice_id          TEXT NOT NULL UNIQUE,
+    order_amount        INTEGER NOT NULL,
+    commission_percent  REAL NOT NULL,
+    commission_amount   INTEGER NOT NULL,
     created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
 CREATE INDEX IF NOT EXISTS idx_agent_commissions_agent ON agent_commissions(agent_id);
 
 CREATE TABLE IF NOT EXISTS agent_activation_requests (
@@ -317,11 +336,12 @@ CREATE TABLE IF NOT EXISTS agent_activation_requests (
     user_id             INTEGER NOT NULL,
     commission_balance  INTEGER NOT NULL,
     sub_users_count     INTEGER NOT NULL,
-    status              TEXT DEFAULT 'pending',     -- 'pending', 'approved', 'rejected'
+    status              TEXT DEFAULT 'pending',
     reject_reason       TEXT,
     created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
 CREATE INDEX IF NOT EXISTS idx_agent_act_user ON agent_activation_requests(user_id);
 CREATE INDEX IF NOT EXISTS idx_agent_act_status ON agent_activation_requests(status);
 
@@ -332,12 +352,11 @@ CREATE TABLE IF NOT EXISTS agent_settlements (
     amount_gram         REAL NOT NULL,
     gram_price          INTEGER NOT NULL,
     wallet_address      TEXT NOT NULL,
-    status              TEXT DEFAULT 'pending',     -- 'pending', 'waiting', 'settled', 'rejected'
+    status              TEXT DEFAULT 'pending',
     tx_hash             TEXT,
     created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     settled_at          TIMESTAMP
 );
+
 CREATE INDEX IF NOT EXISTS idx_agent_settlements_agent ON agent_settlements(agent_id);
 CREATE INDEX IF NOT EXISTS idx_agent_settlements_status ON agent_settlements(status);
-
-

@@ -9,10 +9,9 @@ fi
 INSTALL_LOG="/tmp/candybot_install.log"
 BOT_DIR="/opt/CandyBot"
 REPO_URL="https://github.com/ednoct/CandyBot.git"
-
 export DEBIAN_FRONTEND=noninteractive
 
-# ── Menu UI helpers ──────────────────────────────────────────
+# Menu UI helpers
 C_BORDER=$'\033[1;36m'; C_TITLE=$'\033[1;37m'; C_DIM=$'\033[0;37m'
 C_KEY=$'\033[1;33m';    C_TXT=$'\033[0;37m';   C_OK=$'\033[1;32m'
 C_BAD=$'\033[1;31m';    C_WARN=$'\033[1;33m';  C_PROMPT=$'\033[1;36m'
@@ -21,22 +20,23 @@ UI_W=52
 
 _repeat() { local ch="$1" n="$2" out="" i; for ((i=0;i<n;i++)); do out+="$ch"; done; printf '%s' "$out"; }
 _rule()   { printf "  ${C_BORDER}%s${CR}\n" "$(_repeat "─" "$UI_W")"; }
-_drule()  { printf "  ${C_BORDER}%s${CR}\n" "$(_repeat "━" "$UI_W")"; }
+_drule()  { printf "  ${C_BORDER}%s${CR}\n" "$(_repeat "═" "$UI_W")"; }
+
 banner()  {
     echo
     _drule
-    printf "  ${C_OK}▌${CR} ${C_TITLE}CANDY BOT${CR}  ${C_DIM}— Python Asynchronous Architecture${CR}\n"
+    printf "  ${C_OK}🍬${CR} ${C_TITLE}CANDY BOT${CR}  ${C_DIM}• Python Asynchronous Architecture${CR}\n"
     _drule
 }
 _mi()     { printf "    ${C_KEY}[%s]${CR}  ${C_TXT}%b${CR}\n" "$1" "$2"; }
-_sec()    { printf "\n  ${C_KEY}▌${CR} ${C_TITLE}%s${CR}\n" "$1"; _rule; }
+_sec()    { printf "\n  ${C_KEY}▸${CR} ${C_TITLE}%s${CR}\n" "$1"; _rule; }
 _kv()     { printf "    ${C_DIM}%-14s${CR}${C_BORDER}:${CR} %b${CR}\n" "$1" "$2"; }
 _dot()    { case "$1" in ok) printf "${C_OK}●${CR}";; bad) printf "${C_BAD}●${CR}";; warn) printf "${C_WARN}●${CR}";; *) printf "${C_DIM}●${CR}";; esac; }
 
-# ── Progress Engine ──────────────────────────────────────────
+# Progress Engine
 run_step() {
     local msg="$1" cmd="$2"
-    printf " \033[1;33m⠋\033[0m \033[0;37m%s...\033[0m" "$msg"
+    printf " \033[1;33m⏳\033[0m \033[0;37m%s...\033[0m" "$msg"
     : > "$INSTALL_LOG"
     bash -c "$cmd" >> "$INSTALL_LOG" 2>&1
     local rc=$?
@@ -44,15 +44,15 @@ run_step() {
         printf "\r\033[K \033[1;32m✔\033[0m \033[0;37m%s\033[0m\n" "$msg"
     else
         printf "\r\033[K \033[1;31m✘\033[0m \033[0;37m%s\033[0m\n" "$msg"
-        echo -e "\033[1;31m──────────────── Error details ─────────────────\033[0m"
+        echo -e "\033[1;31m── Error details ──\033[0m"
         tail -n 15 "$INSTALL_LOG"
-        echo -e "\033[1;31m─────────────────────────────────────────────────\033[0m"
+        echo -e "\033[1;31m───────────────────\033[0m"
         exit 1
     fi
     return "$rc"
 }
 
-# ── Validations ──────────────────────────────────────────────
+# Validations
 validate_domain() { [[ "$1" =~ ^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$ ]]; }
 validate_token() { [[ "$1" =~ ^[0-9]{8,10}:[a-zA-Z0-9_-]{35}$ ]]; }
 
@@ -60,7 +60,7 @@ get_server_ip() {
     curl -fsSL --max-time 4 ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}'
 }
 
-# ── Dashboard ────────────────────────────────────────────────
+# Dashboard
 show_logo() {
     clear
     banner
@@ -73,77 +73,62 @@ show_logo() {
     else _kv "CandyBot" "$(_dot bad) ${C_BAD}$bot_s${CR}"; fi
 }
 
-# ── Install Logic ────────────────────────────────────────────
+# Install Logic
 install_bot() {
     clear
     banner
     _sec "Installation Preparation"
     
     if [ -d "$BOT_DIR" ]; then
-        echo -e "  ${C_BAD}●${CR} ${C_BAD}CandyBot is already installed at $BOT_DIR.${CR}"
+        echo -e "  ${C_BAD}✘${CR} ${C_BAD}CandyBot is already installed at $BOT_DIR.${CR}"
         sleep 2; return 1
     fi
 
     run_step "Updating system packages" "apt-get update -y"
-    
-    # 1. NO Nginx. Just Python, Certbot, and basic utilities.
     run_step "Installing dependencies (Python, Certbot)" "apt-get install -y python3 python3-pip python3-venv python3-dev certbot git curl jq ufw sqlite3"
 
     _sec "Bot Configuration"
-    # Get Domain
-    read -p "  ❯ Enter your domain (e.g. api.domain.com): " YOUR_DOMAIN < /dev/tty
+    read -p "    Enter your domain (e.g. api.domain.com): " YOUR_DOMAIN < /dev/tty
     while ! validate_domain "$YOUR_DOMAIN"; do
         echo -e "  ${C_BAD}Invalid domain format.${CR}"
-        read -p "  ❯ Enter your domain: " YOUR_DOMAIN < /dev/tty
+        read -p "    Enter your domain: " YOUR_DOMAIN < /dev/tty
     done
 
-    # Get Token
-    read -p "  ❯ Enter Telegram Bot Token: " YOUR_TOKEN < /dev/tty
+    read -p "    Enter Telegram Bot Token: " YOUR_TOKEN < /dev/tty
     while ! validate_token "$YOUR_TOKEN"; do
         echo -e "  ${C_BAD}Invalid token format.${CR}"
-        read -p "  ❯ Enter Telegram Bot Token: " YOUR_TOKEN < /dev/tty
+        read -p "    Enter Telegram Bot Token: " YOUR_TOKEN < /dev/tty
     done
 
-    # Get Admin ID
-    read -p "  ❯ Enter Admin Telegram ID: " YOUR_ADMIN < /dev/tty
+    read -p "    Enter Admin Telegram ID: " YOUR_ADMIN < /dev/tty
     while [[ ! "$YOUR_ADMIN" =~ ^[0-9]+$ ]]; do
         echo -e "  ${C_BAD}Must be a number.${CR}"
-        read -p "  ❯ Enter Admin Telegram ID: " YOUR_ADMIN < /dev/tty
+        read -p "    Enter Admin Telegram ID: " YOUR_ADMIN < /dev/tty
     done
 
     _sec "Deployment"
-    # Clone Repository
     run_step "Cloning repository" "git clone $REPO_URL $BOT_DIR"
-    
-    # Setup Virtual Environment
     run_step "Creating Python virtual environment" "python3 -m venv $BOT_DIR/venv"
     run_step "Installing Python requirements" "$BOT_DIR/venv/bin/pip install --upgrade pip && $BOT_DIR/venv/bin/pip install -r $BOT_DIR/requirements.txt"
-
-    # Firewall: Allow 80 (for Certbot Standalone) and 443 (for Telegram Webhook)
     run_step "Configuring Firewall (UFW)" "ufw allow 80/tcp && ufw allow 443/tcp >/dev/null 2>&1 || true"
-
-    # 2. SSL Configuration (Standalone mode - spins up its own temp server on port 80)
     run_step "Obtaining Let's Encrypt SSL (Standalone)" "certbot certonly --standalone -d $YOUR_DOMAIN --non-interactive --agree-tos --register-unsafely-without-email"
 
-    # 3. Create .env file (Routing Python to port 443 directly with the SSL certs)
     cat <<EOF > $BOT_DIR/.env
 BOT_TOKEN="$YOUR_TOKEN"
 ADMIN_IDS="$YOUR_ADMIN"
 WEB_HOST="0.0.0.0"
 WEB_PORT="443"
 WEBHOOK_DOMAIN="$YOUR_DOMAIN"
+USE_WEBHOOK="0"
 SSL_CERT="/etc/letsencrypt/live/$YOUR_DOMAIN/fullchain.pem"
 SSL_PRIV="/etc/letsencrypt/live/$YOUR_DOMAIN/privkey.pem"
 EOF
     run_step "Generating .env configuration" "chmod 600 $BOT_DIR/.env"
-
-    # Initialize Database (SQLite)
     run_step "Initializing SQLite database" "cd $BOT_DIR && PYTHONPATH=$BOT_DIR $BOT_DIR/venv/bin/python -c 'import asyncio; from database.db_manager import init_db; asyncio.run(init_db())' 2>/dev/null || true"
 
-    # Systemd Service
     cat <<EOF > /etc/systemd/system/candybot.service
 [Unit]
-Description=CandyBot Telegram Webhook Service
+Description=CandyBot Telegram Service
 After=network.target
 
 [Service]
@@ -157,10 +142,8 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
-    run_step "Creating Systemd service" "systemctl daemon-reload && systemctl enable candybot && systemctl start candybot"
 
-    # 4. Telegram Webhook (Standard Port 443, no appended port needed)
-    run_step "Setting Telegram Webhook" "curl -fsSL \"https://api.telegram.org/bot${YOUR_TOKEN}/setWebhook?url=https://${YOUR_DOMAIN}/webhook/main\" > /dev/null"
+    run_step "Creating Systemd service" "systemctl daemon-reload && systemctl enable candybot && systemctl start candybot"
 
     clear
     banner
@@ -168,18 +151,18 @@ EOF
     _kv "Bot Service" "${C_OK}Active (Systemd)${CR}"
     
     echo ""
-    read -p "  ❯ Press Enter to return to menu..." _ < /dev/tty
+    read -p "    Press Enter to return to menu..." _ < /dev/tty
     show_menu
 }
 
-# ── Update Logic ─────────────────────────────────────────────
+# Update Logic
 update_bot() {
     clear
     banner
     _sec "Update Process"
     
     if [ ! -d "$BOT_DIR" ]; then
-        echo -e "  ${C_BAD}●${CR} ${C_BAD}CandyBot is not installed.${CR}"
+        echo -e "  ${C_BAD}✘${CR} ${C_BAD}CandyBot is not installed.${CR}"
         sleep 2; return 1
     fi
 
@@ -189,7 +172,6 @@ update_bot() {
 
     run_step "Stopping CandyBot service" "systemctl stop candybot && sleep 1"
     
-    # 1. Flush SQLite WAL and create a safe local backup before updating code
     run_step "Safeguarding database & flushing WAL" "
         mkdir -p \"$BK_DIR\"
         if command -v sqlite3 >/dev/null 2>&1; then
@@ -201,15 +183,11 @@ update_bot() {
         [ -f \"$BOT_DIR/.env\" ] && cp -a \"$BOT_DIR/.env\" \"$BK_DIR/.env\" 2>/dev/null || true
     "
 
-    # 2. Pull latest code from GitHub
     run_step "Pulling latest code from GitHub" "cd $BOT_DIR && git fetch origin main && git reset --hard origin/main"
 
-    # 3. Restore databases & .env if git reset removed or altered them
     run_step "Restoring live database & environment" "
         mkdir -p \"$BOT_DIR/database\"
-        if [ -f \"$BK_DIR/candy_db.db\" ] && [ ! -f \"$BOT_DIR/database/candy.db\" ]; then
-            cp -a \"$BK_DIR/candy_db.db\" \"$BOT_DIR/database/candy.db\"
-        elif [ -f \"$BK_DIR/candy_db.db\" ]; then
+        if [ -f \"$BK_DIR/candy_db.db\" ]; then
             cp -a \"$BK_DIR/candy_db.db\" \"$BOT_DIR/database/candy.db\"
         fi
         if [ -f \"$BK_DIR/candy_legacy.db\" ] && [ ! -f \"$BOT_DIR/candy.db\" ]; then
@@ -221,28 +199,24 @@ update_bot() {
         fi
     "
 
-    # 4. Update requirements & run migrations
     run_step "Updating Python requirements" "$BOT_DIR/venv/bin/pip install -r $BOT_DIR/requirements.txt"
-    
-    # Run DB migration and legacy database unification
     run_step "Applying database migrations" "cd $BOT_DIR && PYTHONPATH=$BOT_DIR $BOT_DIR/venv/bin/python -c 'import asyncio; from database.db_manager import init_db; asyncio.run(init_db())'"
     
-    # Keep only the latest 10 backup folders
     ls -dt /var/backups/candybot/bk_* 2>/dev/null | tail -n +11 | xargs -r rm -rf 2>/dev/null || true
 
     run_step "Restarting CandyBot service" "systemctl restart candybot"
 
     echo -e "\n  ${C_OK}✔${CR} ${C_OK}Bot updated successfully (Database & settings preserved).${CR}\n"
-    read -p "  ❯ Press Enter to return to menu..." _ < /dev/tty
+    read -p "    Press Enter to return to menu..." _ < /dev/tty
     show_menu
 }
 
-# ── Remove Logic ─────────────────────────────────────────────
+# Remove Logic
 remove_bot() {
     clear
     banner
     _sec "Removal Process"
-    read -p "  ❯ Are you sure you want to completely remove CandyBot? [y/N]: " choice < /dev/tty
+    read -p "    Are you sure you want to completely remove CandyBot? [y/N]: " choice < /dev/tty
     if [[ ! "$choice" =~ ^[Yy]$ ]]; then
         return 0
     fi
@@ -254,7 +228,7 @@ remove_bot() {
     exit 0
 }
 
-# ── Main Menu ────────────────────────────────────────────────
+# Main Menu
 show_menu() {
     show_logo
     _sec "Menu"
@@ -264,7 +238,7 @@ show_menu() {
     _mi "0" "Exit"
     _rule
     echo ""
-    read -p "  ❯ Select an option [0-3]: " option < /dev/tty
+    read -p "    Select an option [0-3]: " option < /dev/tty
     case $option in
         1) install_bot ;;
         2) update_bot ;;
