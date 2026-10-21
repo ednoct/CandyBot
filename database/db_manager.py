@@ -1068,6 +1068,45 @@ async def delete_xui_panel(panel_id: int):
         await db.commit()
 
 
+async def update_xui_panel(
+    panel_id: int,
+    name: str = None,
+    url: str = None,
+    sub_link: str = None,
+    bearer_token: str = None,
+    inbound_ids: str = None,
+    ip_limit: int = None,
+    label: str = None
+) -> bool:
+    """Update fields of an existing XUI panel."""
+    fields = {}
+    if name is not None:
+        fields['name'] = name
+    if url is not None:
+        fields['url'] = url.rstrip('/')
+    if sub_link is not None:
+        fields['sub_link'] = sub_link
+    if bearer_token is not None:
+        fields['bearer_token'] = bearer_token
+    if inbound_ids is not None:
+        fields['inbound_ids'] = inbound_ids
+    if ip_limit is not None:
+        fields['ip_limit'] = int(ip_limit)
+    if label is not None:
+        fields['label'] = label
+
+    if not fields:
+        return False
+
+    set_clause = ", ".join(f"{col} = ?" for col in fields.keys())
+    params = list(fields.values()) + [panel_id]
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(f"UPDATE xui_panels SET {set_clause} WHERE id = ?", tuple(params))
+        await db.commit()
+    return True
+
+
 # ============================================================
 # === PLAN - PANEL BINDING ===
 # ============================================================
@@ -1651,6 +1690,7 @@ async def get_all_channels() -> list[dict]:
 
 async def get_invoice_details(invoice_id: str):
     """Fetch complete details of an invoice for search."""
+    clean_id = str(invoice_id).strip().lstrip('#')
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("""
@@ -1659,9 +1699,31 @@ async def get_invoice_details(invoice_id: str):
             LEFT JOIN users u ON i.user_id = u.id
             LEFT JOIN xui_licenses x ON i.id = x.invoice_id
             LEFT JOIN xui_panels p ON x.panel_id = p.id
-            WHERE i.id = ?
-        """, (invoice_id,)) as cur:
-            return await cur.fetchone()
+            WHERE i.id = ? OR UPPER(i.id) = UPPER(?) OR i.id LIKE ?
+            ORDER BY i.created_at DESC
+            LIMIT 1
+        """, (clean_id, clean_id, f"%{clean_id}%")) as cur:
+            row = await cur.fetchone()
+            if row:
+                return dict(row)
+
+        # Fallback: search by payment_reports (e.g. tracking number or internal report id)
+        async with db.execute("""
+            SELECT i.*, u.username, x.sub_id, x.panel_id, p.url as panel_url
+            FROM payment_reports pr
+            JOIN invoices i ON pr.invoice_id = i.id
+            LEFT JOIN users u ON i.user_id = u.id
+            LEFT JOIN xui_licenses x ON i.id = x.invoice_id
+            LEFT JOIN xui_panels p ON x.panel_id = p.id
+            WHERE pr.id = ? OR pr.invoice_id = ? OR UPPER(pr.invoice_id) = UPPER(?)
+            ORDER BY i.created_at DESC
+            LIMIT 1
+        """, (clean_id, clean_id, clean_id)) as cur:
+            row = await cur.fetchone()
+            if row:
+                return dict(row)
+
+        return None
 
 
 async def get_all_active_xui_licenses_non_trial():

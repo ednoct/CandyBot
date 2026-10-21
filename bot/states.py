@@ -49,6 +49,14 @@ class AdminStates(StatesGroup):
     waiting_for_panel_inbound_ids = State()
     waiting_for_panel_ip_limit = State()
 
+    # === XUI Panel Edit ===
+    waiting_for_edit_panel_name = State()
+    waiting_for_edit_panel_url = State()
+    waiting_for_edit_panel_sub_link = State()
+    waiting_for_edit_panel_token = State()
+    waiting_for_edit_panel_inbound_ids = State()
+    waiting_for_edit_panel_ip_limit = State()
+
     # === Admin Discounts & Gifts ===
     waiting_for_admin_discount_code = State()
     waiting_for_admin_discount_type = State()

@@ -57,7 +57,9 @@ async def users_menu(callback: types.CallbackQuery, state: FSMContext):
 async def search_user_prompt(callback: types.CallbackQuery, state: FSMContext):
     if not is_admin(callback): return
     await state.set_state(AdminStates.waiting_for_user_id)
-    await callback.message.edit_text("لطفا شناسه عددی (Chat ID) یا نام کاربری را وارد کنید:")
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 بازگشت", callback_data="admin_users", style="danger")
+    await callback.message.edit_text("لطفا شناسه عددی (Chat ID) یا نام کاربری را وارد کنید:", reply_markup=builder.as_markup())
 
 async def show_user_management_panel(
     message: types.Message, 
@@ -1249,36 +1251,69 @@ async def search_order_prompt(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_order_id)
     
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 لغو", callback_data="admin_users", style="danger")
+    builder.button(text="🔙 بازگشت", callback_data="admin_users", style="danger")
     await callback.message.edit_text("شناسه سفارش (Invoice ID) را وارد کنید:", reply_markup=builder.as_markup())
 
 @admin_users_router.message(AdminStates.waiting_for_order_id)
 async def search_order_execute(message: types.Message, state: FSMContext):
     if not is_admin(message): return
-    invoice_id = message.text.strip()
+    import html
+    raw_id = (message.text or "").strip()
+    invoice_id = raw_id.lstrip("#").strip()
     await state.clear()
     
-    order = await db_manager.get_invoice_details(invoice_id)
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 بازگشت", callback_data="admin_users", style="danger")
     
-    if not order:
-        return await message.answer(f"❌ سفارشی با شناسه `{invoice_id}` یافت نشد.", reply_markup=builder.as_markup())
+    if not invoice_id:
+        return await message.answer("❌ شناسه سفارش نامعتبر است.", reply_markup=builder.as_markup())
         
-    username = f"@{order['username']}" if order.get('username') else "ندارد"
-    text = (
-        f"🛍 **اطلاعات سفارش**\n\n"
-        f"شناسه فاکتور: `{order['id']}`\n"
-        f"آیدی کاربر: `{order['user_id']}` ({username})\n"
-        f"وضعیت: **{order['status']}**\n"
-        f"مبلغ: {order['final_amount']} تومان\n"
-        f"سرور: {order.get('panel_url', 'نامشخص')}\n\n"
-    )
-    if order.get('sub_id'):
-        sub_id_val = str(order['sub_id']).strip()
-        text += f"🔑 کلید لایسنس:\n<code>{sub_id_val}</code>\n"
+    try:
+        order = await db_manager.get_invoice_details(invoice_id)
+        if not order:
+            return await message.answer(
+                f"❌ سفارشی با شناسه <code>{html.escape(invoice_id)}</code> یافت نشد.", 
+                reply_markup=builder.as_markup(),
+                parse_mode="HTML"
+            )
+            
+        username_val = order.get('username')
+        username = f"@{html.escape(str(username_val))}" if username_val else "ندارد"
+        final_amt = int(order.get('final_amount') or 0)
+        status_val = html.escape(str(order.get('status') or 'نامشخص'))
+        panel_url_val = html.escape(str(order.get('panel_url') or 'نامشخص'))
+        inv_id_val = html.escape(str(order.get('id') or invoice_id))
+        user_id_val = order.get('user_id')
+        user_id_str = html.escape(str(user_id_val or 'نامشخص'))
+        pay_method = html.escape(str(order.get('payment_method') or 'نامشخص'))
+        created_at = html.escape(str(order.get('created_at') or 'نامشخص'))
         
-    await message.answer(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+        text = (
+            f"🛍 <b>اطلاعات سفارش</b>\n\n"
+            f"شناسه فاکتور: <code>{inv_id_val}</code>\n"
+            f"آیدی کاربر: <code>{user_id_str}</code> ({username})\n"
+            f"وضعیت: <b>{status_val}</b>\n"
+            f"مبلغ: {final_amt:,} تومان\n"
+            f"روش پرداخت: {pay_method}\n"
+            f"سرور: {panel_url_val}\n"
+            f"تاریخ ثبت: {created_at}\n\n"
+        )
+        if order.get('sub_id'):
+            sub_id_val = html.escape(str(order['sub_id']).strip())
+            text += f"🔑 کلید لایسنس:\n<code>{sub_id_val}</code>\n"
+            
+        if user_id_val:
+            builder.button(text="👤 مدیریت این کاربر", callback_data=f"manage_user_group_{user_id_val}")
+            builder.adjust(1, 1)
+            
+        await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    except Exception as e:
+        logging.error(f"Error in search_order_execute: {e}", exc_info=True)
+        await message.answer(
+            f"⚠️ خطا در دریافت اطلاعات سفارش:\n<code>{html.escape(str(e))}</code>",
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
+        )
 
 # ============================================================
 # GLOBAL CHARGE

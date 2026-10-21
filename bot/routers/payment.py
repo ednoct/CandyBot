@@ -201,7 +201,7 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
         
         row2 = [types.InlineKeyboardButton(text="کپی کامنت", copy_text=types.CopyTextButton(text=str(memo_gram)))]
         if exchanger_gram and exchanger_gram != "0" and exchanger_gram.startswith("http"):
-            row2.append(types.InlineKeyboardButton(text="صرافی بدون کارمزد", web_app=types.WebAppInfo(url=exchanger_gram)))
+            row2.append(types.InlineKeyboardButton(text="صرافی بدون کارمزد", web_app=types.WebAppInfo(url=exchanger_gram)), style="danger")
         builder.row(*row2)
         builder.row(
             types.InlineKeyboardButton(text="📢 آموزش پیدا کردن هش رسید", url="https://t.me/CandyConnectHelp/4", style="primary"),
@@ -530,7 +530,8 @@ async def prompt_txid(callback: types.CallbackQuery, state: FSMContext):
     prompt_text = (
         "🔗 <b>ارسال هش تراکنش تتر (USDT)</b>\n\n"
         "لطفاً فقط <b>هش تراکنش (TXID)</b> را به صورت متن ارسال کنید:\n\n"
-        "⚠️ <b>توجه:</b> در این مرحله فقط مجاز به ارسال متن هش تراکنش (String) هستید و ارسال تصویر، فایل یا هر فرمت دیگری مجاز نمی‌باشد."
+        "⚠️ <b>توجه:</b> در این مرحله فقط مجاز به ارسال متن هش تراکنش (String) هستید و ارسال تصویر، فایل یا هر فرمت دیگری مجاز نمی‌باشد.\n"
+        "💡 هش معتبر با <code>0x</code> شروع شده و طول کل آن ۶۶ کاراکتر است."
     )
     
     await callback.answer()
@@ -572,7 +573,7 @@ async def gram_pingi_choice(callback: types.CallbackQuery, state: FSMContext):
     
     prompt_text = (
         "🧾 <b>انتقال از صرافی پینگی</b>\n\n"
-        "لطفاً <b>کد پیگیری تراکنش</b> یا <b>تصویر رسید (اسکرین‌شات)</b> را ارسال کنید:"
+        "لطفاً <b>کد پیگیری تراکنش</b> (۶۴ یا ۴۴ کاراکتر) یا <b>تصویر رسید (اسکرین‌شات)</b> را ارسال کنید:"
     )
     
     await callback.answer()
@@ -615,7 +616,8 @@ async def gram_wallet_choice(callback: types.CallbackQuery, state: FSMContext):
     prompt_text = (
         "🔗 <b>انتقال از کیف پول شخصی یا صرافی های دیگر</b>\n\n"
         "لطفاً فقط <b>هش تراکنش (TXID)</b> را به صورت متن ارسال کنید:\n\n"
-        "⚠️ <b>توجه:</b> در این مرحله فقط مجاز به ارسال متن هش تراکنش (String) هستید و ارسال تصویر، فایل یا هر فرمت دیگری مجاز نمی‌باشد."
+        "⚠️ <b>توجه:</b> در این مرحله فقط مجاز به ارسال متن هش تراکنش (String) هستید و ارسال تصویر، فایل یا هر فرمت دیگری مجاز نمی‌باشد.\n"
+        "💡 هش معتبر گرام دقیقاً ۶۴ یا ۴۴ کاراکتر است."
     )
     
     await callback.answer()
@@ -1018,8 +1020,20 @@ async def process_pingi_receipt(message: types.Message, state: FSMContext):
     gateway = data.get('txid_gateway', 'gram')
     transfer_method = data.get('transfer_method', 'pingi')
     
-    stored_value = message.photo[-1].file_id if has_photo else message.text.strip()
-    receipt_text = message.caption or "" if has_photo else ""
+    if has_text and not has_photo:
+        pingi_code = message.text.strip()
+        if len(pingi_code) not in (64, 44):
+            return await message.reply(
+                "❌ <b>کد پیگیری تراکنش نامعتبر است!</b>\n\n"
+                "طول کد پیگیری تراکنش پینگی (گرام) باید دقیقاً ۶۴ یا ۴۴ کاراکتر باشد.\n"
+                "لطفاً کد معتبر را ارسال نمایید یا تصویر رسید را بفرستید.",
+                parse_mode="HTML"
+            )
+        stored_value = pingi_code
+        receipt_text = ""
+    else:
+        stored_value = message.photo[-1].file_id
+        receipt_text = message.caption or ""
     
     async with aiosqlite.connect(db_manager.DB_PATH) as db:
         await db.execute("PRAGMA busy_timeout = 5000;")
@@ -1086,16 +1100,39 @@ async def process_txid_string(message: types.Message, state: FSMContext):
         )
         
     txid = message.text.strip()
-    if len(txid) < 5:
-        return await message.reply(
-            "❌ هش تراکنش نامعتبر است. لطفاً کد کامل هش تراکنش (TXID) را به صورت متن ارسال کنید.",
-            parse_mode="HTML"
-        )
-        
     data = await state.get_data()
     invoice_id = data.get('txid_invoice_id')
     gateway = data.get('txid_gateway', 'usdt')
     transfer_method = data.get('transfer_method', 'wallet_or_other')
+    
+    # Hash format validation based on gateway
+    if gateway == 'usdt':
+        is_valid_usdt = (
+            txid.startswith(("0x", "0X"))
+            and len(txid) == 66
+            and all(c in "0123456789abcdefABCDEF" for c in txid[2:])
+        )
+        if not is_valid_usdt:
+            return await message.reply(
+                "❌ <b>هش تراکنش نامعتبر است!</b>\n\n"
+                "هش تراکنش درگاه تتر (USDT) باید با <code>0x</code> شروع شده و طول کل آن دقیقاً ۶۶ کاراکتر باشد.\n"
+                "لطفاً فقط کد هش معتبر را به صورت متن ارسال فرمایید.",
+                parse_mode="HTML"
+            )
+    elif gateway == 'gram':
+        if len(txid) not in (64, 44):
+            return await message.reply(
+                "❌ <b>هش تراکنش / کد پیگیری نامعتبر است!</b>\n\n"
+                "طول هش تراکنش درگاه گرام باید دقیقاً ۶۴ یا ۴۴ کاراکتر باشد.\n"
+                "لطفاً هش معتبر را مجدداً ارسال نمایید.",
+                parse_mode="HTML"
+            )
+    else:
+        if len(txid) < 5:
+            return await message.reply(
+                "❌ هش تراکنش نامعتبر است. لطفاً کد کامل هش تراکنش (TXID) را به صورت متن ارسال کنید.",
+                parse_mode="HTML"
+            )
     
     async with aiosqlite.connect(db_manager.DB_PATH) as db:
         await db.execute('''
