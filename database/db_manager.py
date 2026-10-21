@@ -2523,7 +2523,7 @@ async def get_active_payment_gateways() -> list:
     gateway_map = [
         ('gram_status',     'پرداخت با گرام (TON)',       'pay_gram'),
         ('usdt_status',     'پرداخت با تتر (BSC)',        'pay_usdt'),
-        ('frenzyex_status', 'درگاه آنلاین (FrenzyEx)',    'pay_frenzyex'),
+        ('frenzyex_status', 'درگاه بانکی یا کارت به کارت',    'pay_frenzyex'),
     ]
     result = []
     async with aiosqlite.connect(DB_PATH) as db:
