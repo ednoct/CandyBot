@@ -136,10 +136,11 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
                     VALUES (?, ?, ?, ?, 'pending')
                 ''', (callback.from_user.id, invoice_id, amount, method))
             except aiosqlite.OperationalError:
+                await db.execute("PRAGMA busy_timeout = 5000;")
                 await db.execute('''
-                    INSERT INTO payment_reports (id_user, id_order, time, price, payment_Status, Payment_Method, id_invoice, expires_at)
-                    VALUES (?, ?, ?, ?, 'Unpaid', ?, ?, ?)
-                ''', (callback.from_user.id, invoice_id, time.strftime('%Y/%m/%d %H:%M:%S'), amount, method, invoice_id, expires_at))
+                    INSERT INTO payment_reports (user_id, invoice_id, amount, payment_method, status)
+                    VALUES (?, ?, ?, ?, 'pending')
+                ''', (callback.from_user.id, invoice_id, amount, method))
 
         await db.commit()
         
@@ -1041,17 +1042,18 @@ async def process_pingi_receipt(message: types.Message, state: FSMContext):
                 await db.execute(
                     """
                     UPDATE payment_reports
-                    SET status = 'pending_receipt', crypto_hash = ?
+                    SET status = 'pending_receipt', crypto_hash = ?, receipt_time = CURRENT_TIMESTAMP
                     WHERE invoice_id = ?
                     """,
                     (stored_value, invoice_id),
                 )
             except aiosqlite.OperationalError:
+                await db.execute("PRAGMA busy_timeout = 5000;")
                 await db.execute(
                     """
                     UPDATE payment_reports
-                    SET payment_Status = 'pending_receipt', crypto_hash = ?
-                    WHERE id_invoice = ?
+                    SET status = 'pending_receipt', crypto_hash = ?
+                    WHERE invoice_id = ?
                     """,
                     (stored_value, invoice_id),
                 )
@@ -1135,10 +1137,11 @@ async def process_txid_string(message: types.Message, state: FSMContext):
                 WHERE invoice_id = ?
             ''', (txid, transfer_method, invoice_id))
         except aiosqlite.OperationalError:
+            await db.execute("PRAGMA busy_timeout = 5000;")
             await db.execute('''
                 UPDATE payment_reports 
-                SET payment_Status = 'pending_receipt', crypto_hash = ?
-                WHERE id_invoice = ?
+                SET status = 'pending_receipt', crypto_hash = ?
+                WHERE invoice_id = ?
             ''', (txid, invoice_id))
         await db.commit()
         

@@ -140,7 +140,7 @@ async def cron_payment_check(bot=None):
                     expired_invoice_ids.add(inv_id)
                     logging.info(f"Expiring offline payment report {inv_id}")
                     await db.execute(
-                        "UPDATE payment_reports SET status = 'expire' WHERE invoice_id = ? AND status IN ('Unpaid', 'pending')",
+                        "UPDATE payment_reports SET status = 'expired' WHERE invoice_id = ? AND status IN ('Unpaid', 'pending')",
                         (inv_id,)
                     )
                     cur_inv = await db.execute(
@@ -172,7 +172,7 @@ async def cron_payment_check(bot=None):
                         (inv_id,)
                     )
                     await db.execute(
-                        "UPDATE payment_reports SET status = 'expire' WHERE invoice_id = ? AND status IN ('Unpaid', 'pending')",
+                        "UPDATE payment_reports SET status = 'expired' WHERE invoice_id = ? AND status IN ('Unpaid', 'pending')",
                         (inv_id,)
                     )
                     if bot and cur_inv.rowcount > 0:
@@ -204,7 +204,7 @@ async def cron_database_cleanup(bot=None):
                     "WHERE status = 'pending' AND created_at < datetime('now', '-1 day')"
                 )
                 await db.execute(
-                    "UPDATE payment_reports SET status = 'expire' "
+                    "UPDATE payment_reports SET status = 'expired' "
                     "WHERE status IN ('pending', 'Unpaid') AND created_at < datetime('now', '-1 day')"
                 )
                 await db.commit()

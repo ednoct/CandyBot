@@ -2023,7 +2023,7 @@ async def cleanup_expired_data(retention_days: int = 14) -> dict:
 
             cur_pr_extra = await db.execute(f"""
                 DELETE FROM payment_reports
-                WHERE status = 'expire'
+                WHERE status IN ('expire', 'expired')
                    OR (status = 'Unpaid' AND created_at < datetime('now', '-{int(retention_days)} days'))
             """)
             deleted_payment_reports += max(0, cur_pr_extra.rowcount)

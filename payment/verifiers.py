@@ -17,19 +17,7 @@ from payment.gateways import FrenzyExGateway
 
 logger = logging.getLogger(__name__)
 
-_INVOICE_LOCKS: dict[str, asyncio.Lock] = {}
-
-
-def get_invoice_lock(invoice_id: str) -> asyncio.Lock:
-    """Returns a process-wide per-invoice asyncio.Lock shared by webhook, polling, and startup recovery."""
-    key = str(invoice_id).strip()
-    if key not in _INVOICE_LOCKS:
-        if len(_INVOICE_LOCKS) > 5000:
-            unlocked = [k for k, lk in _INVOICE_LOCKS.items() if not lk.locked()]
-            for k in unlocked[:2500]:
-                _INVOICE_LOCKS.pop(k, None)
-        _INVOICE_LOCKS[key] = asyncio.Lock()
-    return _INVOICE_LOCKS[key]
+from payment.confirm import get_invoice_lock
 
 
 class PaymentVerifier:
@@ -117,6 +105,15 @@ class PaymentVerifier:
 
             lock = get_invoice_lock(invoice_id)
             async with lock:
+                # Enforce FrenzyEx deduplication & idempotency: check current invoice state under lock
+                async with aiosqlite.connect(db_manager.DB_PATH) as db:
+                    await db.execute("PRAGMA busy_timeout = 5000;")
+                    db.row_factory = aiosqlite.Row
+                    async with db.execute("SELECT status FROM invoices WHERE id = ?", (invoice_id,)) as cur:
+                        inv_check = await cur.fetchone()
+                    if not inv_check or inv_check["status"] != "pending":
+                        return
+
                 if remote_status == "paid":
                     tx_hash = check.get("tx_hash") or ""
                     paid_at = check.get("paid_at") or ""

@@ -647,55 +647,6 @@ async def export_custom_date_orders(callback: types.CallbackQuery):
         parse_mode="Markdown"
     )
 
-# === ROUTER: EXPORT DATA ===
-@admin_reports_router.callback_query(F.data.startswith("export_"))
-async def export_data(callback: types.CallbackQuery):
-    """Handles export data."""
-    if not is_admin(callback): return
-    action = callback.data.split("_")[1]
-    
-    table_map = {
-        "users": "users",
-        "orders": "orders",
-        "payments": "payments"
-    }
-    
-    table = table_map.get(action)
-    if not table:
-        return await callback.answer("❌ جدول نامعتبر", show_alert=True)
-        
-    await callback.answer("در حال ساخت فایل خروجی...", show_alert=False)
-    
-    from database.db_manager import DB_PATH
-    async with aiosqlite.connect(DB_PATH) as db:
-        # Check if table exists
-        async with db.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table}'") as cursor:
-            if not await cursor.fetchone():
-                return await callback.message.answer(f"❌ دیتایی برای خروجی {action} یافت نشد (جدول وجود ندارد).")
-                
-        db.row_factory = aiosqlite.Row
-        async with db.execute(f"SELECT * FROM {table}") as cursor:
-            rows = await cursor.fetchall()
-            if not rows:
-                return await callback.message.answer(f"❌ دیتایی برای خروجی {action} یافت نشد.")
-                
-            headers = rows[0].keys()
-            
-            output = io.StringIO()
-            writer = csv.writer(output)
-            writer.writerow(headers)
-            
-            for row in rows:
-                writer.writerow([row[col] for col in headers])
-                
-            output.seek(0)
-            
-            from aiogram.types import BufferedInputFile
-            date_str = datetime.now().strftime("%Y-%m-%d")
-            file = BufferedInputFile(output.getvalue().encode('utf-8-sig'), filename=f"{table}_{date_str}.csv")
-            
-            await callback.message.answer_document(file, caption=f"🪪 خروجی دیتای {table}")
-
 # === ROUTER: EXPORT AGENT SETTLEMENTS (IMMUNE TO CLEANUPS) ===
 @admin_reports_router.callback_query(F.data == "export_agent_settlements")
 async def export_agent_settlements_handler(callback: types.CallbackQuery):
@@ -753,6 +704,55 @@ async def export_agent_settlements_handler(callback: types.CallbackQuery):
         caption="📑 <b>خروجی کامل تسویه‌های انجام‌شده نمایندگی (از روز اول)</b>\n\nاین رکوردها در دیتابیس محفوظ بوده و از پاکسازی‌های دوره‌ای مصون می‌باشند.",
         parse_mode="HTML"
     )
+
+# === ROUTER: EXPORT DATA ===
+@admin_reports_router.callback_query(F.data.startswith("export_"))
+async def export_data(callback: types.CallbackQuery):
+    """Handles export data."""
+    if not is_admin(callback): return
+    action = callback.data.split("_")[1]
+    
+    table_map = {
+        "users": "users",
+        "orders": "invoices",
+        "payments": "payment_reports"
+    }
+    
+    table = table_map.get(action)
+    if not table:
+        return await callback.answer("❌ جدول نامعتبر", show_alert=True)
+        
+    await callback.answer("در حال ساخت فایل خروجی...", show_alert=False)
+    
+    from database.db_manager import DB_PATH
+    async with aiosqlite.connect(DB_PATH) as db:
+        # Check if table exists
+        async with db.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table}'") as cursor:
+            if not await cursor.fetchone():
+                return await callback.message.answer(f"❌ دیتایی برای خروجی {action} یافت نشد (جدول وجود ندارد).")
+                
+        db.row_factory = aiosqlite.Row
+        async with db.execute(f"SELECT * FROM {table}") as cursor:
+            rows = await cursor.fetchall()
+            if not rows:
+                return await callback.message.answer(f"❌ دیتایی برای خروجی {action} یافت نشد.")
+                
+            headers = rows[0].keys()
+            
+            output = io.StringIO()
+            writer = csv.writer(output)
+            writer.writerow(headers)
+            
+            for row in rows:
+                writer.writerow([row[col] for col in headers])
+                
+            output.seek(0)
+            
+            from aiogram.types import BufferedInputFile
+            date_str = datetime.now().strftime("%Y-%m-%d")
+            file = BufferedInputFile(output.getvalue().encode('utf-8-sig'), filename=f"{action}_{date_str}.csv")
+            
+            await callback.message.answer_document(file, caption=f"🪪 خروجی دیتای {action}")
 
 # === FIX BUG-03: CRM TRIAL FOLLOW-UP HANDLER ===
 @admin_reports_router.callback_query(F.data == "crm_trial_followup")
