@@ -248,12 +248,7 @@ async def fetch_stats(callback: types.CallbackQuery, state: FSMContext = None):
     # Row 6
     builder.row(InlineKeyboardButton(text="❌ بستن", callback_data="admin_reports", style="danger"))
     
-    try:
-        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
-    except Exception as e:
-        pass
-    
-    await callback.answer()
+    await safe_edit_message(callback, text, reply_markup=builder.as_markup(), parse_mode="Markdown")
 
 
 # ============================================================

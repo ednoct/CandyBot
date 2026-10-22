@@ -339,10 +339,12 @@ async def run_web_server(bot: Bot, dp: Dispatcher):
     app['bot'] = bot
     app.router.add_post('/ipn/frenzyex', frenzyex_webhook_handler)
 
-    # Register Telegram webhook endpoint so /webhook/main is always valid
-    webhook_requests_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
-    webhook_requests_handler.register(app, path=WEBHOOK_PATH)
-    setup_application(app, dp, bot=bot)
+    # Only register Telegram webhook endpoint and bind Dispatcher lifecycle if webhook mode is active
+    is_webhook_mode = bool(USE_WEBHOOK and WEBHOOK_DOMAIN and WEBHOOK_DOMAIN != 'localhost')
+    if is_webhook_mode:
+        webhook_requests_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
+        webhook_requests_handler.register(app, path=WEBHOOK_PATH)
+        setup_application(app, dp, bot=bot)
 
     ssl_context = None
     if SSL_CERT and SSL_PRIV and os.path.exists(SSL_CERT) and os.path.exists(SSL_PRIV):
@@ -436,15 +438,18 @@ async def main():
     setup_cron_tasks(bot)
 
     # === START WEB SERVER ===
-    await run_web_server(bot, dp)
+    runner = await run_web_server(bot, dp)
 
-# === START POLLING OR KEEP RUNNING FOR WEBHOOK
-    if USE_WEBHOOK and WEBHOOK_DOMAIN and WEBHOOK_DOMAIN != 'localhost':
-        logging.info("Running in Webhook mode...")
-        await asyncio.Event().wait()
-    else:
-        logging.info("Starting bot polling...")
-        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+    # === START POLLING OR KEEP RUNNING FOR WEBHOOK ===
+    try:
+        if USE_WEBHOOK and WEBHOOK_DOMAIN and WEBHOOK_DOMAIN != 'localhost':
+            logging.info("Running in Webhook mode...")
+            await asyncio.Event().wait()
+        else:
+            logging.info("Starting bot polling...")
+            await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+    finally:
+        await runner.cleanup()
 
 
 if __name__ == "__main__":

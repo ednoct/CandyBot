@@ -65,8 +65,8 @@ async def _build_main_menu(user_id: int) -> tuple[str, types.InlineKeyboardMarku
     )
     # Row 5: Tutorials | Downloads
     builder.row(
-        types.InlineKeyboardButton(text="❔ آموزش‌ها", url="https://t.me/CandyConnectHelp"),
-        types.InlineKeyboardButton(text="📥 دانلودها", url="https://t.me/CandyConnectDownload"),
+        types.InlineKeyboardButton(text="❔ آموزش‌ها", url="https://t.me/CandyConnectHelp/12"),
+        types.InlineKeyboardButton(text="📥 دانلودها", url="https://t.me/CandyConnectDownload/17"),
     )
     # Row 6: Support | Agency
     builder.row(
@@ -588,6 +588,7 @@ async def view_license(callback: types.CallbackQuery):
             copy_text=types.CopyTextButton(text=sub_id)
         )
     )
+    builder.row(types.InlineKeyboardButton(text="آموزش راەاندازی", url="https://t.me/CandyConnectHelp/12"), style="primary")
     builder.row(types.InlineKeyboardButton(text="♻️ تمدید", callback_data=f"renew_lic_{license_id}"))
     builder.row(types.InlineKeyboardButton(text="🗑 حذف لایسنس", callback_data=f"delete_lic_prompt_{license_id}", style="danger"))
     builder.row(types.InlineKeyboardButton(text="🔙 بازگشت به سرویس‌ها", callback_data="my_services", style="danger"))

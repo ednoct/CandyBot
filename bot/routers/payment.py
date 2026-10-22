@@ -244,7 +244,15 @@ async def process_payment(callback: types.CallbackQuery, state: FSMContext):
         gateway = FrenzyExGateway(api_key=frenzyex_api_key, base_url=frenzyex_base_url)
         
         from bot.config import WEBHOOK_DOMAIN
-        callback_url = f"https://{WEBHOOK_DOMAIN}/ipn/frenzyex"
+        domain = (WEBHOOK_DOMAIN or "").strip()
+        if not domain or domain.lower() in ("localhost", "127.0.0.1"):
+            await callback.answer(
+                "❌ دامنه وب‌هوک (WEBHOOK_DOMAIN) در فایل پیکربندی ربات تنظیم نشده است.",
+                show_alert=True,
+            )
+            return
+
+        callback_url = f"https://{domain}/ipn/frenzyex"
         
         # FrenzyExGateway expects (order_id, amount, callback_url)
         result = await gateway.create_payment(invoice_id, amount, callback_url)

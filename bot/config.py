@@ -25,8 +25,15 @@ def _parse_admin_ids(raw_str: str) -> list[int]:
     return ids
 
 
+def _clean_domain(raw_str: str) -> str:
+    cleaned = (raw_str or '').strip()
+    if cleaned.startswith(('http://', 'https://')):
+        cleaned = cleaned.split('://', 1)[1]
+    return cleaned.rstrip('/')
+
+
 ADMIN_IDS = _parse_admin_ids(os.getenv('ADMIN_IDS', ''))
-WEBHOOK_DOMAIN = os.getenv('WEBHOOK_DOMAIN', 'localhost')
+WEBHOOK_DOMAIN = _clean_domain(os.getenv('WEBHOOK_DOMAIN', 'localhost'))
 WEBHOOK_PATH = os.getenv('WEBHOOK_PATH', '/webhook/main')
 USE_WEBHOOK = os.getenv('USE_WEBHOOK', '0').lower() in ('1', 'true', 'yes')
 
